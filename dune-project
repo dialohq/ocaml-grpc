@@ -17,6 +17,8 @@
  (name grpc)
  (synopsis "The core grpc library")
  (depends
+  (ocaml
+   (>= 4.08))
   (uri
    (>= 4.0.0))
   (ocaml-protoc
