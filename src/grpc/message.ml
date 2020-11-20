@@ -4,10 +4,10 @@ let make_payload proto =
   (* write compressed flag (uint8) *)
   Bytes.set payload 0 '\x00';
   (* write msg length (uint32 be) *)
-  Binary_packing.pack_unsigned_32_int_big_endian ~buf:payload ~pos:1
-    (String.length proto);
-  (* write protobuf msg *)
-  Bytes.blit_string proto 0 payload 5 proto_len;
+  let length = String.length proto in
+  Bytes.set_uint16_be payload 1 (length lsr 16);
+  Bytes.set_uint16_be payload 3 (length land 0xFFFF);
+  (* write protobuf msg *) Bytes.blit_string proto 0 payload 5 proto_len;
   Bytes.to_string payload
 
 (** [extract_message ~buf] extracts the grpc message starting in [buf]
@@ -26,7 +26,7 @@ let extract_message ~buf =
       Buffer.get_uint8 buf ~pos:0 == 1
     and length =
       (* encoded as 4 byte unsigned integer (big endian) *)
-      Buffer.unpack_unsigned_32_int_big_endian buf ~pos:1
+      Buffer.get_u32_be buf ~pos:1
     in
     if compressed then failwith "Compressed flag set but not supported";
     if Buffer.length buf - 5 >= length then

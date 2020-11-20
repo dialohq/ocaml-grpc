@@ -7,6 +7,9 @@ homepage: "https://github.com/jeffa5/ocaml-grpc"
 bug-reports: "https://github.com/jeffa5/ocaml-grpc/issues"
 depends: [
   "dune" {>= "2.7"}
+  "uri" {>= "4.0.0"}
+  "ocaml-protoc" {>= "2.0.0"}
+  "h2" {dev}
   "odoc" {with-doc}
 ]
 build: [
@@ -24,3 +27,6 @@ build: [
   ]
 ]
 dev-repo: "git+https://github.com/jeffa5/ocaml-grpc.git"
+pin-depends: [
+    [ "h2" "git+https://github.com/anmonteiro/ocaml-h2#master" ]
+]

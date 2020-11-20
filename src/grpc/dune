@@ -1,5 +1,4 @@
 (library
  (name grpc)
  (public_name grpc)
- (libraries h2 stringext ocaml-protoc bigstringaf core_kernel.binary_packing
-   uri))
+ (libraries h2 bigstringaf uri))

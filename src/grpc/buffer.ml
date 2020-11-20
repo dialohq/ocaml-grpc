@@ -34,5 +34,7 @@ let shift_left t ~by =
   Bytes.blit t.contents by t.contents 0 (t.length - by);
   t.length <- t.length - by
 
-let unpack_unsigned_32_int_big_endian t ~pos =
-  Binary_packing.unpack_unsigned_32_int_big_endian ~buf:t.contents ~pos
+let get_u32_be t ~pos =
+  let high = Bytes.get_uint16_be t.contents pos in
+  let low = Bytes.get_uint16_be t.contents (pos + 2) in
+  (high lsl 16) lor low
