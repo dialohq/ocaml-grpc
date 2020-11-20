@@ -1,5 +1,22 @@
 open Lwt.Syntax
 
+type unary = Pbrt.Decoder.t -> (Grpc.Status.t * Pbrt.Encoder.t option) Lwt.t
+
+type client_streaming =
+  Pbrt.Decoder.t Lwt_stream.t -> (Grpc.Status.t * Pbrt.Encoder.t option) Lwt.t
+
+type server_streaming =
+  Pbrt.Decoder.t -> (Pbrt.Encoder.t -> unit) -> Grpc.Status.t Lwt.t
+
+type bidirectional_streaming =
+  Pbrt.Decoder.t Lwt_stream.t -> (Pbrt.Encoder.t -> unit) -> Grpc.Status.t Lwt.t
+
+type t =
+  | Unary of unary
+  | Client_streaming of client_streaming
+  | Server_streaming of server_streaming
+  | Bidirectional_streaming of bidirectional_streaming
+
 let bidirectional_streaming ~f ~reqd =
   let decoder_stream, decoder_push = Lwt_stream.create () in
   Connection.grpc_recv_streaming reqd decoder_push;
