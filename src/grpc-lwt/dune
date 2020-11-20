@@ -1,0 +1,5 @@
+(library
+ (name grpc_lwt)
+ (public_name grpc-lwt)
+ (libraries grpc h2 stringext lwt ocaml-protoc bigstringaf
+   core_kernel.binary_packing uri))
