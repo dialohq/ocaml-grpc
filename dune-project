@@ -6,6 +6,8 @@
 
 (name grpc)
 
+(license "BSD-3-Clause")
+
 (authors "Andrew Jeffery <dev@jeffas.io>")
 
 (maintainers "Andrew Jeffery <dev@jeffas.io>")
