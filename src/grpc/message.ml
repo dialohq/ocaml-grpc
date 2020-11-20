@@ -1,18 +1,19 @@
-let make_payload proto =
-  let proto_len = String.length proto in
-  let payload = Bytes.create @@ (proto_len + 1 + 4) in
+let make content =
+  let content_len = String.length content in
+  let payload = Bytes.create @@ (content_len + 1 + 4) in
   (* write compressed flag (uint8) *)
   Bytes.set payload 0 '\x00';
   (* write msg length (uint32 be) *)
-  let length = String.length proto in
+  let length = String.length content in
   Bytes.set_uint16_be payload 1 (length lsr 16);
   Bytes.set_uint16_be payload 3 (length land 0xFFFF);
-  (* write protobuf msg *) Bytes.blit_string proto 0 payload 5 proto_len;
+  (* write msg *)
+  Bytes.blit_string content 0 payload 5 content_len;
   Bytes.to_string payload
 
-(** [extract_message ~buf] extracts the grpc message starting in [buf]
+(** [extract_message buf] extracts the grpc message starting in [buf]
     in the buffer if there is one *)
-let extract_message ~buf =
+let extract_message buf =
   if Buffer.length buf >= 5 then (
     let compressed =
       (* A Compressed-Flag value of 1 indicates that the binary octet
@@ -34,13 +35,15 @@ let extract_message ~buf =
     else None )
   else None
 
-(** [get_message_and_shift ~buf] tries to extract the first grpc message
+(** [get_message_and_shift buf] tries to extract the first grpc message
     from [buf] and if successful shifts these bytes out of the buffer *)
-let get_message_and_shift ~buf =
-  let message = extract_message ~buf in
+let get_message_and_shift buf =
+  let message = extract_message buf in
   match message with
   | None -> None
   | Some message ->
       let mlen = Buffer.length message in
       Buffer.shift_left buf ~by:(5 + mlen);
       Some message
+
+let extract buf = get_message_and_shift buf

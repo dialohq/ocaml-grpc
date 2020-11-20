@@ -14,7 +14,7 @@ type rpc =
 
 type t = { name : string; rpcs : rpc RpcMap.t }
 
-let v ~name = { name; rpcs = RpcMap.empty }
+let v name = { name; rpcs = RpcMap.empty }
 
 let add_rpc ~name ~rpc t = { t with rpcs = RpcMap.add name rpc t.rpcs }
 

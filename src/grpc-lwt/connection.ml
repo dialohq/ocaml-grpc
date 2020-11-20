@@ -6,7 +6,7 @@ let grpc_recv_streaming request decoder_push =
   let rec on_read buffer ~off ~len =
     Grpc.Buffer.copy_from_bigstringaf ~src_off:off ~src:buffer
       ~dst:!request_buffer ~length:len;
-    let message = Grpc.Message.get_message_and_shift ~buf:!request_buffer in
+    let message = Grpc.Message.extract !request_buffer in
     ( match message with
     | Some message ->
         decoder_push
@@ -27,9 +27,7 @@ let grpc_send_streaming request encoder_stream status_mvar =
   let* () =
     Lwt_stream.iter
       (fun encoder ->
-        let payload =
-          Grpc.Message.make_payload (Pbrt.Encoder.to_string encoder)
-        in
+        let payload = Grpc.Message.make (Pbrt.Encoder.to_string encoder) in
         H2.Body.write_string body payload;
         H2.Body.flush body (fun () -> ()))
       encoder_stream

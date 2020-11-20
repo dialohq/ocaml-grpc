@@ -12,7 +12,7 @@ type rpc =
 
 type t
 
-val v : name:string -> t
+val v : string -> t
 
 val add_rpc : name:string -> rpc:rpc -> t -> t
 
