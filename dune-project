@@ -10,4 +10,6 @@
 
 (package
  (name grpc-lwt)
- (synopsis "An Lwt implementation of grpc"))
+ (synopsis "An Lwt implementation of grpc")
+ (depends
+  (grpc :dev)))
