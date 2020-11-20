@@ -1,17 +1,12 @@
 module ServiceMap = Map.Make (String)
 
-type t = { services : (module Grpc.Service.S) ServiceMap.t }
+type service = H2.Reqd.t -> unit
 
-let v () = { services = ServiceMap.empty }
+type t = service ServiceMap.t
 
-let add_service ~service:(module Service : Grpc.Service.S) t =
-  {
-    services =
-      ServiceMap.add Service.name (module Service : Grpc.Service.S) t.services;
-  }
+let v () = ServiceMap.empty
 
-let add_services ~services t =
-  List.fold_left (fun t service -> add_service t ~service) t services
+let add_service ~name ~service t = ServiceMap.add name service t
 
 let handle_request t ~reqd =
   let request = H2.Reqd.request reqd in
@@ -23,9 +18,9 @@ let handle_request t ~reqd =
     if List.length parts > 1 then
       (* allow for arbitrary prefixes *)
       let service_name = List.nth parts (List.length parts - 2) in
-      let service = ServiceMap.find_opt service_name t.services in
+      let service = ServiceMap.find_opt service_name t in
       match service with
-      | Some (module Service) -> Service.handle_rpc reqd
+      | Some service -> service reqd
       | None -> respond_with `Not_found
     else respond_with `Not_found
   in

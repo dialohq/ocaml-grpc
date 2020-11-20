@@ -12,8 +12,8 @@ type rpc =
 
 type t
 
-val v : string -> t
+val v : unit -> t
 
 val add_rpc : name:string -> rpc:rpc -> t -> t
 
-val to_module : t -> (module Grpc.Service.S)
+val handle_request : t -> H2.Reqd.t -> unit

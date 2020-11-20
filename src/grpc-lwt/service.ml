@@ -12,35 +12,30 @@ type rpc =
       (Pbrt.Encoder.t -> unit) ->
       Grpc.Status.t Lwt.t)
 
-type t = { name : string; rpcs : rpc RpcMap.t }
+type t = rpc RpcMap.t
 
-let v name = { name; rpcs = RpcMap.empty }
+let v () = RpcMap.empty
 
-let add_rpc ~name ~rpc t = { t with rpcs = RpcMap.add name rpc t.rpcs }
+let add_rpc ~name ~rpc t = RpcMap.add name rpc t
 
-let to_module t =
-  ( module struct
-    let name = t.name
-
-    let handle_rpc reqd =
-      let request = H2.Reqd.request reqd in
-      let respond_with code =
-        H2.Reqd.respond_with_string reqd (H2.Response.create code) ""
-      in
-      let parts = String.split_on_char '/' request.target in
-      if List.length parts > 1 then
-        let rpc_name = List.nth parts (List.length parts - 1) in
-        let rpc = RpcMap.find_opt rpc_name t.rpcs in
+let handle_request (t : t) reqd =
+  let request = H2.Reqd.request reqd in
+  let respond_with code =
+    H2.Reqd.respond_with_string reqd (H2.Response.create code) ""
+  in
+  let parts = String.split_on_char '/' request.target in
+  if List.length parts > 1 then
+    let rpc_name = List.nth parts (List.length parts - 1) in
+    let rpc = RpcMap.find_opt rpc_name t in
+    match rpc with
+    | Some rpc -> (
         match rpc with
-        | Some rpc -> (
-            match rpc with
-            | Unary f -> Lwt.async (fun () -> Rpc.unary ~f ~reqd)
-            | Client_streaming f ->
-                Lwt.async (fun () -> Rpc.client_streaming ~f ~reqd)
-            | Server_streaming f ->
-                Lwt.async (fun () -> Rpc.server_streaming ~f ~reqd)
-            | Bidirectional_streaming f ->
-                Lwt.async (fun () -> Rpc.bidirectional_streaming ~f ~reqd) )
-        | None -> respond_with `Not_found
-      else respond_with `Not_found
-  end : Grpc.Service.S )
+        | Unary f -> Lwt.async (fun () -> Rpc.unary ~f ~reqd)
+        | Client_streaming f ->
+            Lwt.async (fun () -> Rpc.client_streaming ~f ~reqd)
+        | Server_streaming f ->
+            Lwt.async (fun () -> Rpc.server_streaming ~f ~reqd)
+        | Bidirectional_streaming f ->
+            Lwt.async (fun () -> Rpc.bidirectional_streaming ~f ~reqd) )
+    | None -> respond_with `Not_found
+  else respond_with `Not_found
