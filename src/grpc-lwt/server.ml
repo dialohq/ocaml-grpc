@@ -8,7 +8,7 @@ let v () = ServiceMap.empty
 
 let add_service ~name ~service t = ServiceMap.add name service t
 
-let handle_request t ~reqd =
+let handle_request t reqd =
   let request = H2.Reqd.request reqd in
   let respond_with code =
     H2.Reqd.respond_with_string reqd (H2.Response.create code) ""

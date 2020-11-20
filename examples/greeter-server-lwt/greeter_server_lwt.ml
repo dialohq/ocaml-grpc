@@ -28,7 +28,7 @@ let () =
   Lwt.async (fun () ->
       let server =
         H2_lwt_unix.Server.create_connection_handler ?config:None
-          ~request_handler:(fun _ reqd -> Server.handle_request server ~reqd)
+          ~request_handler:(fun _ reqd -> Server.handle_request server reqd)
           ~error_handler:(fun _ ?request:_ _ _ ->
             print_endline "an error occurred")
       in

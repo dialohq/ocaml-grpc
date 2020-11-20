@@ -17,7 +17,7 @@ type t =
   | Server_streaming of server_streaming
   | Bidirectional_streaming of bidirectional_streaming
 
-let bidirectional_streaming ~f ~reqd =
+let bidirectional_streaming ~f reqd =
   let decoder_stream, decoder_push = Lwt_stream.create () in
   Connection.grpc_recv_streaming reqd decoder_push;
   let encoder_stream, encoder_push = Lwt_stream.create () in
@@ -28,21 +28,21 @@ let bidirectional_streaming ~f ~reqd =
   encoder_push None;
   Lwt_mvar.put status_mvar status
 
-let client_streaming ~f ~reqd =
-  bidirectional_streaming ~reqd ~f:(fun decoder_stream encoder_push ->
+let client_streaming ~f reqd =
+  bidirectional_streaming reqd ~f:(fun decoder_stream encoder_push ->
       let+ status, encoder = f decoder_stream in
       (match encoder with None -> () | Some encoder -> encoder_push encoder);
       (status : Grpc.Status.t))
 
-let server_streaming ~f ~reqd =
-  bidirectional_streaming ~reqd ~f:(fun decoder_stream encoder_push ->
+let server_streaming ~f reqd =
+  bidirectional_streaming reqd ~f:(fun decoder_stream encoder_push ->
       let* decoder = Lwt_stream.get decoder_stream in
       match decoder with
       | None -> Lwt.return Grpc.Status.(v OK)
       | Some decoder -> f decoder encoder_push)
 
-let unary ~f ~reqd =
-  bidirectional_streaming ~reqd ~f:(fun decoder_stream encoder_push ->
+let unary ~f reqd =
+  bidirectional_streaming reqd ~f:(fun decoder_stream encoder_push ->
       let* decoder = Lwt_stream.get decoder_stream in
       match decoder with
       | None -> Lwt.return Grpc.Status.(v OK)

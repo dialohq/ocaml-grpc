@@ -18,12 +18,12 @@ let handle_request (t : t) reqd =
     match rpc with
     | Some rpc -> (
         match rpc with
-        | Unary f -> Lwt.async (fun () -> Rpc.unary ~f ~reqd)
+        | Unary f -> Lwt.async (fun () -> Rpc.unary ~f reqd)
         | Client_streaming f ->
-            Lwt.async (fun () -> Rpc.client_streaming ~f ~reqd)
+            Lwt.async (fun () -> Rpc.client_streaming ~f reqd)
         | Server_streaming f ->
-            Lwt.async (fun () -> Rpc.server_streaming ~f ~reqd)
+            Lwt.async (fun () -> Rpc.server_streaming ~f reqd)
         | Bidirectional_streaming f ->
-            Lwt.async (fun () -> Rpc.bidirectional_streaming ~f ~reqd) )
+            Lwt.async (fun () -> Rpc.bidirectional_streaming ~f reqd) )
     | None -> respond_with `Not_found
   else respond_with `Not_found
