@@ -28,5 +28,5 @@ build: [
 ]
 dev-repo: "git+https://github.com/jeffa5/ocaml-grpc.git"
 pin-depends: [
-    [ "h2.dev" "git+https://github.com/anmonteiro/ocaml-h2#master" ]
+    [ "h2.dev" "git+https://github.com/anmonteiro/ocaml-h2#7df18604ae389e3151f79e2be5dfd4278d4377fb" ]
 ]
