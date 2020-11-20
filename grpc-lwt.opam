@@ -9,6 +9,7 @@ depends: [
   "dune" {>= "2.7"}
   "grpc" {dev}
   "lwt" {>= "5.0.0"}
+  "h2" {dev}
   "odoc" {with-doc}
 ]
 build: [
@@ -26,3 +27,6 @@ build: [
   ]
 ]
 dev-repo: "git+https://github.com/jeffa5/ocaml-grpc.git"
+pin-depends: [
+    [ "h2.dev" "git+https://github.com/anmonteiro/ocaml-h2#master" ]
+]

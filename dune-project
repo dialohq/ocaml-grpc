@@ -21,7 +21,8 @@
    (>= 4.0.0))
   (ocaml-protoc
    (>= 2.0.0))
-  (h2 :dev)))
+  (h2
+   (>= 0.7.0))))
 
 (package
  (name grpc-lwt)
@@ -29,4 +30,5 @@
  (depends
   (grpc :dev)
   (lwt
-   (>= 5.0.0))))
+   (>= 5.0.0))
+  (h2 :dev)))
