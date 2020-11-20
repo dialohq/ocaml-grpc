@@ -23,7 +23,7 @@ let extract_message ~buf =
          new context for each message in the stream. If the Message-Encoding
          header is omitted then the Compressed-Flag must be 0. *)
       (* encoded as 1 byte unsigned integer *)
-      Buffer.get_uint8 buf ~pos:0 == 1
+      Buffer.get_u8 buf ~pos:0 == 1
     and length =
       (* encoded as 4 byte unsigned integer (big endian) *)
       Buffer.get_u32_be buf ~pos:1

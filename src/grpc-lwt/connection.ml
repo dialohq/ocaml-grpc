@@ -5,7 +5,7 @@ let grpc_recv_streaming request decoder_push =
   let request_buffer = ref @@ Grpc.Buffer.v () in
   let rec on_read buffer ~off ~len =
     Grpc.Buffer.copy_from_bigstringaf ~src_off:off ~src:buffer
-      ~dst:!request_buffer ~len;
+      ~dst:!request_buffer ~length:len;
     let message = Grpc.Message.get_message_and_shift ~buf:!request_buffer in
     ( match message with
     | Some message ->

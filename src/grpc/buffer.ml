@@ -13,14 +13,15 @@ let extend t amount =
 
 let log2 i = log (float_of_int i) /. log 2.
 
-let ensure_size t len =
-  if t.length + len >= capacity t then
-    extend t (int_of_float (log2 (t.length + len)) - capacity t)
+let ensure_size t ~length =
+  if t.length + length >= capacity t then
+    extend t (int_of_float (log2 (t.length + length)) - capacity t)
 
-let copy_from_bigstringaf ~src_off ~src ~dst ~len =
-  ensure_size dst len;
-  Bigstringaf.blit_to_bytes ~src_off src ~dst_off:dst.length dst.contents ~len;
-  dst.length <- dst.length + len
+let copy_from_bigstringaf ~src_off ~src ~dst ~length =
+  ensure_size dst ~length;
+  Bigstringaf.blit_to_bytes ~src_off src ~dst_off:dst.length dst.contents
+    ~len:length;
+  dst.length <- dst.length + length
 
 let sub t ~start ~length =
   let contents = Bytes.sub t.contents start length in
@@ -28,7 +29,7 @@ let sub t ~start ~length =
 
 let to_bytes t = Bytes.sub t.contents 0 t.length
 
-let get_uint8 t ~pos = Bytes.get_uint8 t.contents pos
+let get_u8 t ~pos = Bytes.get_uint8 t.contents pos
 
 let shift_left t ~by =
   Bytes.blit t.contents by t.contents 0 (t.length - by);
