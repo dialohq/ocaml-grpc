@@ -2,6 +2,8 @@
 
 (generate_opam_files true)
 
+(name grpc)
+
 (package
  (name grpc)
  (synopsis "The core grpc library"))
