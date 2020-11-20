@@ -3,9 +3,9 @@ module type S = sig
 
   val v : unit -> t
 
-  val add_service : (module Service.S) -> t -> unit
+  val add_service : service:(module Service.S) -> t -> t
 
-  val add_services : (module Service.S) list -> t -> unit
+  val add_services : services:(module Service.S) list -> t -> t
 
-  val handle_request : t -> H2.Reqd.t -> unit
+  val handle_request : t -> reqd:H2.Reqd.t -> unit
 end
