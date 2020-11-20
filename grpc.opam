@@ -5,6 +5,7 @@ maintainer: ["Andrew Jeffery <dev@jeffas.io>"]
 authors: ["Andrew Jeffery <dev@jeffas.io>"]
 license: "BSD-3-Clause"
 homepage: "https://github.com/jeffa5/ocaml-grpc"
+doc: "https://jeffas.io/ocaml-grpc"
 bug-reports: "https://github.com/jeffa5/ocaml-grpc/issues"
 depends: [
   "dune" {>= "2.7"}

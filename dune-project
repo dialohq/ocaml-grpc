@@ -15,6 +15,8 @@
 (source
  (github jeffa5/ocaml-grpc))
 
+(documentation "https://jeffas.io/ocaml-grpc")
+
 (package
  (name grpc)
  (synopsis "The core grpc library")
