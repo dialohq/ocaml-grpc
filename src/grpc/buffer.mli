@@ -22,7 +22,7 @@ val copy_from_bigstringaf :
     end of the buffer. *)
 
 val sub : start:int -> length:int -> t -> t
-(** [sub ~start ~length t] creates a new buffer from the current, containing the data in the range [start,start+length). *)
+(** [sub ~start ~length t] creates a new buffer from the current, containing the data in the range \[start, start+length). *)
 
 val get_u8 : pos:int -> t -> int
 (** [get_u8 ~pos t] returns the unsigned 8 bit integer at [pos] in [t]. *)
