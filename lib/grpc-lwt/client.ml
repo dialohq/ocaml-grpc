@@ -30,8 +30,8 @@ module Rpc = struct
   let server_streaming ~f reqd =
     bidirectional_streaming reqd ~f:(fun _ decoder_stream -> f decoder_stream)
 
-  let unary ~f enc reqd =
-    bidirectional_streaming reqd ~f:(fun encoder_push decoder_stream ->
+  let unary ~f enc write_body =
+    bidirectional_streaming write_body ~f:(fun encoder_push decoder_stream ->
         encoder_push enc;
         let* decoder = Lwt_stream.get decoder_stream in
         match decoder with None -> Lwt.return_unit | Some decoder -> f decoder)

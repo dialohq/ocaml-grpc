@@ -20,7 +20,8 @@ let grpc_send_streaming_client body encoder_stream =
     (fun encoder ->
       let payload = Grpc.Message.make (Pbrt.Encoder.to_string encoder) in
       H2.Body.write_string body payload;
-      H2.Body.flush body (fun () -> ()))
+      H2.Body.flush body (fun () -> ());
+      H2.Body.close_writer body)
     encoder_stream
 
 let grpc_send_streaming request encoder_stream status_mvar =
