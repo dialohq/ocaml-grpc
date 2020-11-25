@@ -12,9 +12,8 @@ let make_request ?(scheme = "https") ~service ~rpc =
 module Rpc = struct
   open Lwt.Syntax
 
-  let bidirectional_streaming ~f write_body encoder _response read_body =
+  let bidirectional_streaming ~f write_body _response read_body =
     let* write_body = write_body in
-    H2.Body.write_string write_body (Pbrt.Encoder.to_string encoder);
     let decoder_stream, decoder_push = Lwt_stream.create () in
     Connection.grpc_recv_streaming read_body decoder_push;
     let encoder_stream, encoder_push = Lwt_stream.create () in
@@ -31,8 +30,9 @@ module Rpc = struct
   let server_streaming ~f reqd =
     bidirectional_streaming reqd ~f:(fun _ decoder_stream -> f decoder_stream)
 
-  let unary ~f reqd =
-    bidirectional_streaming reqd ~f:(fun _ decoder_stream ->
+  let unary ~f enc reqd =
+    bidirectional_streaming reqd ~f:(fun encoder_push decoder_stream ->
+        encoder_push enc;
         let* decoder = Lwt_stream.get decoder_stream in
         match decoder with None -> Lwt.return_unit | Some decoder -> f decoder)
 end
