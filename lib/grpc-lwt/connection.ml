@@ -1,7 +1,6 @@
 open Lwt.Syntax
 
-let grpc_recv_streaming request decoder_push =
-  let body = H2.Reqd.request_body request in
+let grpc_recv_streaming body decoder_push =
   let request_buffer = ref @@ Grpc.Buffer.v () in
   let rec on_read buffer ~off ~len =
     Grpc.Buffer.copy_from_bigstringaf ~src_off:off ~src:buffer
@@ -15,6 +14,14 @@ let grpc_recv_streaming request decoder_push =
     H2.Body.schedule_read body ~on_read ~on_eof
   and on_eof () = decoder_push None in
   H2.Body.schedule_read body ~on_read ~on_eof
+
+let grpc_send_streaming_client body encoder_stream =
+  Lwt_stream.iter
+    (fun encoder ->
+      let payload = Grpc.Message.make (Pbrt.Encoder.to_string encoder) in
+      H2.Body.write_string body payload;
+      H2.Body.flush body (fun () -> ()))
+    encoder_stream
 
 let grpc_send_streaming request encoder_stream status_mvar =
   let body =

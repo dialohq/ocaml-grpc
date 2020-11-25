@@ -14,7 +14,7 @@ let say_hello decoder =
   Lwt.return (Grpc.Status.(v OK), Some encoder)
 
 let greeter_service =
-  Service.(
+  Server.Service.(
     v () |> add_rpc ~name:"SayHello" ~rpc:(Unary say_hello) |> handle_request)
 
 let server =
