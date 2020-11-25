@@ -7,19 +7,14 @@ let make_request ?(scheme = "https") ~service ~rpc =
           add_list empty
             [ ("te", "trailers"); ("content-type", "application/grpc+proto") ])
   in
-  (* TODO: find service and return handler for correct rpc within *)
   request
 
 module Rpc = struct
   open Lwt.Syntax
 
-  type unary = Pbrt.Encoder.t -> Pbrt.Decoder.t
-
-  type bidirectional_streaming =
-    unit -> (Pbrt.Encoder.t -> unit) * Pbrt.Decoder.t Lwt_stream.t
-
-  let bidirectional_streaming ~f write_body _response read_body =
+  let bidirectional_streaming ~f write_body encoder _response read_body =
     let* write_body = write_body in
+    H2.Body.write_string write_body (Pbrt.Encoder.to_string encoder);
     let decoder_stream, decoder_push = Lwt_stream.create () in
     Connection.grpc_recv_streaming read_body decoder_push;
     let encoder_stream, encoder_push = Lwt_stream.create () in
