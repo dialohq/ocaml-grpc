@@ -16,17 +16,44 @@ let call ?(error_handler = fun _ -> ()) ~service ~rpc ?(scheme = "https")
   let request = make_request ~service ~rpc ~scheme in
   let write_body, write_body_notify = Lwt.wait () in
   let out, notify_out = Lwt.wait () in
-  let response_handler response body =
+  let response_handler (response : H2.Response.t) body =
     Lwt.async (fun () ->
-        let+ out = handler ~write_body response body in
-        Lwt.wakeup_later notify_out out)
+        if response.status <> `OK then (
+          Lwt.wakeup_later notify_out
+            (Error (Grpc.Status.v Grpc.Status.Unknown));
+          Lwt.return_unit )
+        else
+          let+ out = handler ~write_body body in
+          Lwt.wakeup_later notify_out (Ok out))
   in
-  let body = do_request request ~error_handler ~response_handler in
+  let status, status_notify = Lwt.wait () in
+  let trailers_handler headers =
+    let code =
+      match H2.Headers.get headers "grpc-status" with
+      | None -> None
+      | Some s -> (
+          match int_of_string_opt s with
+          | None -> None
+          | Some i -> Grpc.Status.code_of_int i )
+    in
+    match code with
+    | None -> ()
+    | Some code ->
+        let message = H2.Headers.get headers "grpc-message" in
+        let status = Grpc.Status.v ?message code in
+        Lwt.wakeup_later status_notify status
+  in
+  let body =
+    do_request ?trailers_handler:(Some trailers_handler) request ~error_handler
+      ~response_handler
+  in
   Lwt.wakeup_later write_body_notify body;
-  out
+  let* out = out in
+  let+ status = status in
+  match out with Error _ as e -> e | Ok out -> Ok (out, status)
 
 module Rpc = struct
-  let bidirectional_streaming ~f ~write_body _response read_body =
+  let bidirectional_streaming ~f ~write_body read_body =
     let* write_body = write_body in
     let decoder_stream, decoder_push = Lwt_stream.create () in
     Connection.grpc_recv_streaming read_body decoder_push;

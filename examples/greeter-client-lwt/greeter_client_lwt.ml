@@ -35,4 +35,6 @@ let () =
   let req = Greeter.Greeter_types.default_hello_request ~name () in
   Lwt_main.run
     (let+ res = call_server address port req in
-     print_endline res.message)
+     match res with
+     | Ok (res, _) -> print_endline res.message
+     | Error _ -> print_endline "an error occurred")
