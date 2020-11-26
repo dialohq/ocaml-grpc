@@ -2,8 +2,6 @@ open Grpc_lwt
 
 let say_hello decoder =
   let req = Greeter.Greeter_pb.decode_hello_request decoder in
-  Format.printf "Received %a" Greeter.Greeter_pp.pp_hello_request req;
-  print_endline req.name;
   let message =
     if req.name = "" then "You forgot your name!"
     else Format.sprintf "Hello, %s!" req.name
@@ -40,7 +38,7 @@ let () =
       print_endline "Try running:";
       print_endline "";
       print_endline
-        {| grpcurl --plaintext --proto examples/greeter/greeter.proto -d '{"name":"<your_name>"}' localhost:8080 mypackage.Greeter/SayHello |});
+        {| dune exec -- examples/greeter-client-lwt/greeter_client_lwt.exe <your_name> |});
 
   let forever, _ = Lwt.wait () in
   Lwt_main.run forever
