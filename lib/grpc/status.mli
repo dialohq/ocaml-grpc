@@ -22,6 +22,9 @@ type code =
 val int_of_code : code -> int
 (** [int_of_code c] returns the corresponding integer status code for [c]. *)
 
+val code_of_int : int -> code option
+(** [code_of_int i] returns the corresponding code for [i] if it exists. *)
+
 type t
 (** [t] represents a full gRPC status, this includes code and optional message. *)
 

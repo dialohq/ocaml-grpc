@@ -36,6 +36,26 @@ let int_of_code = function
   | Data_loss -> 15
   | Unauthenticated -> 16
 
+let code_of_int = function
+  | 0 -> Some OK
+  | 1 -> Some Cancelled
+  | 2 -> Some Unknown
+  | 3 -> Some Invalid_argument
+  | 4 -> Some Deadline_exceeded
+  | 5 -> Some Not_found
+  | 6 -> Some Already_exists
+  | 7 -> Some Permission_denied
+  | 8 -> Some Resource_exhausted
+  | 9 -> Some Failed_precondition
+  | 10 -> Some Aborted
+  | 11 -> Some Out_of_range
+  | 12 -> Some Unimplemented
+  | 13 -> Some Internal
+  | 14 -> Some Unavailable
+  | 15 -> Some Data_loss
+  | 16 -> Some Unauthenticated
+  | _ -> None
+
 type t = { code : code; message : string option }
 
 let v ?message code = { code; message }
