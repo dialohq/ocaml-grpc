@@ -1,5 +1,13 @@
 open Lwt.Syntax
 
+type response_handler = H2.Client_connection.response_handler
+
+type do_request =
+  ?trailers_handler:(H2.Headers.t -> unit) ->
+  H2.Request.t ->
+  response_handler:response_handler ->
+  [ `write ] H2.Body.t
+
 let make_request ~scheme ~service ~rpc =
   let request =
     H2.Request.create ~scheme `POST
@@ -11,8 +19,7 @@ let make_request ~scheme ~service ~rpc =
   in
   request
 
-let call ?(error_handler = fun _ -> ()) ~service ~rpc ?(scheme = "https")
-    ~handler ~do_request () =
+let call ~service ~rpc ?(scheme = "https") ~handler ~do_request () =
   let request = make_request ~service ~rpc ~scheme in
   let write_body, write_body_notify = Lwt.wait () in
   let out, notify_out = Lwt.wait () in
@@ -23,7 +30,7 @@ let call ?(error_handler = fun _ -> ()) ~service ~rpc ?(scheme = "https")
             (Error (Grpc.Status.v Grpc.Status.Unknown));
           Lwt.return_unit )
         else
-          let+ out = handler ~write_body body in
+          let+ out = handler write_body body in
           Lwt.wakeup_later notify_out (Ok out))
   in
   let status, status_notify = Lwt.wait () in
@@ -44,7 +51,7 @@ let call ?(error_handler = fun _ -> ()) ~service ~rpc ?(scheme = "https")
         Lwt.wakeup_later status_notify status
   in
   let body =
-    do_request ?trailers_handler:(Some trailers_handler) request ~error_handler
+    do_request ?trailers_handler:(Some trailers_handler) request
       ~response_handler
   in
   Lwt.wakeup_later write_body_notify body;
@@ -53,7 +60,10 @@ let call ?(error_handler = fun _ -> ()) ~service ~rpc ?(scheme = "https")
   match out with Error _ as e -> e | Ok out -> Ok (out, status)
 
 module Rpc = struct
-  let bidirectional_streaming ~f ~write_body read_body =
+  type 'a handler =
+    [ `write ] H2.Body.t Lwt.t -> [ `read ] H2.Body.t -> 'a Lwt.t
+
+  let bidirectional_streaming ~f write_body read_body =
     let* write_body = write_body in
     let decoder_stream, decoder_push = Lwt_stream.create () in
     Connection.grpc_recv_streaming read_body decoder_push;
@@ -77,6 +87,6 @@ module Rpc = struct
   let unary ~f enc =
     bidirectional_streaming ~f:(fun encoder_push decoder_stream ->
         encoder_push enc;
-        let* decoder = Lwt_stream.get decoder_stream in
+        let decoder = Lwt_stream.get decoder_stream in
         f decoder)
 end

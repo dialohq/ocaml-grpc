@@ -17,11 +17,10 @@ let call_server address port req =
   Greeter.Greeter_pb.encode_hello_request req enc;
 
   Client.call ~service:"mypackage.Greeter" ~rpc:"SayHello"
-    ~do_request:(H2_lwt_unix.Client.request connection)
+    ~do_request:(H2_lwt_unix.Client.request connection ~error_handler:ignore)
     ~handler:
       (Client.Rpc.unary enc ~f:(fun decoder ->
-           Lwt.return
-           @@
+           let+ decoder = decoder in
            match decoder with
            | Some decoder -> Greeter.Greeter_pb.decode_hello_reply decoder
            | None -> Greeter.Greeter_types.default_hello_reply ()))
