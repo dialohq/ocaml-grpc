@@ -1,3 +1,3 @@
 pin-depends: [
-    [ "h2.dev" "git+https://github.com/anmonteiro/ocaml-h2#7df18604ae389e3151f79e2be5dfd4278d4377fb" ]
+    [ "h2.dev" "git+https://github.com/jeffa5/ocaml-h2#239d165628b77f8054abac63248e155c388e20e1" ]
 ]
