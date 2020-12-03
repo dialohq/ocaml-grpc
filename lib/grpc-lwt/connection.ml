@@ -1,24 +1,22 @@
 open Lwt.Syntax
 
-let grpc_recv_streaming body decoder_push =
+let grpc_recv_streaming body buffer_push =
   let request_buffer = ref @@ Grpc.Buffer.v () in
   let rec on_read buffer ~off ~len =
     Grpc.Buffer.copy_from_bigstringaf ~src_off:off ~src:buffer
       ~dst:!request_buffer ~length:len;
     let message = Grpc.Message.extract !request_buffer in
     ( match message with
-    | Some message ->
-        decoder_push
-          (Some (Pbrt.Decoder.of_bytes (Grpc.Buffer.to_bytes message)))
+    | Some message -> buffer_push (Some message)
     | None -> () );
     H2.Body.schedule_read body ~on_read ~on_eof
-  and on_eof () = decoder_push None in
+  and on_eof () = buffer_push None in
   H2.Body.schedule_read body ~on_read ~on_eof
 
 let grpc_send_streaming_client body encoder_stream =
   Lwt_stream.iter
     (fun encoder ->
-      let payload = Grpc.Message.make (Pbrt.Encoder.to_string encoder) in
+      let payload = Grpc.Message.make encoder in
       H2.Body.write_string body payload;
       H2.Body.close_writer body)
     encoder_stream
@@ -33,8 +31,8 @@ let grpc_send_streaming request encoder_stream status_mvar =
   in
   let* () =
     Lwt_stream.iter
-      (fun encoder ->
-        let payload = Grpc.Message.make (Pbrt.Encoder.to_string encoder) in
+      (fun input ->
+        let payload = Grpc.Message.make input in
         H2.Body.write_string body payload;
         H2.Body.flush body (fun () -> ()))
       encoder_stream

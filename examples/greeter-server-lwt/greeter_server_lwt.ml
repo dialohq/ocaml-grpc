@@ -1,6 +1,7 @@
 open Grpc_lwt
 
-let say_hello decoder =
+let say_hello buffer =
+  let decoder = Pbrt.Decoder.of_bytes (Grpc.Buffer.to_bytes buffer) in
   let req = Greeter.Greeter_pb.decode_hello_request decoder in
   let message =
     if req.name = "" then "You forgot your name!"
@@ -9,7 +10,7 @@ let say_hello decoder =
   let reply = Greeter.Greeter_types.default_hello_reply ~message () in
   let encoder = Pbrt.Encoder.create () in
   Greeter.Greeter_pb.encode_hello_reply reply encoder;
-  Lwt.return (Grpc.Status.(v OK), Some encoder)
+  Lwt.return (Grpc.Status.(v OK), Some (Pbrt.Encoder.to_string encoder))
 
 let greeter_service =
   Server.Service.(

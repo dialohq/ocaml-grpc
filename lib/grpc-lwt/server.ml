@@ -49,18 +49,16 @@ let handle_request t reqd =
 module Rpc = struct
   open Lwt.Syntax
 
-  type unary = Pbrt.Decoder.t -> (Grpc.Status.t * Pbrt.Encoder.t option) Lwt.t
+  type unary = Grpc.Buffer.t -> (Grpc.Status.t * string option) Lwt.t
 
   type client_streaming =
-    Pbrt.Decoder.t Lwt_stream.t -> (Grpc.Status.t * Pbrt.Encoder.t option) Lwt.t
+    Grpc.Buffer.t Lwt_stream.t -> (Grpc.Status.t * string option) Lwt.t
 
   type server_streaming =
-    Pbrt.Decoder.t -> (Pbrt.Encoder.t -> unit) -> Grpc.Status.t Lwt.t
+    Grpc.Buffer.t -> (string -> unit) -> Grpc.Status.t Lwt.t
 
   type bidirectional_streaming =
-    Pbrt.Decoder.t Lwt_stream.t ->
-    (Pbrt.Encoder.t -> unit) ->
-    Grpc.Status.t Lwt.t
+    Grpc.Buffer.t Lwt_stream.t -> (string -> unit) -> Grpc.Status.t Lwt.t
 
   type t =
     | Unary of unary

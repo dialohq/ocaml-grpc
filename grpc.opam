@@ -13,7 +13,6 @@ depends: [
   "dune" {>= "2.7"}
   "ocaml" {>= "4.08"}
   "uri" {>= "4.0.0"}
-  "ocaml-protoc" {>= "2.0.0"}
   "h2" {>= "0.7.0"}
   "odoc" {with-doc}
 ]
