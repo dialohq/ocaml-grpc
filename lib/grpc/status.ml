@@ -16,6 +16,7 @@ type code =
   | Unavailable
   | Data_loss
   | Unauthenticated
+[@@deriving show]
 
 let int_of_code = function
   | OK -> 0
@@ -56,7 +57,7 @@ let code_of_int = function
   | 16 -> Some Unauthenticated
   | _ -> None
 
-type t = { code : code; message : string option }
+type t = { code : code; message : string option } [@@deriving show]
 
 let v ?message code = { code; message }
 
