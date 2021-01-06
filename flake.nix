@@ -64,7 +64,13 @@
 
           nixpkgs-fmt
           rnix-lsp
-        ] ++ (with ocamlPackages; [ dune_2 ocaml-protoc uri ]);
+        ] ++ (with ocamlPackages; [
+          dune_2
+          ocaml-protoc
+          uri
+          ppx_deriving
+          lwt
+        ]);
       };
     };
 }
