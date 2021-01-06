@@ -1,6 +1,12 @@
 {
   description = "A modular gRPC library";
 
+  inputs = {
+    nixpkgs = {
+      url = "github:sternenseemann/nixpkgs/ppx_deriving-5.1";
+    };
+  };
+
   outputs = { self, nixpkgs }:
     with import nixpkgs { system = "x86_64-linux"; };
     let
@@ -36,7 +42,7 @@
             src = self;
             useDune2 = true;
             doCheck = true;
-            buildInputs = (with ocamlPackages; [ uri h2 ]);
+            buildInputs = (with ocamlPackages; [ uri h2 ppx_deriving ]);
           };
 
         grpc-lwt =
