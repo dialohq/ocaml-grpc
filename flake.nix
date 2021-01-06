@@ -11,7 +11,7 @@
     with import nixpkgs { system = "x86_64-linux"; };
     let
       h2-src = fetchFromGitHub {
-        owner = "anmonteiro";
+        owner = "jeffa5";
         repo = "ocaml-h2";
         rev = "36bd7bfa46fb0eb2bce184413f663a46a5e0dd3b";
         sha256 = "sha256-8vsRpx0JVN6KHOVfKit6LhlQqGTO1ofRhfyDgJ7dGz0=";
