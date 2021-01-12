@@ -7,8 +7,8 @@
       h2-src = fetchFromGitHub {
         owner = "anmonteiro";
         repo = "ocaml-h2";
-        rev = "7df18604ae389e3151f79e2be5dfd4278d4377fb";
-        sha256 = "sha256-GssTDTHjXoq2jUhFtyg/nhOyjzdH9J4U6v3RIcnS+BQ=";
+        rev = "36bd7bfa46fb0eb2bce184413f663a46a5e0dd3b";
+        sha256 = "sha256-8vsRpx0JVN6KHOVfKit6LhlQqGTO1ofRhfyDgJ7dGz0=";
       };
 
       hpack = ocamlPackages.buildDunePackage {
