@@ -1,6 +1,6 @@
 type t = { mutable contents : bytes; mutable length : int }
 
-let v ?(capacity = 2048) () = { contents = Bytes.create capacity; length = 0 }
+let v ?(capacity = 1024) () = { contents = Bytes.create capacity; length = 0 }
 
 let length t = t.length
 
