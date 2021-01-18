@@ -23,10 +23,6 @@
  (description
    "This library builds some of the signatures and implementations of gRPC functionality. This is used in the more specialised package `grpc-lwt` which has more machinery, however this library can also be used to do some bits yourself.")
  (depends
-  (ppx_deriving
-   (>= 5.2))
-  (bigstringaf
-   (>= 0.7.0))
   (ocaml
    (>= 4.08))
   (uri
@@ -39,8 +35,6 @@
  (synopsis "An Lwt implementation of gRPC")
  (description "Functionality for building gRPC services and rpcs with `lwt`.")
  (depends
-  (stringext
-   (>= 1.6.0))
   (grpc :dev)
   (lwt
    (>= 5.0.0))

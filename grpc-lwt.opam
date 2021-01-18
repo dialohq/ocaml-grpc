@@ -10,7 +10,6 @@ doc: "https://jeffas.io/ocaml-grpc"
 bug-reports: "https://github.com/jeffa5/ocaml-grpc/issues"
 depends: [
   "dune" {>= "2.7"}
-  "stringext" {>= "1.6.0"}
   "grpc" {dev}
   "lwt" {>= "5.0.0"}
   "h2" {dev}
