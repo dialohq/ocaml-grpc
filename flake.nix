@@ -61,18 +61,18 @@
       devShell.x86_64-linux = mkShell {
         buildInputs = [
           ocaml
+          opam
+
+          m4
+          pkgconfig
 
           nixpkgs-fmt
           rnix-lsp
-        ] ++ (with ocamlPackages; [
-          findlib
-          dune_2
-          ocaml-protoc
-          uri
-          ppx_deriving
-          lwt
-          h2
-        ]);
+        ];
+
+        shellHook = ''
+          eval $(opam env)
+        '';
       };
     };
 }
