@@ -11,6 +11,8 @@ doc: "https://jeffas.io/ocaml-grpc"
 bug-reports: "https://github.com/jeffa5/ocaml-grpc/issues"
 depends: [
   "dune" {>= "2.7"}
+  "ppx_deriving" {>= "5.2"}
+  "bigstringaf" {>= "0.7.0"}
   "ocaml" {>= "4.08"}
   "uri" {>= "4.0.0"}
   "h2" {>= "0.7.0"}
