@@ -1,4 +1,0 @@
-pin-depends: [
-    [ "h2.dev" "git+https://github.com/jeffa5/ocaml-h2#62087bb94d862e97661219c56fc3345b74ac72f9" ]
-    [ "h2-lwt.dev" "git+https://github.com/jeffa5/ocaml-h2#62087bb94d862e97661219c56fc3345b74ac72f9" ]
-]

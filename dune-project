@@ -28,14 +28,17 @@
   (uri
    (>= 4.0.0))
   (h2
-   (>= 0.7.0))))
+   (>= 0.7.0))
+  ppx_deriving))
 
 (package
  (name grpc-lwt)
  (synopsis "An Lwt implementation of gRPC")
  (description "Functionality for building gRPC services and rpcs with `lwt`.")
  (depends
-  (grpc :dev)
+  grpc
   (lwt
    (>= 5.0.0))
-  (h2 :dev)))
+  (h2
+   (>= 0.8.0))
+  stringext))
