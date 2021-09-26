@@ -14,12 +14,14 @@ let grpc_recv_streaming body buffer_push =
   H2.Body.schedule_read body ~on_read ~on_eof
 
 let grpc_send_streaming_client body encoder_stream =
-  Lwt_stream.iter
-    (fun encoder ->
-      let payload = Grpc.Message.make encoder in
-      H2.Body.write_string body payload;
-      H2.Body.close_writer body)
-    encoder_stream
+  let+ () =
+    Lwt_stream.iter
+      (fun encoder ->
+        let payload = Grpc.Message.make encoder in
+        H2.Body.write_string body payload)
+      encoder_stream
+  in
+  H2.Body.close_writer body
 
 let grpc_send_streaming request encoder_stream status_mvar =
   let body =
