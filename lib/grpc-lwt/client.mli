@@ -41,6 +41,7 @@ val call :
   ?scheme:string ->
   handler:'a Rpc.handler ->
   do_request:do_request ->
+  ?headers:H2.Headers.t ->
   unit ->
   ('a * Grpc.Status.t, Grpc.Status.t) result Lwt.t
 (** [call ~service ~rpc ~handler ~do_request ()] calls the rpc endpoint given

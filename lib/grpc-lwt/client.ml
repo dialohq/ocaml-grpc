@@ -8,19 +8,19 @@ type do_request =
   response_handler:response_handler ->
   [ `write ] H2.Body.t
 
-let make_request ~scheme ~service ~rpc =
+let make_request ~scheme ~service ~rpc ~headers =
   let request =
-    H2.Request.create ~scheme `POST
-      ("/" ^ service ^ "/" ^ rpc)
-      ~headers:
-        H2.Headers.(
-          add_list empty
-            [ ("te", "trailers"); ("content-type", "application/grpc+proto") ])
+    H2.Request.create ~scheme `POST ("/" ^ service ^ "/" ^ rpc) ~headers
   in
   request
 
-let call ~service ~rpc ?(scheme = "https") ~handler ~do_request () =
-  let request = make_request ~service ~rpc ~scheme in
+let default_headers =
+  H2.Headers.of_list
+    [ ("te", "trailers"); ("content-type", "application/grpc+proto") ]
+
+let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
+    ?(headers = default_headers) () =
+  let request = make_request ~service ~rpc ~scheme ~headers in
   let read_body, read_body_notify = Lwt.wait () in
   let handler_res, handler_res_notify = Lwt.wait () in
   let out, out_notify = Lwt.wait () in
