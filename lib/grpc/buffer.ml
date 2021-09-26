@@ -6,15 +6,17 @@ let length t = t.length
 
 let capacity t = Bytes.length t.contents
 
-let extend t amount =
-  t.contents <- Bytes.extend t.contents 0 amount;
-  t.length <- t.length + amount
+let extend t amount = t.contents <- Bytes.extend t.contents 0 amount
 
-let log2 i = log (float_of_int i) /. log 2.
+let rec nearest_power_of_2 acc target =
+  if acc >= target then acc else nearest_power_of_2 (acc * 2) target
 
 let ensure_size t ~extra =
-  if t.length + extra >= capacity t then
-    extend t (int_of_float (log2 (t.length + extra)) - capacity t)
+  let current_capacity = capacity t in
+  let needed_capacity = t.length + extra in
+  if needed_capacity >= current_capacity then
+    extend t
+      (nearest_power_of_2 current_capacity needed_capacity - current_capacity)
 
 let copy_from_bigstringaf ~src_off ~src ~dst ~length =
   ensure_size dst ~extra:length;
