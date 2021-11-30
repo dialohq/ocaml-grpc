@@ -38,27 +38,26 @@ let handle_request t reqd =
                 | Some encodings ->
                     let encodings = String.split_on_char ',' encodings in
                     if List.mem "identity" encodings then route ()
-                    else respond_with `Not_acceptable )
+                    else respond_with `Not_acceptable)
             | Some _ ->
                 (* TODO: not sure if there is a specific way to handle this in grpc *)
                 respond_with `Bad_request
           else respond_with `Unsupported_media_type
-      | None -> respond_with `Unsupported_media_type )
+      | None -> respond_with `Unsupported_media_type)
   | _ -> respond_with `Not_found
 
 module Rpc = struct
   open Lwt.Syntax
 
-  type unary = Grpc.Buffer.t -> (Grpc.Status.t * string option) Lwt.t
+  type unary = string -> (Grpc.Status.t * string option) Lwt.t
 
   type client_streaming =
-    Grpc.Buffer.t Lwt_stream.t -> (Grpc.Status.t * string option) Lwt.t
+    string Lwt_stream.t -> (Grpc.Status.t * string option) Lwt.t
 
-  type server_streaming =
-    Grpc.Buffer.t -> (string -> unit) -> Grpc.Status.t Lwt.t
+  type server_streaming = string -> (string -> unit) -> Grpc.Status.t Lwt.t
 
   type bidirectional_streaming =
-    Grpc.Buffer.t Lwt_stream.t -> (string -> unit) -> Grpc.Status.t Lwt.t
+    string Lwt_stream.t -> (string -> unit) -> Grpc.Status.t Lwt.t
 
   type t =
     | Unary of unary
@@ -100,9 +99,9 @@ module Rpc = struct
         | None -> Lwt.return Grpc.Status.(v OK)
         | Some decoder ->
             let+ status, encoder = f decoder in
-            ( match encoder with
+            (match encoder with
             | None -> ()
-            | Some encoder -> encoder_push encoder );
+            | Some encoder -> encoder_push encoder);
             status)
 end
 
@@ -133,7 +132,7 @@ module Service = struct
           | Server_streaming f ->
               Lwt.async (fun () -> Rpc.server_streaming ~f reqd)
           | Bidirectional_streaming f ->
-              Lwt.async (fun () -> Rpc.bidirectional_streaming ~f reqd) )
+              Lwt.async (fun () -> Rpc.bidirectional_streaming ~f reqd))
       | None -> respond_with `Not_found
     else respond_with `Not_found
 end

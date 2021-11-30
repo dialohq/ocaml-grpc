@@ -1,7 +1,7 @@
 open Grpc_lwt
 
 let say_hello buffer =
-  let decoder = Pbrt.Decoder.of_bytes (Grpc.Buffer.to_bytes buffer) in
+  let decoder = Pbrt.Decoder.of_string buffer in
   let req = Greeter.Greeter_pb.decode_hello_request decoder in
   let message =
     if req.name = "" then "You forgot your name!"

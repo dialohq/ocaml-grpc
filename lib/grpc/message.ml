@@ -31,8 +31,8 @@ let extract_message buf =
     in
     if compressed then failwith "Compressed flag set but not supported";
     if Buffer.length buf - 5 >= length then
-      Some (Buffer.sub buf ~start:5 ~length)
-    else None )
+      Some (Buffer.sub buf ~start:5 ~length |> Buffer.to_string)
+    else None)
   else None
 
 (** [get_message_and_shift buf] tries to extract the first grpc message
@@ -42,7 +42,7 @@ let get_message_and_shift buf =
   match message with
   | None -> None
   | Some message ->
-      let mlen = Buffer.length message in
+      let mlen = String.length message in
       Buffer.shift_left buf ~by:(5 + mlen);
       Some message
 

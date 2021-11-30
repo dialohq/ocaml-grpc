@@ -3,24 +3,24 @@ module Rpc : sig
     [ `write ] H2.Body.t -> [ `read ] H2.Body.t Lwt.t -> 'a Lwt.t
 
   val bidirectional_streaming :
-    f:((string -> unit) -> Grpc.Buffer.t Lwt_stream.t -> 'a Lwt.t) -> 'a handler
+    f:((string -> unit) -> string Lwt_stream.t -> 'a Lwt.t) -> 'a handler
   (** [bidirectional_streaming ~f write read] sets up the sending and receiving
       logic using [write] and [read], then calls [f] with a push function for
       requests and a stream of responses. *)
 
   val client_streaming :
-    f:((string -> unit) -> Grpc.Buffer.t option Lwt.t -> 'a Lwt.t) -> 'a handler
+    f:((string -> unit) -> string option Lwt.t -> 'a Lwt.t) -> 'a handler
   (** [client_streaming ~f write read] sets up the sending and receiving
       logic using [write] and [read], then calls [f] with a push function for
       requests and promise for the response. *)
 
   val server_streaming :
-    f:(Grpc.Buffer.t Lwt_stream.t -> 'a Lwt.t) -> string -> 'a handler
+    f:(string Lwt_stream.t -> 'a Lwt.t) -> string -> 'a handler
   (** [server_streaming ~f enc write read] sets up the sending and receiving
       logic using [write] and [read], then sends [enc] and calls [f] with a
       stream of responses. *)
 
-  val unary : f:(Grpc.Buffer.t option Lwt.t -> 'a Lwt.t) -> string -> 'a handler
+  val unary : f:(string option Lwt.t -> 'a Lwt.t) -> string -> 'a handler
   (** [unary ~f enc write read] sets up the sending and receiving
       logic using [write] and [read], then sends [enc] and calls [f] with a
       promise for the response. *)

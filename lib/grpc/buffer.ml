@@ -30,6 +30,8 @@ let sub ~start ~length t =
 
 let to_bytes t = Bytes.sub t.contents 0 t.length
 
+let to_string t = to_bytes t |> Bytes.to_string
+
 let shift_left ~by t =
   Bytes.blit t.contents by t.contents 0 (t.length - by);
   t.length <- t.length - by

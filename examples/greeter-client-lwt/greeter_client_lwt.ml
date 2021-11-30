@@ -23,9 +23,7 @@ let call_server address port req =
            let+ decoder = decoder in
            match decoder with
            | Some decoder ->
-               let decoder =
-                 Pbrt.Decoder.of_bytes (Grpc.Buffer.to_bytes decoder)
-               in
+               let decoder = Pbrt.Decoder.of_string decoder in
                Greeter.Greeter_pb.decode_hello_reply decoder
            | None -> Greeter.Greeter_types.default_hello_reply ()))
     ()
