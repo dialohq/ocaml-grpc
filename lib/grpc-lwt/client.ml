@@ -30,7 +30,7 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
         if response.status <> `OK then (
           Lwt.wakeup_later out_notify
             (Error (Grpc.Status.v Grpc.Status.Unknown));
-          Lwt.return_unit )
+          Lwt.return_unit)
         else
           let+ handler_res = handler_res in
           Lwt.wakeup_later out_notify (Ok handler_res))
@@ -43,7 +43,7 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
       | Some s -> (
           match int_of_string_opt s with
           | None -> None
-          | Some i -> Grpc.Status.code_of_int i )
+          | Some i -> Grpc.Status.code_of_int i)
     in
     match code with
     | None -> ()
@@ -70,14 +70,12 @@ module Rpc = struct
   let bidirectional_streaming ~f write_body read_body =
     let decoder_stream, decoder_push = Lwt_stream.create () in
     Lwt.async (fun () ->
-        let+ read_body = read_body in
+        let+ read_body in
         Connection.grpc_recv_streaming read_body decoder_push);
     let encoder_stream, encoder_push = Lwt_stream.create () in
     Lwt.async (fun () ->
         Connection.grpc_send_streaming_client write_body encoder_stream);
-    let+ out = f (fun encoder -> encoder_push (Some encoder)) decoder_stream in
-    encoder_push None;
-    out
+    f encoder_push decoder_stream
 
   let client_streaming ~f =
     bidirectional_streaming ~f:(fun encoder_push decoder_stream ->
@@ -86,12 +84,18 @@ module Rpc = struct
 
   let server_streaming ~f enc =
     bidirectional_streaming ~f:(fun encoder_push decoder_stream ->
-        encoder_push enc;
+        (fun enc ->
+          encoder_push (Some enc);
+          encoder_push None)
+          enc;
         f decoder_stream)
 
   let unary ~f enc =
     bidirectional_streaming ~f:(fun encoder_push decoder_stream ->
-        encoder_push enc;
+        (fun enc ->
+          encoder_push (Some enc);
+          encoder_push None)
+          enc;
         let decoder = Lwt_stream.get decoder_stream in
         f decoder)
 end
