@@ -16,13 +16,17 @@ type code =
   | Unavailable
   | Data_loss
   | Unauthenticated
+[@@deriving show]
 
 (** [code] represents the valid gRPC status codes to respond with. *)
 
 val int_of_code : code -> int
 (** [int_of_code c] returns the corresponding integer status code for [c]. *)
 
-type t
+val code_of_int : int -> code option
+(** [code_of_int i] returns the corresponding code for [i] if it exists. *)
+
+type t [@@deriving show]
 (** [t] represents a full gRPC status, this includes code and optional message. *)
 
 val v : ?message:string -> code -> t

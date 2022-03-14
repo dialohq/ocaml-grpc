@@ -15,6 +15,9 @@ val capacity : t -> int
 val to_bytes : t -> bytes
 (** [to_bytes t] converts the valid data in the buffer into bytes. *)
 
+val to_string : t -> string
+(** [to_string t] converts the valid data in the buffer into a string. *)
+
 val copy_from_bigstringaf :
   src_off:int -> src:Bigstringaf.t -> dst:t -> length:int -> unit
 (** [copy_from_bigstringaf ~src_off ~src ~dst ~length] copies data from [src]

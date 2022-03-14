@@ -1,11 +1,17 @@
 {
   description = "A modular gRPC library";
 
+  inputs = {
+    nixpkgs = {
+      url = "github:sternenseemann/nixpkgs/ppx_deriving-5.1";
+    };
+  };
+
   outputs = { self, nixpkgs }:
     with import nixpkgs { system = "x86_64-linux"; };
     let
       h2-src = fetchFromGitHub {
-        owner = "anmonteiro";
+        owner = "jeffa5";
         repo = "ocaml-h2";
         rev = "36bd7bfa46fb0eb2bce184413f663a46a5e0dd3b";
         sha256 = "sha256-8vsRpx0JVN6KHOVfKit6LhlQqGTO1ofRhfyDgJ7dGz0=";
@@ -36,7 +42,7 @@
             src = self;
             useDune2 = true;
             doCheck = true;
-            buildInputs = (with ocamlPackages; [ uri h2 ]);
+            buildInputs = (with ocamlPackages; [ uri h2 ppx_deriving ]);
           };
 
         grpc-lwt =
@@ -55,10 +61,18 @@
       devShell.x86_64-linux = mkShell {
         buildInputs = [
           ocaml
+          opam
+
+          m4
+          pkgconfig
 
           nixpkgs-fmt
           rnix-lsp
-        ] ++ (with ocamlPackages; [ dune_2 ocaml-protoc uri ]);
+        ];
+
+        shellHook = ''
+          eval $(opam env)
+        '';
       };
     };
 }
