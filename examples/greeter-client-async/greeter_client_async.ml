@@ -2,23 +2,26 @@ open! Core
 open! Async
 
 let call_server address port req =
-  Unix.Addr_info.get ~host:address ~service:(Int.to_string port)
-    [ Unix.Addr_info.AI_FAMILY Unix.PF_INET ]
-  >>= fun addresses ->
-  let socket = Unix.Socket.create Unix.Socket.Type.tcp in
-  let address =
-    let sockaddr =
-      match addresses with
-      | hd :: _ -> hd.Unix.Addr_info.ai_addr
-      | [] -> failwithf "call_server: no address for %s %d" address port ()
+  let%bind socket =
+    let%bind addresses =
+      Unix.Addr_info.get ~host:address ~service:(Int.to_string port)
+        [ Unix.Addr_info.AI_FAMILY Unix.PF_INET ]
     in
-    match sockaddr with
-    | Unix.ADDR_INET (a, i) -> `Inet (a, i)
-    | ADDR_UNIX u ->
-        failwithf "can't make an Socket.Address.Inet out of a UNIX socket %s" u
-          ()
+    let socket = Unix.Socket.create Unix.Socket.Type.tcp in
+    let address =
+      let sockaddr =
+        match addresses with
+        | hd :: _ -> hd.Unix.Addr_info.ai_addr
+        | [] -> failwithf "call_server: no address for %s %d" address port ()
+      in
+      match sockaddr with
+      | Unix.ADDR_INET (a, i) -> `Inet (a, i)
+      | ADDR_UNIX u ->
+          failwithf "can't make an Socket.Address.Inet out of a UNIX socket %s"
+            u ()
+    in
+    Unix.Socket.connect socket address
   in
-  Unix.Socket.connect socket address >>= fun socket ->
   let error_handler = function
     | `Invalid_response_body_length _resp ->
         printf "invalid response body length\n%!"
@@ -27,7 +30,9 @@ let call_server address port req =
     | `Protocol_error (code, s) ->
         printf "protocol error: %s, %s\n" (H2.Error_code.to_string code) s
   in
-  H2_async.Client.create_connection ~error_handler socket >>= fun connection ->
+  let%bind connection =
+    H2_async.Client.create_connection ~error_handler socket
+  in
   (* code generation *)
   let enc = Pbrt.Encoder.create () in
   Greeter.Greeter_pb.encode_hello_request req enc;
