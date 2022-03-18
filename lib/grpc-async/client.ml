@@ -80,24 +80,38 @@ module Rpc = struct
   type 'a handler =
     [ `write ] H2.Body.t -> [ `read ] H2.Body.t Deferred.t -> 'a Deferred.t
 
-  let bidirectional_streaming ~f write_body read_body =
+  let bidirectional_streaming ~handler write_body read_body =
     let decoder_r, decoder_w = Async.Pipe.create () in
     don't_wait_for
       (let%map read_body = read_body in
        Connection.grpc_recv_streaming read_body decoder_w);
     let encoder_r, encoder_w = Async.Pipe.create () in
     don't_wait_for (Connection.grpc_send_streaming_client write_body encoder_r);
-    let%bind out =
-      f
-        (fun encoder -> Async.Pipe.write_without_pushback encoder_w encoder)
-        decoder_r
-    in
-    Async.Pipe.close encoder_w;
+    let%bind out = handler encoder_w decoder_r in
+    if not (Pipe.is_closed encoder_w) then Pipe.close encoder_w;
+    if not (Pipe.is_closed decoder_w) then Pipe.close decoder_w;
     return out
 
-  let unary ~f enc =
-    bidirectional_streaming ~f:(fun encoder_fun decoder_r ->
-        encoder_fun enc;
-        let decoder = Async.Pipe.read decoder_r in
-        f decoder)
+  let client_streaming ~handler write_body read_body =
+    bidirectional_streaming
+      ~handler:(fun encoder_w _decoder_r -> handler encoder_w)
+      write_body read_body
+
+  let server_streaming ~handler ~encoded_request write_body read_body =
+    bidirectional_streaming
+      ~handler:(fun encoder_w decoder_r ->
+        Async.Pipe.write_without_pushback encoder_w encoded_request;
+        Async.Pipe.close encoder_w;
+        handler decoder_r)
+      write_body read_body
+
+  let unary ~handler ~encoded_request write_body read_body =
+    bidirectional_streaming
+      ~handler:(fun encoder_w decoder_r ->
+        Async.Pipe.write_without_pushback encoder_w encoded_request;
+        Async.Pipe.close encoder_w;
+        match%bind Async.Pipe.read decoder_r with
+        | `Eof -> handler None
+        | `Ok a -> handler (Some a))
+      write_body read_body
 end

@@ -39,13 +39,15 @@ let call_server address port req =
   Grpc_async.Client.call ~service:"mypackage.Greeter" ~rpc:"SayHello"
     ~do_request:(H2_async.Client.request connection ~error_handler:ignore)
     ~handler:
-      (Grpc_async.Client.Rpc.unary (Pbrt.Encoder.to_string enc)
-         ~f:(fun decoder ->
-           match%map decoder with
-           | `Ok decoder ->
-               let decoder = Pbrt.Decoder.of_string decoder in
-               Greeter.Greeter_pb.decode_hello_reply decoder
-           | `Eof -> Greeter.Greeter_types.default_hello_reply ()))
+      (Grpc_async.Client.Rpc.unary ~encoded_request:(Pbrt.Encoder.to_string enc)
+         ~handler:(function
+        | None -> return (Greeter.Greeter_types.default_hello_reply ())
+        | Some response ->
+            let response =
+              Pbrt.Decoder.of_string response
+              |> Greeter.Greeter_pb.decode_hello_reply
+            in
+            return response))
     ()
 
 let () =
