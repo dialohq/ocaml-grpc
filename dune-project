@@ -21,7 +21,7 @@
  (name grpc)
  (synopsis "A modular gRPC library")
  (description
-   "This library builds some of the signatures and implementations of gRPC functionality. This is used in the more specialised package `grpc-lwt` which has more machinery, however this library can also be used to do some bits yourself.")
+  "This library builds some of the signatures and implementations of gRPC functionality. This is used in the more specialised package `grpc-lwt` which has more machinery, however this library can also be used to do some bits yourself.")
  (depends
   (ocaml
    (>= 4.08))
@@ -34,11 +34,25 @@
 (package
  (name grpc-lwt)
  (synopsis "An Lwt implementation of gRPC")
- (description "Functionality for building gRPC services and rpcs with `lwt`.")
+ (description
+  "Functionality for building gRPC services and rpcs with `lwt`.")
  (depends
   grpc
   (lwt
    (>= 5.0.0))
   (h2
    (>= 0.8.0))
+  stringext))
+
+(package
+ (name grpc-async)
+ (synopsis "An Async implementation of gRPC")
+ (description
+  "Functionality for building gRPC services and rpcs with `async`.")
+ (depends
+  grpc
+  async
+  (h2
+   (>= 0.8.0))
+  h2-async
   stringext))
