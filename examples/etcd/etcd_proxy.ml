@@ -29,15 +29,15 @@ let connection () =
       persistent_connection := Some connection;
       Lwt.return connection
 
-let do_grpc ~service ~rpc ~request ~decode ~pp =
+let do_grpc ~service ~rpc ~request ~decode ~show =
   let f response =
     response >>= function
     | Some response ->
         Lwt.return
           (match decode response with
-          | Ok value -> Ok (Format.asprintf "%a\n" pp value)
+          | Ok value -> Ok (Some (show value))
           | Error _ -> Error "decoding error")
-    | None -> Lwt.return (Error "no response")
+    | None -> Lwt.return (Ok None)
   in
   let handler = Grpc_lwt.Client.Rpc.unary ~f request in
   connection () >>= fun connection ->
@@ -54,7 +54,7 @@ let post ~key ~value =
     Ocaml_protoc_plugin.Reader.create response |> PutResponse.from_proto
   in
   do_grpc ~service:"etcdserverpb.KV" ~rpc:"Put" ~request ~decode
-    ~pp:PutResponse.pp
+    ~show:PutResponse.show
 
 let get ~key =
   let request =
@@ -65,7 +65,7 @@ let get ~key =
     Ocaml_protoc_plugin.Reader.create response |> RangeResponse.from_proto
   in
   do_grpc ~service:"etcdserverpb.KV" ~rpc:"Range" ~request ~decode
-    ~pp:RangeResponse.pp
+    ~show:RangeResponse.show
 
 let server =
   let callback _conn req body =
@@ -81,15 +81,19 @@ let server =
     >>= function
     | Ok (Ok ret, status) ->
         Format.printf "Success status: %a@." Grpc.Status.pp status;
-        Server.respond_string ~status:`OK ~body:ret ()
+        let body =
+          match ret with
+          | Some ret -> Format.asprintf "%s\n%a\n" ret Grpc.Status.pp status
+          | None -> Format.asprintf "%a\n" Grpc.Status.pp status
+        in
+        Server.respond_string ~status:`OK ~body ()
     | Ok (Error error, status) ->
         Format.printf "Status: %a@." Grpc.Status.pp status;
-        Server.respond_string ~status:`Internal_server_error ~body:error ()
+        let body = Format.asprintf "%s\n%a\n" error Grpc.Status.pp status in
+        Server.respond_string ~status:`Internal_server_error ~body ()
     | Error status ->
         Format.printf "Error status: %a@." Grpc.Status.pp status;
-        let body =
-          Option.value ~default:"No status message" (Grpc.Status.message status)
-        in
+        let body = Format.asprintf "%a\n" Grpc.Status.pp status in
         Server.respond_string ~status:`Internal_server_error ~body ()
   in
   Server.create ~mode:(`TCP (`Port cohttp_port)) (Server.make ~callback ())
