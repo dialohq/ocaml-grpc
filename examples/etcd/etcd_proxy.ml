@@ -3,14 +3,10 @@ open Cohttp
 open Cohttp_lwt_unix
 open Etcd.Etcdserverpb
 
-let etcd_host = "127.0.0.1"
-let etcd_port = 2379
-let cohttp_port = 8080
 let persistent_connection = ref None
 
-let create_connection () =
-  Lwt_unix.getaddrinfo etcd_host (string_of_int etcd_port) []
-  >>= fun addresses ->
+let create_connection ~host ~port =
+  Lwt_unix.getaddrinfo host (string_of_int port) [] >>= fun addresses ->
   let socket = Lwt_unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
   match addresses with
   | { Unix.ai_addr; _ } :: _ ->
@@ -18,18 +14,18 @@ let create_connection () =
       H2_lwt_unix.Client.create_connection ~error_handler:ignore socket
   | _ -> assert false
 
-let connection () =
+let connection ~host ~port =
   match !persistent_connection with
   | Some connection when H2_lwt_unix.Client.is_closed connection = false ->
       print_endline "Reusing existing connection.";
       Lwt.return connection
   | _ ->
-      create_connection () >>= fun connection ->
+      create_connection ~host ~port >>= fun connection ->
       print_endline "Connection established.";
       persistent_connection := Some connection;
       Lwt.return connection
 
-let do_grpc ~service ~rpc ~request ~decode ~show =
+let do_grpc ~host ~port ~service ~rpc ~request ~decode ~show =
   let f response =
     response >>= function
     | Some response ->
@@ -40,7 +36,7 @@ let do_grpc ~service ~rpc ~request ~decode ~show =
     | None -> Lwt.return (Ok None)
   in
   let handler = Grpc_lwt.Client.Rpc.unary ~f request in
-  connection () >>= fun connection ->
+  connection ~host ~port >>= fun connection ->
   Grpc_lwt.Client.call ~service ~rpc ~scheme:"http" ~handler
     ~do_request:(H2_lwt_unix.Client.request connection ~error_handler:ignore)
     ()
@@ -67,14 +63,14 @@ let get ~key =
   do_grpc ~service:"etcdserverpb.KV" ~rpc:"Range" ~request ~decode
     ~show:RangeResponse.show
 
-let server =
+let server ~etcd_host ~etcd_port ~port =
   let callback _conn req body =
     let key = req |> Request.uri |> Uri.path in
     let meth = req |> Request.meth |> Code.string_of_method in
     body |> Cohttp_lwt.Body.to_string >>= fun body ->
     (match meth with
-    | "GET" -> get ~key
-    | "POST" -> post ~key ~value:body
+    | "GET" -> get ~host:etcd_host ~port:etcd_port ~key
+    | "POST" -> post ~host:etcd_host ~port:etcd_port ~key ~value:body
     | _ ->
         let message = "Only GET and POST are implemented!" in
         Lwt.return (Error (Grpc.Status.v ~message Unimplemented)))
@@ -96,6 +92,13 @@ let server =
         let body = Format.asprintf "%a\n" Grpc.Status.pp status in
         Server.respond_string ~status:`Internal_server_error ~body ()
   in
-  Server.create ~mode:(`TCP (`Port cohttp_port)) (Server.make ~callback ())
+  Server.create ~mode:(`TCP (`Port port)) (Server.make ~callback ())
 
-let () = Lwt_main.run server
+let () =
+  let etcd_host, etcd_port, port =
+    try (Sys.argv.(1), int_of_string Sys.argv.(2), int_of_string Sys.argv.(3))
+    with Invalid_argument _ ->
+      Printf.eprintf "Usage: %s ETCD_HOST ETCD_PORT PORT\n" Sys.argv.(0);
+      exit 1
+  in
+  Lwt_main.run (server ~etcd_host ~etcd_port ~port)
