@@ -5,4 +5,4 @@
 
 # Acknowledgments
 
-This MVP version of this library was built by @jeffa5. Andrew gratiously passed the baton to our team to develop it into a full fledged, production-ready implementation.
+This MVP version of this library was built by @jeffa5. Andrew gratiously passed the baton to our team to develop it into a full fledged production-ready implementation.
