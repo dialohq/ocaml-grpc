@@ -65,10 +65,10 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
       Lwt.wakeup_later handler_res_notify handler_res);
   let* out in
   let+ status = 
-    match Lwt.state status with 
+    match Lwt.is_sleeping status with 
     (* In case no grpc-status appears in headers or trailers. *)
-    | Sleep -> let+ status in status
-    | _ -> Lwt.return @@ Grpc.Status.v ~message:"Server did not return grpc-status" Grpc.Status.Unknown
+    | false -> let+ status in status
+    | true -> Lwt.return @@ Grpc.Status.v ~message:"Server did not return grpc-status" Grpc.Status.Unknown
   in
   match out with Error _ as e -> e | Ok out -> Ok (out, status)
 
