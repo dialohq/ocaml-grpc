@@ -1,0 +1,18 @@
+(rule
+ (targets etcd.ml etcd_service.ml)
+ (deps
+  (:proto etcd.proto etcd_service.proto))
+ (action
+  (run
+   protoc
+   -I
+   .
+   "--ocaml_out=annot=[@@deriving show { with_path = false }]:."
+   %{proto})))
+
+(executable
+ (name etcd_proxy)
+ (modules Etcd_proxy Etcd Etcd_service)
+ (libraries grpc grpc-lwt ocaml-protoc-plugin lwt lwt.unix cohttp cohttp-lwt cohttp-lwt-unix conduit-lwt-unix h2 h2-lwt-unix uri)
+ (preprocess
+  (pps ppx_deriving.show)))

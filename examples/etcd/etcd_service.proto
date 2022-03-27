@@ -1,0 +1,14 @@
+syntax = "proto3";
+package etcdserverpb;
+
+import "etcd.proto";
+
+service KV {
+  // Range gets the keys in the range from the key-value store.
+  rpc Range(RangeRequest) returns (RangeResponse) {}
+
+  // Put puts the given key into the key-value store.
+  // A put request increments the revision of the key-value store
+  // and generates one event in the event history.
+  rpc Put(PutRequest) returns (PutResponse) {}
+}
