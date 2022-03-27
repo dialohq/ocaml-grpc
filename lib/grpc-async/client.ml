@@ -67,7 +67,11 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
      Ivar.fill handler_res_ivar handler_res;
      return ());
   let%bind out = Ivar.read out_ivar in
-  let%bind trailers_status = Ivar.read trailers_status_ivar in
+  let%bind trailers_status =
+    (* In case no grpc-status appears in headers or trailers. *)
+    if Ivar.is_full trailers_status_ivar then Ivar.read trailers_status_ivar
+    else return (Grpc.Status.v ~message:"Server did not return grpc-status" Grpc.Status.Unknown) 
+  in
   match out with
   | Error _ as e -> return e
   | Ok out -> return (Ok (out, trailers_status))
