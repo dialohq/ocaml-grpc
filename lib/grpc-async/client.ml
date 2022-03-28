@@ -56,7 +56,7 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
       | _ ->
           Ivar.fill out_ivar (Error (Grpc.Status.v Grpc.Status.Unknown));
           return ());
-    don't_wait_for @@ return @@ trailers_handler response.headers
+    don't_wait_for (return (trailers_handler response.headers))
   in
   let write_body : [ `write ] H2.Body.t =
     do_request ?trailers_handler:(Some trailers_handler) request
@@ -70,7 +70,8 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
   let%bind trailers_status =
     (* In case no grpc-status appears in headers or trailers. *)
     if Ivar.is_full trailers_status_ivar then Ivar.read trailers_status_ivar
-    else return (Grpc.Status.v ~message:"Server did not return grpc-status" Grpc.Status.Unknown) 
+    else return (
+      Grpc.Status.v ~message:"Server did not return grpc-status" Grpc.Status.Unknown) 
   in
   match out with
   | Error _ as e -> return e

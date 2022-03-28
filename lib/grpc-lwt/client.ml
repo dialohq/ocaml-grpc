@@ -54,7 +54,7 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
         else
           let+ handler_res in
           Lwt.wakeup_later out_notify (Ok handler_res));
-    Lwt.async(fun () -> Lwt.return @@ trailers_handler response.headers)
+    Lwt.async(fun () -> Lwt.return (trailers_handler response.headers))
   in
   let write_body =
     do_request ?trailers_handler:(Some trailers_handler) request
@@ -67,8 +67,9 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
   let+ status = 
     match Lwt.is_sleeping status with 
     (* In case no grpc-status appears in headers or trailers. *)
-    | false -> let+ status in status
-    | true -> Lwt.return @@ Grpc.Status.v ~message:"Server did not return grpc-status" Grpc.Status.Unknown
+    | false -> status
+    | true -> Lwt.return (
+      Grpc.Status.v ~message:"Server did not return grpc-status" Grpc.Status.Unknown)
   in
   match out with Error _ as e -> e | Ok out -> Ok (out, status)
 
