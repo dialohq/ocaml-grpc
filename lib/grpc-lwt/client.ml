@@ -32,7 +32,7 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
             (Error (Grpc.Status.v Grpc.Status.Unknown));
           Lwt.return_unit)
         else
-          let+ handler_res in
+          let+ handler_res = handler_res in
           Lwt.wakeup_later out_notify (Ok handler_res))
   in
   let status, status_notify = Lwt.wait () in
@@ -59,8 +59,8 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
   Lwt.async (fun () ->
       let+ handler_res = handler write_body read_body in
       Lwt.wakeup_later handler_res_notify handler_res);
-  let* out in
-  let+ status in
+  let* out = out in
+  let+ status = status in
   match out with Error _ as e -> e | Ok out -> Ok (out, status)
 
 module Rpc = struct
@@ -70,7 +70,7 @@ module Rpc = struct
   let bidirectional_streaming ~f write_body read_body =
     let decoder_stream, decoder_push = Lwt_stream.create () in
     Lwt.async (fun () ->
-        let+ read_body in
+        let+ read_body = read_body in
         Connection.grpc_recv_streaming read_body decoder_push);
     let encoder_stream, encoder_push = Lwt_stream.create () in
     Lwt.async (fun () ->
