@@ -56,7 +56,7 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
       | _ ->
           Ivar.fill out_ivar (Error (Grpc.Status.v Grpc.Status.Unknown));
           return ());
-    don't_wait_for (return (trailers_handler response.headers))
+    trailers_handler response.headers
   in
   let write_body : [ `write ] H2.Body.t =
     do_request ?trailers_handler:(Some trailers_handler) request

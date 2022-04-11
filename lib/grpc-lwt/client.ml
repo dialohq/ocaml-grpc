@@ -54,7 +54,7 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
         else
           let+ handler_res in
           Lwt.wakeup_later out_notify (Ok handler_res));
-    Lwt.async(fun () -> Lwt.return (trailers_handler response.headers))
+    trailers_handler response.headers
   in
   let write_body =
     do_request ?trailers_handler:(Some trailers_handler) request
