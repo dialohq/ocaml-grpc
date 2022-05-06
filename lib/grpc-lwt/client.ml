@@ -21,10 +21,10 @@ let default_headers =
 let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
     ?(headers = default_headers) () =
   let request = make_request ~service ~rpc ~scheme ~headers in
-  let read_body, read_body_notify = Lwt.wait () in
-  let handler_res, handler_res_notify = Lwt.wait () in
-  let out, out_notify = Lwt.wait () in
-  let status, status_notify = Lwt.wait () in
+  let read_body, read_body_notify = Lwt.task () in
+  let handler_res, handler_res_notify = Lwt.task () in
+  let out, out_notify = Lwt.task () in
+  let status, status_notify = Lwt.task () in
   let trailers_handler headers =
     let code =
       match H2.Headers.get headers "grpc-status" with
