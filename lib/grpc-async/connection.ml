@@ -11,18 +11,18 @@ let grpc_recv_streaming body buffer_w =
     (match message with
     | Some message -> Async.Pipe.write_without_pushback buffer_w message
     | None -> ());
-    H2.Body.schedule_read body ~on_read ~on_eof
+    H2.Body.Reader.schedule_read body ~on_read ~on_eof
   in
-  H2.Body.schedule_read body ~on_read ~on_eof
+  H2.Body.Reader.schedule_read body ~on_read ~on_eof
 
 let grpc_send_streaming_client body encoder_stream =
   let%map () =
     Async.Pipe.iter encoder_stream ~f:(fun encoder ->
         let payload = Grpc.Message.make encoder in
-        H2.Body.write_string body payload;
+        H2.Body.Writer.write_string body payload;
         return ())
   in
-  H2.Body.close_writer body
+  H2.Body.Writer.close body
 
 (*
 let grpc_send_streaming request encoder_stream status_mvar =

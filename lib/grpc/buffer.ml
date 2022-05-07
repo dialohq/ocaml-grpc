@@ -1,11 +1,8 @@
 type t = { mutable contents : bytes; mutable length : int }
 
 let v ?(capacity = 1024) () = { contents = Bytes.create capacity; length = 0 }
-
 let length t = t.length
-
 let capacity t = Bytes.length t.contents
-
 let extend t amount = t.contents <- Bytes.extend t.contents 0 amount
 
 let rec nearest_power_of_2 acc target =
@@ -29,7 +26,6 @@ let sub ~start ~length t =
   { contents; length }
 
 let to_bytes t = Bytes.sub t.contents 0 t.length
-
 let to_string t = to_bytes t |> Bytes.to_string
 
 let shift_left ~by t =

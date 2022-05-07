@@ -4,10 +4,11 @@ open! Async
 type response_handler = H2.Client_connection.response_handler
 
 type do_request =
+  ?flush_headers_immediately:bool ->
   ?trailers_handler:(H2.Headers.t -> unit) ->
   H2.Request.t ->
   response_handler:response_handler ->
-  [ `write ] H2.Body.t
+  H2.Body.Writer.t
 
 let make_request ~scheme ~service ~rpc ~headers =
   let request =
@@ -25,7 +26,7 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
   let read_body_ivar = Ivar.create () in
   let handler_res_ivar = Ivar.create () in
   let out_ivar = Ivar.create () in
-  let response_handler (response : H2.Response.t) (body : [ `read ] H2.Body.t) =
+  let response_handler (response : H2.Response.t) (body : H2.Body.Reader.t) =
     Ivar.fill read_body_ivar body;
     don't_wait_for
       (match response.status with
@@ -54,9 +55,10 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
         let status = Grpc.Status.v ?message code in
         Ivar.fill trailers_status_ivar status
   in
-  let write_body : [ `write ] H2.Body.t =
-    do_request ?trailers_handler:(Some trailers_handler) request
-      ~response_handler
+  let flush_headers_immediately = None in
+  let write_body : H2.Body.Writer.t =
+    do_request ?flush_headers_immediately
+      ?trailers_handler:(Some trailers_handler) request ~response_handler
   in
   don't_wait_for
     (let%bind handler_res = handler write_body (Ivar.read read_body_ivar) in
@@ -78,7 +80,7 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
 
 module Rpc = struct
   type 'a handler =
-    [ `write ] H2.Body.t -> [ `read ] H2.Body.t Deferred.t -> 'a Deferred.t
+    H2.Body.Writer.t -> H2.Body.Reader.t Deferred.t -> 'a Deferred.t
 
   let bidirectional_streaming ~handler write_body read_body =
     let decoder_r, decoder_w = Async.Pipe.create () in

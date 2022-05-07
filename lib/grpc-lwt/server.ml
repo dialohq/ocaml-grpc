@@ -1,11 +1,9 @@
 module ServiceMap = Map.Make (String)
 
 type service = H2.Reqd.t -> unit
-
 type t = service ServiceMap.t
 
 let v () = ServiceMap.empty
-
 let add_service ~name ~service t = ServiceMap.add name service t
 
 let handle_request t reqd =
@@ -111,7 +109,6 @@ module Service = struct
   type t = Rpc.t RpcMap.t
 
   let v () = RpcMap.empty
-
   let add_rpc ~name ~rpc t = RpcMap.add name rpc t
 
   let handle_request (t : t) reqd =
