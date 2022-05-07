@@ -46,7 +46,7 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
             Ivar.fill trailers_status_ivar status
         | _ -> (* This should never happen, but just in case. *) ())
   in
-  let response_handler (response : H2.Response.t) (body : [ `read ] H2.Body.t) =
+  let response_handler (response : H2.Response.t) (body : H2.Body.Reader.t) =
     Ivar.fill read_body_ivar body;
     don't_wait_for
       (match response.status with
