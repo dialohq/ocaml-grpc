@@ -1,0 +1,17 @@
+(executable
+ (name greeter_client_tls_async)
+ (libraries
+  grpc
+  grpc-async
+  ocaml-protoc
+  async
+  async_kernel
+  async_unix
+  core_kernel
+  core
+  greeter
+  tls-async
+  h2
+  h2-async)
+ (preprocess
+  (pps ppx_jane)))
