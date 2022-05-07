@@ -25,17 +25,6 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
   let read_body, read_body_notify = Lwt.wait () in
   let handler_res, handler_res_notify = Lwt.wait () in
   let out, out_notify = Lwt.wait () in
-  let response_handler (response : H2.Response.t) body =
-    Lwt.wakeup_later read_body_notify body;
-    Lwt.async (fun () ->
-        if response.status <> `OK then (
-          Lwt.wakeup_later out_notify
-            (Error (Grpc.Status.v Grpc.Status.Unknown));
-          Lwt.return_unit)
-        else
-          let+ handler_res = handler_res in
-          Lwt.wakeup_later out_notify (Ok handler_res))
-  in
   let status, status_notify = Lwt.wait () in
   let flush_headers_immediately = None in
   let trailers_handler headers =
@@ -49,10 +38,25 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
     in
     match code with
     | None -> ()
-    | Some code ->
-        let message = H2.Headers.get headers "grpc-message" in
-        let status = Grpc.Status.v ?message code in
-        Lwt.wakeup_later status_notify status
+    | Some code -> (
+        match Lwt.state status with
+        | Sleep ->
+            let message = H2.Headers.get headers "grpc-message" in
+            let status = Grpc.Status.v ?message code in
+            Lwt.wakeup_later status_notify status
+        | _ -> (* This should never happen, but just in case. *) ())
+  in
+  let response_handler (response : H2.Response.t) body =
+    Lwt.wakeup_later read_body_notify body;
+    Lwt.async (fun () ->
+        if response.status <> `OK then (
+          Lwt.wakeup_later out_notify
+            (Error (Grpc.Status.v Grpc.Status.Unknown));
+          Lwt.return_unit)
+        else
+          let+ handler_res = handler_res in
+          Lwt.wakeup_later out_notify (Ok handler_res));
+    trailers_handler response.headers
   in
   let write_body =
     do_request ?flush_headers_immediately
@@ -62,7 +66,15 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
       let+ handler_res = handler write_body read_body in
       Lwt.wakeup_later handler_res_notify handler_res);
   let* out = out in
-  let+ status = status in
+  let+ status =
+    match Lwt.is_sleeping status with
+    (* In case no grpc-status appears in headers or trailers. *)
+    | false -> status
+    | true ->
+        Lwt.return
+          (Grpc.Status.v ~message:"Server did not return grpc-status"
+             Grpc.Status.Unknown)
+  in
   match out with Error _ as e -> e | Ok out -> Ok (out, status)
 
 module Rpc = struct

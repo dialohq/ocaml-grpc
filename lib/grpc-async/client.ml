@@ -26,18 +26,6 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
   let read_body_ivar = Ivar.create () in
   let handler_res_ivar = Ivar.create () in
   let out_ivar = Ivar.create () in
-  let response_handler (response : H2.Response.t) (body : H2.Body.Reader.t) =
-    Ivar.fill read_body_ivar body;
-    don't_wait_for
-      (match response.status with
-      | `OK ->
-          let%bind handler_res = Ivar.read handler_res_ivar in
-          Ivar.fill out_ivar (Ok handler_res);
-          return ()
-      | _ ->
-          Ivar.fill out_ivar (Error (Grpc.Status.v Grpc.Status.Unknown));
-          return ())
-  in
   let trailers_status_ivar = Ivar.create () in
   let trailers_handler headers =
     let code =
@@ -50,10 +38,26 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
     in
     match code with
     | None -> ()
-    | Some code ->
-        let message = H2.Headers.get headers "grpc-message" in
-        let status = Grpc.Status.v ?message code in
-        Ivar.fill trailers_status_ivar status
+    | Some code -> (
+        match Ivar.is_empty trailers_status_ivar with
+        | true ->
+            let message = H2.Headers.get headers "grpc-message" in
+            let status = Grpc.Status.v ?message code in
+            Ivar.fill trailers_status_ivar status
+        | _ -> (* This should never happen, but just in case. *) ())
+  in
+  let response_handler (response : H2.Response.t) (body : [ `read ] H2.Body.t) =
+    Ivar.fill read_body_ivar body;
+    don't_wait_for
+      (match response.status with
+      | `OK ->
+          let%bind handler_res = Ivar.read handler_res_ivar in
+          Ivar.fill out_ivar (Ok handler_res);
+          return ()
+      | _ ->
+          Ivar.fill out_ivar (Error (Grpc.Status.v Grpc.Status.Unknown));
+          return ());
+    trailers_handler response.headers
   in
   let flush_headers_immediately = None in
   let write_body : H2.Body.Writer.t =
@@ -66,13 +70,12 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
      return ());
   let%bind out = Ivar.read out_ivar in
   let%bind trailers_status =
-    (* trailers_status_ivar is not always filled at this point, because
-     * trailers_handler is not always called. Perhaps because there are no
-     * trailers in some cases?  For one example, it happens in lnd when
-     * QueryRoutes returns an empty list.  In this case, we let the call return
-     * with an unknown status. *)
+    (* In case no grpc-status appears in headers or trailers. *)
     if Ivar.is_full trailers_status_ivar then Ivar.read trailers_status_ivar
-    else return (Grpc.Status.v Grpc.Status.Unknown)
+    else
+      return
+        (Grpc.Status.v ~message:"Server did not return grpc-status"
+           Grpc.Status.Unknown)
   in
   match out with
   | Error _ as e -> return e
