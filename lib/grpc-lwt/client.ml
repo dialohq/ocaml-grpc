@@ -3,10 +3,11 @@ open Lwt.Syntax
 type response_handler = H2.Client_connection.response_handler
 
 type do_request =
+  ?flush_headers_immediately:bool ->
   ?trailers_handler:(H2.Headers.t -> unit) ->
   H2.Request.t ->
   response_handler:response_handler ->
-  [ `write ] H2.Body.t
+  H2.Body.Writer.t
 
 let make_request ~scheme ~service ~rpc ~headers =
   let request =
@@ -25,6 +26,7 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
   let handler_res, handler_res_notify = Lwt.wait () in
   let out, out_notify = Lwt.wait () in
   let status, status_notify = Lwt.wait () in
+  let flush_headers_immediately = None in
   let trailers_handler headers =
     let code =
       match H2.Headers.get headers "grpc-status" with
@@ -36,13 +38,13 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
     in
     match code with
     | None -> ()
-    | Some code ->
-        match Lwt.state status with 
-        | Sleep -> 
-          let message = H2.Headers.get headers "grpc-message" in
-          let status = Grpc.Status.v ?message code in
-          Lwt.wakeup_later status_notify status
-        | _ -> (* This should never happen, but just in case. *) ()
+    | Some code -> (
+        match Lwt.state status with
+        | Sleep ->
+            let message = H2.Headers.get headers "grpc-message" in
+            let status = Grpc.Status.v ?message code in
+            Lwt.wakeup_later status_notify status
+        | _ -> (* This should never happen, but just in case. *) ())
   in
   let response_handler (response : H2.Response.t) body =
     Lwt.wakeup_later read_body_notify body;
@@ -52,35 +54,36 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
             (Error (Grpc.Status.v Grpc.Status.Unknown));
           Lwt.return_unit)
         else
-          let+ handler_res in
+          let+ handler_res = handler_res in
           Lwt.wakeup_later out_notify (Ok handler_res));
     trailers_handler response.headers
   in
   let write_body =
-    do_request ?trailers_handler:(Some trailers_handler) request
-      ~response_handler
+    do_request ?flush_headers_immediately
+      ?trailers_handler:(Some trailers_handler) request ~response_handler
   in
   Lwt.async (fun () ->
       let+ handler_res = handler write_body read_body in
       Lwt.wakeup_later handler_res_notify handler_res);
-  let* out in
-  let+ status = 
-    match Lwt.is_sleeping status with 
+  let* out = out in
+  let+ status =
+    match Lwt.is_sleeping status with
     (* In case no grpc-status appears in headers or trailers. *)
     | false -> status
-    | true -> Lwt.return (
-      Grpc.Status.v ~message:"Server did not return grpc-status" Grpc.Status.Unknown)
+    | true ->
+        Lwt.return
+          (Grpc.Status.v ~message:"Server did not return grpc-status"
+             Grpc.Status.Unknown)
   in
   match out with Error _ as e -> e | Ok out -> Ok (out, status)
 
 module Rpc = struct
-  type 'a handler =
-    [ `write ] H2.Body.t -> [ `read ] H2.Body.t Lwt.t -> 'a Lwt.t
+  type 'a handler = H2.Body.Writer.t -> H2.Body.Reader.t Lwt.t -> 'a Lwt.t
 
   let bidirectional_streaming ~f write_body read_body =
     let decoder_stream, decoder_push = Lwt_stream.create () in
     Lwt.async (fun () ->
-        let+ read_body in
+        let+ read_body = read_body in
         Connection.grpc_recv_streaming read_body decoder_push);
     let encoder_stream, encoder_push = Lwt_stream.create () in
     Lwt.async (fun () ->

@@ -2,7 +2,7 @@ open! Async
 
 module Rpc : sig
   type 'a handler =
-    [ `write ] H2.Body.t -> [ `read ] H2.Body.t Deferred.t -> 'a Deferred.t
+    H2.Body.Writer.t -> H2.Body.Reader.t Deferred.t -> 'a Deferred.t
 
   val bidirectional_streaming :
     handler:
@@ -44,10 +44,11 @@ end
 type response_handler = H2.Client_connection.response_handler
 
 type do_request =
+  ?flush_headers_immediately:bool ->
   ?trailers_handler:(H2.Headers.t -> unit) ->
   H2.Request.t ->
   response_handler:response_handler ->
-  [ `write ] H2.Body.t
+  H2.Body.Writer.t
 (** [do_request] is the type of a function that performs the request *)
 
 val call :

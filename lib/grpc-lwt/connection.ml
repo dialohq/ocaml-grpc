@@ -10,19 +10,19 @@ let grpc_recv_streaming body buffer_push =
     (match message with
     | Some message -> buffer_push (Some message)
     | None -> ());
-    H2.Body.schedule_read body ~on_read ~on_eof
+    H2.Body.Reader.schedule_read body ~on_read ~on_eof
   in
-  H2.Body.schedule_read body ~on_read ~on_eof
+  H2.Body.Reader.schedule_read body ~on_read ~on_eof
 
 let grpc_send_streaming_client body encoder_stream =
   let+ () =
     Lwt_stream.iter
       (fun encoder ->
         let payload = Grpc.Message.make encoder in
-        H2.Body.write_string body payload)
+        H2.Body.Writer.write_string body payload)
       encoder_stream
   in
-  H2.Body.close_writer body
+  H2.Body.Writer.close body
 
 let grpc_send_streaming request encoder_stream status_mvar =
   let body =
@@ -36,8 +36,8 @@ let grpc_send_streaming request encoder_stream status_mvar =
     Lwt_stream.iter
       (fun input ->
         let payload = Grpc.Message.make input in
-        H2.Body.write_string body payload;
-        H2.Body.flush body (fun () -> ()))
+        H2.Body.Writer.write_string body payload;
+        H2.Body.Writer.flush body (fun () -> ()))
       encoder_stream
   in
   let+ status = Lwt_mvar.take status_mvar in
@@ -51,4 +51,4 @@ let grpc_send_streaming request encoder_stream status_mvar =
        match Grpc.Status.message status with
        | None -> []
        | Some message -> [ ("grpc-message", message) ]));
-  H2.Body.close_writer body
+  H2.Body.Writer.close body

@@ -1,6 +1,7 @@
 (lang dune 2.7)
 
-(implicit_transitive_deps false)
+; it's frustratingly hard to compile core/async examples with this turned on
+;(implicit_transitive_deps false)
 
 (generate_opam_files true)
 
