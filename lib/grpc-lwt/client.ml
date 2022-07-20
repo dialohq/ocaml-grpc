@@ -86,12 +86,22 @@ module Rpc = struct
           enc;
         f decoder_stream)
 
-  let unary ~f enc =
-    bidirectional_streaming ~f:(fun encoder_push decoder_stream ->
-        (fun enc ->
-          encoder_push (Some enc);
-          encoder_push None)
-          enc;
-        let decoder = Lwt_stream.get decoder_stream in
-        f decoder)
+  let unary ~f enc write_body read_body =
+    let payload = Grpc.Message.make enc in
+    H2.Body.write_string write_body payload;
+    H2.Body.close_writer write_body;
+    let* read_body = read_body in
+    let request_buffer = Grpc.Buffer.v () in
+    let message, message_notify = Lwt.task () in
+    let on_eof () =
+      let message = Grpc.Message.extract request_buffer in
+      Lwt.wakeup_later message_notify message
+    in
+    let rec on_read buffer ~off ~len =
+      Grpc.Buffer.copy_from_bigstringaf ~src_off:off ~src:buffer
+        ~dst:request_buffer ~length:len;
+      H2.Body.schedule_read read_body ~on_read ~on_eof
+    in
+    H2.Body.schedule_read read_body ~on_read ~on_eof;
+    f message
 end
