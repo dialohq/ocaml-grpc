@@ -41,7 +41,7 @@
   (lwt
    (>= 5.0.0))
   (h2
-   (>= 0.8.0))
+   (>= 0.9.0))
   stringext))
 
 (package
@@ -53,6 +53,6 @@
   grpc
   async
   (h2
-   (>= 0.8.0))
+   (>= 0.9.0))
   h2-async
   stringext))
