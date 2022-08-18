@@ -37,13 +37,13 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
     in
     match code with
     | None -> ()
-    | Some code -> 
-        match Ivar.is_empty trailers_status_ivar with 
-        | true -> 
-          let message = H2.Headers.get headers "grpc-message" in
-          let status = Grpc.Status.v ?message code in
-          Ivar.fill trailers_status_ivar status
-        | _ -> (* This should never happen, but just in case. *) ()
+    | Some code -> (
+        match Ivar.is_empty trailers_status_ivar with
+        | true ->
+            let message = H2.Headers.get headers "grpc-message" in
+            let status = Grpc.Status.v ?message code in
+            Ivar.fill trailers_status_ivar status
+        | _ -> (* This should never happen, but just in case. *) ())
   in
   let response_handler (response : H2.Response.t) (body : H2.Body.Reader.t) =
     Ivar.fill read_body_ivar body;
@@ -70,8 +70,10 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
   let%bind trailers_status =
     (* In case no grpc-status appears in headers or trailers. *)
     if Ivar.is_full trailers_status_ivar then Ivar.read trailers_status_ivar
-    else return (
-      Grpc.Status.v ~message:"Server did not return grpc-status" Grpc.Status.Unknown) 
+    else
+      return
+        (Grpc.Status.v ~message:"Server did not return grpc-status"
+           Grpc.Status.Unknown)
   in
   match out with
   | Error _ as e -> return e
