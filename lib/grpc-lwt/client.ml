@@ -6,7 +6,7 @@ type do_request =
   ?trailers_handler:(H2.Headers.t -> unit) ->
   H2.Request.t ->
   response_handler:response_handler ->
-  [ `write ] H2.Body.t
+  H2.Body.Writer.t
 
 let make_request ~scheme ~service ~rpc ~headers =
   let request =
@@ -67,8 +67,7 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
   match out with Error _ as e -> e | Ok out -> Ok (out, status)
 
 module Rpc = struct
-  type 'a handler =
-    [ `write ] H2.Body.t -> [ `read ] H2.Body.t Lwt.t -> 'a Lwt.t
+  type 'a handler = H2.Body.Writer.t -> H2.Body.Reader.t Lwt.t -> 'a Lwt.t
 
   let bidirectional_streaming ~f write_body read_body =
     let encoder_stream, encoder_push = Lwt_stream.create () in
