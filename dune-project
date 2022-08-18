@@ -1,7 +1,5 @@
 (lang dune 2.7)
 
-(implicit_transitive_deps false)
-
 (generate_opam_files true)
 
 (name grpc)
