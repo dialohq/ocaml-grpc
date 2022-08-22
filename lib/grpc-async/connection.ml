@@ -36,8 +36,8 @@ let grpc_send_streaming request encoder_stream status_mvar =
   let%bind () =
     Async.Pipe.iter encoder_stream ~f:(fun input ->
         let payload = Grpc.Message.make input in
-        H2.Body.write_string body payload;
-        H2.Body.flush body (fun () -> ());
+        H2.Body.Writer.write_string body payload;
+        H2.Body.Writer.flush body (fun () -> ());
         return ())
   in
   let%map status = Lwt_mvar.take status_mvar in
@@ -51,5 +51,5 @@ let grpc_send_streaming request encoder_stream status_mvar =
        match Grpc.Status.message status with
        | None -> []
        | Some message -> [ ("grpc-message", message) ]));
-  H2.Body.close_writer body
+  H2.Body.Writer.close body
   *)
