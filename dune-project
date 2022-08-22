@@ -1,7 +1,5 @@
 (lang dune 2.7)
 
-(implicit_transitive_deps false)
-
 (generate_opam_files true)
 
 (name grpc)
@@ -41,7 +39,7 @@
   (lwt
    (>= 5.0.0))
   (h2
-   (>= 0.8.0))
+   (>= 0.9.0))
   stringext))
 
 (package
@@ -53,6 +51,6 @@
   grpc
   async
   (h2
-   (>= 0.8.0))
+   (>= 0.9.0))
   h2-async
   stringext))

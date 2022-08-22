@@ -7,7 +7,7 @@ type do_request =
   ?trailers_handler:(H2.Headers.t -> unit) ->
   H2.Request.t ->
   response_handler:response_handler ->
-  [ `write ] H2.Body.t
+  H2.Body.Writer.t
 
 let make_request ~scheme ~service ~rpc ~headers =
   let request =
@@ -37,15 +37,15 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
     in
     match code with
     | None -> ()
-    | Some code -> 
-        match Ivar.is_empty trailers_status_ivar with 
-        | true -> 
-          let message = H2.Headers.get headers "grpc-message" in
-          let status = Grpc.Status.v ?message code in
-          Ivar.fill trailers_status_ivar status
-        | _ -> (* This should never happen, but just in case. *) ()
+    | Some code -> (
+        match Ivar.is_empty trailers_status_ivar with
+        | true ->
+            let message = H2.Headers.get headers "grpc-message" in
+            let status = Grpc.Status.v ?message code in
+            Ivar.fill trailers_status_ivar status
+        | _ -> (* This should never happen, but just in case. *) ())
   in
-  let response_handler (response : H2.Response.t) (body : [ `read ] H2.Body.t) =
+  let response_handler (response : H2.Response.t) (body : H2.Body.Reader.t) =
     Ivar.fill read_body_ivar body;
     don't_wait_for
       (match response.status with
@@ -58,7 +58,7 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
           return ());
     trailers_handler response.headers
   in
-  let write_body : [ `write ] H2.Body.t =
+  let write_body : H2.Body.Writer.t =
     do_request ?trailers_handler:(Some trailers_handler) request
       ~response_handler
   in
@@ -70,8 +70,10 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
   let%bind trailers_status =
     (* In case no grpc-status appears in headers or trailers. *)
     if Ivar.is_full trailers_status_ivar then Ivar.read trailers_status_ivar
-    else return (
-      Grpc.Status.v ~message:"Server did not return grpc-status" Grpc.Status.Unknown) 
+    else
+      return
+        (Grpc.Status.v ~message:"Server did not return grpc-status"
+           Grpc.Status.Unknown)
   in
   match out with
   | Error _ as e -> return e
@@ -79,7 +81,7 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
 
 module Rpc = struct
   type 'a handler =
-    [ `write ] H2.Body.t -> [ `read ] H2.Body.t Deferred.t -> 'a Deferred.t
+    H2.Body.Writer.t -> H2.Body.Reader.t Deferred.t -> 'a Deferred.t
 
   let bidirectional_streaming ~handler write_body read_body =
     let decoder_r, decoder_w = Async.Pipe.create () in

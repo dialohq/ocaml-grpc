@@ -1,3 +1,7 @@
 pin-depends: [
-  [ "gluten-async.dev" "git+https://github.com/mbacarella/gluten#async-expose-ssl-options" ]
+  [ "faraday-async.dev" "git+https://github.com/bcc32/faraday#core-0.15-compat" ]
+  [ "gluten-async.dev" "git+https://github.com/anmonteiro/gluten" ]
+  [ "gluten.dev" "git+https://github.com/anmonteiro/gluten" ]
+  [ "h2-async.dev" "git+https://github.com/anmonteiro/ocaml-h2" ]
+  [ "h2.dev" "git+https://github.com/anmonteiro/ocaml-h2" ]
   ]
