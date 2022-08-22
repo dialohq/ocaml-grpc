@@ -62,4 +62,4 @@ let () =
              ~doc:"HOST to connect to")
       main
   in
-  Command.run cmd
+  Command_unix.run cmd

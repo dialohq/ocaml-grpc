@@ -12,6 +12,7 @@
   greeter
   tls-async
   h2
-  h2-async)
+  h2-async
+  core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))
