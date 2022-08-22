@@ -60,7 +60,5 @@ let code_of_int = function
 type t = { code : code; message : string option } [@@deriving show]
 
 let v ?message code = { code; message }
-
 let code t = t.code
-
 let message t = Option.map (fun message -> Uri.pct_encode message) t.message
