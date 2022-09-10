@@ -3,6 +3,7 @@ open Lwt.Syntax
 type response_handler = H2.Client_connection.response_handler
 
 type do_request =
+  ?flush_headers_immediately:bool ->
   ?trailers_handler:(H2.Headers.t -> unit) ->
   H2.Request.t ->
   response_handler:response_handler ->
@@ -21,6 +22,7 @@ let default_headers =
 let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
     ?(headers = default_headers) () =
   let request = make_request ~service ~rpc ~scheme ~headers in
+  let flush_headers_immediately = None in
   let read_body, read_body_notify = Lwt.task () in
   let response, response_notify = Lwt.task () in
   let status, status_notify = Lwt.task () in
@@ -48,7 +50,10 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
     Lwt.wakeup_later response_notify response;
     trailers_handler response.headers
   in
-  let write_body = do_request request ~response_handler ~trailers_handler in
+  let write_body =
+    do_request ?flush_headers_immediately request ~response_handler
+      ~trailers_handler
+  in
   let* handler_res = handler write_body read_body in
   let* response = response in
   let+ status =

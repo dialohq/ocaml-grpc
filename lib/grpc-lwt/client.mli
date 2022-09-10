@@ -28,6 +28,7 @@ end
 type response_handler = H2.Client_connection.response_handler
 
 type do_request =
+  ?flush_headers_immediately:bool ->
   ?trailers_handler:(H2.Headers.t -> unit) ->
   H2.Request.t ->
   response_handler:response_handler ->
