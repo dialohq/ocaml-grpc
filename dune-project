@@ -6,14 +6,15 @@
 
 (license "BSD-3-Clause")
 
-(authors "Andrew Jeffery <dev@jeffas.io>")
+(authors
+ "Andrew Jeffery <dev@jeffas.io>, Daniel Quernheim <quernd@users.noreply.github.com>, Michael Bacarella <m@bacarella.com>, Sven Anderson <sven@anderson.de>, Wojtek Czekalski <me@wczekalski.com>, dimitris.mostrous <dimitris.mostrous@gmail.com>")
 
-(maintainers "Andrew Jeffery <dev@jeffas.io>")
+(maintainers "Daniel Quernheim <grpc@quernd.uber.space>")
 
 (source
- (github jeffa5/ocaml-grpc))
+ (github dialohq/ocaml-grpc))
 
-(documentation "https://jeffas.io/ocaml-grpc")
+(documentation "https://dialohq.github.io/ocaml-grpc")
 
 (package
  (name grpc)

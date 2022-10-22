@@ -3,12 +3,14 @@ opam-version: "2.0"
 synopsis: "An Async implementation of gRPC"
 description:
   "Functionality for building gRPC services and rpcs with `async`."
-maintainer: ["Andrew Jeffery <dev@jeffas.io>"]
-authors: ["Andrew Jeffery <dev@jeffas.io>"]
+maintainer: ["Daniel Quernheim <grpc@quernd.uber.space>"]
+authors: [
+  "Andrew Jeffery <dev@jeffas.io>, Daniel Quernheim <quernd@users.noreply.github.com>, Michael Bacarella <m@bacarella.com>, Sven Anderson <sven@anderson.de>, Wojtek Czekalski <me@wczekalski.com>, dimitris.mostrous <dimitris.mostrous@gmail.com>"
+]
 license: "BSD-3-Clause"
-homepage: "https://github.com/jeffa5/ocaml-grpc"
-doc: "https://jeffas.io/ocaml-grpc"
-bug-reports: "https://github.com/jeffa5/ocaml-grpc/issues"
+homepage: "https://github.com/dialohq/ocaml-grpc"
+doc: "https://dialohq.github.io/ocaml-grpc"
+bug-reports: "https://github.com/dialohq/ocaml-grpc/issues"
 depends: [
   "dune" {>= "2.7"}
   "grpc"
@@ -32,4 +34,4 @@ build: [
     "@doc" {with-doc}
   ]
 ]
-dev-repo: "git+https://github.com/jeffa5/ocaml-grpc.git"
+dev-repo: "git+https://github.com/dialohq/ocaml-grpc.git"
