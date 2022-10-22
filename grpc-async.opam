@@ -33,10 +33,3 @@ build: [
   ]
 ]
 dev-repo: "git+https://github.com/jeffa5/ocaml-grpc.git"
-pin-depends: [
-  [ "faraday-async.dev" "git+https://github.com/bcc32/faraday#core-0.15-compat" ]
-  [ "gluten-async.dev" "git+https://github.com/anmonteiro/gluten" ]
-  [ "gluten.dev" "git+https://github.com/anmonteiro/gluten" ]
-  [ "h2-async.dev" "git+https://github.com/anmonteiro/ocaml-h2" ]
-  [ "h2.dev" "git+https://github.com/anmonteiro/ocaml-h2" ]
-  ]
