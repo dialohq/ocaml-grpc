@@ -1,0 +1,4 @@
+(library
+ (name grpc_eio)
+ (public_name grpc-eio)
+ (libraries grpc h2-eio))

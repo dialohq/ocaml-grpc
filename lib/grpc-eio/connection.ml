@@ -1,0 +1,60 @@
+let grpc_recv_streaming body =
+  let request_buffer = Grpc.Buffer.v () in
+  let on_eof message_buffer_writer () =
+    Seq.close_writer message_buffer_writer
+  in
+  let rec on_read message_buffer_writer buffer ~off ~len =
+    Grpc.Buffer.copy_from_bigstringaf ~src_off:off ~src:buffer
+      ~dst:request_buffer ~length:len;
+    let message = Grpc.Message.extract request_buffer in
+    let message_buffer_writer =
+      match message with
+      | Some message -> Seq.write message_buffer_writer message
+      | None -> message_buffer_writer
+    in
+    H2.Body.Reader.schedule_read body
+      ~on_read:(on_read message_buffer_writer)
+      ~on_eof:(on_eof message_buffer_writer)
+  in
+  let message_buffer_reader, message_buffer_writer =
+    Seq.create_reader_writer ()
+  in
+  H2.Body.Reader.schedule_read body
+    ~on_read:(on_read message_buffer_writer)
+    ~on_eof:(on_eof message_buffer_writer);
+  message_buffer_reader
+
+let grpc_send_streaming_client body encoder_stream =
+  Seq.iter
+    (fun encoder ->
+      let payload = Grpc.Message.make encoder in
+      H2.Body.Writer.write_string body payload)
+    encoder_stream;
+  H2.Body.Writer.close body
+
+let grpc_send_streaming request encoder_stream status_promise =
+  let body =
+    H2.Reqd.respond_with_streaming ~flush_headers_immediately:true request
+      (H2.Response.create
+         ~headers:
+           (H2.Headers.of_list [ ("content-type", "application/grpc+proto") ])
+         `OK)
+  in
+  Seq.iter
+    (fun input ->
+      let payload = Grpc.Message.make input in
+      H2.Body.Writer.write_string body payload;
+      H2.Body.Writer.flush body (fun () -> ()))
+    encoder_stream;
+  let status = Eio.Promise.await status_promise in
+  H2.Reqd.schedule_trailers request
+    (H2.Headers.of_list
+       ([
+          ( "grpc-status",
+            string_of_int (Grpc.Status.int_of_code (Grpc.Status.code status)) );
+        ]
+       @
+       match Grpc.Status.message status with
+       | None -> []
+       | Some message -> [ ("grpc-message", message) ]));
+  H2.Body.Writer.close body
