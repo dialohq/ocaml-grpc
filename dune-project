@@ -68,6 +68,7 @@
   stringext))
 
 (package
+
  (name grpc-examples)
  (synopsis "Various grpc examples")
  (description "Various grpc examples.")
@@ -97,3 +98,10 @@
   (bechamel-notty (>= 0.4.0))
   (bigstringaf (>= 0.9.1))
   (grpc (= :version))))
+
+(package
+ (name grpc-eio)
+ (synopsis "An Eio implementation of gRPC")
+ (description
+  "Functionality for building gRPC services and rpcs with `eio`.")
+ (depends grpc eio h2-eio stringext))
