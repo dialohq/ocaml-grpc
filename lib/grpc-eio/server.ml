@@ -81,13 +81,13 @@ module Rpc = struct
 
   let server_streaming ~f reqd =
     bidirectional_streaming reqd ~f:(fun requests response_writer ->
-        match Seq.peek requests with
+        match Seq.read_and_exhaust requests with
         | None -> Grpc.Status.(v OK)
         | Some request -> f request response_writer)
 
   let unary ~f reqd =
     bidirectional_streaming reqd ~f:(fun requests response_writer ->
-        match Seq.peek requests with
+        match Seq.read_and_exhaust requests with
         | None -> Grpc.Status.(v OK)
         | Some request ->
             let status, response = f request in

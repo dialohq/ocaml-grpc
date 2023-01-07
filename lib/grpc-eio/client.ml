@@ -82,7 +82,7 @@ module Rpc = struct
 
   let client_streaming ~f =
     bidirectional_streaming ~f:(fun request_writer responses ->
-        let response = Seq.peek responses in
+        let response = Seq.read_and_exhaust responses in
         f request_writer response)
 
   let server_streaming ~f request =
@@ -93,6 +93,6 @@ module Rpc = struct
   let unary ~f request =
     bidirectional_streaming ~f:(fun request_writer responses ->
         Seq.write request_writer request |> Seq.close_writer;
-        let response = Seq.peek responses in
+        let response = Seq.read_and_exhaust responses in
         f response)
 end

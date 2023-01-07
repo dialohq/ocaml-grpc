@@ -5,6 +5,7 @@ type 'a writer
 
 val create_reader_writer : unit -> 'a reader * 'a writer
 val read : 'a reader -> 'a Stdlib.Seq.node
-val peek : 'a reader -> 'a option
+val read_and_exhaust : 'a reader -> 'a option
+val exhaust_reader : 'a reader -> unit
 val write : 'a writer -> 'a -> 'a writer
 val close_writer : 'a writer -> unit
