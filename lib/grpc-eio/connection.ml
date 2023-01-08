@@ -1,28 +1,18 @@
-let grpc_recv_streaming body =
+let grpc_recv_streaming body message_buffer_writer =
   let request_buffer = Grpc.Buffer.v () in
-  let on_eof message_buffer_writer () =
-    Seq.close_writer message_buffer_writer
-  in
-  let rec on_read message_buffer_writer buffer ~off ~len =
+  let on_eof () = Seq.close_writer message_buffer_writer in
+  let rec on_read buffer ~off ~len =
     Grpc.Buffer.copy_from_bigstringaf ~src_off:off ~src:buffer
       ~dst:request_buffer ~length:len;
     let message = Grpc.Message.extract request_buffer in
-    let message_buffer_writer =
+    let () =
       match message with
       | Some message -> Seq.write message_buffer_writer message
-      | None -> message_buffer_writer
+      | None -> ()
     in
-    H2.Body.Reader.schedule_read body
-      ~on_read:(on_read message_buffer_writer)
-      ~on_eof:(on_eof message_buffer_writer)
+    H2.Body.Reader.schedule_read body ~on_read ~on_eof
   in
-  let message_buffer_reader, message_buffer_writer =
-    Seq.create_reader_writer ()
-  in
-  H2.Body.Reader.schedule_read body
-    ~on_read:(on_read message_buffer_writer)
-    ~on_eof:(on_eof message_buffer_writer);
-  message_buffer_reader
+  H2.Body.Reader.schedule_read body ~on_read ~on_eof
 
 let grpc_send_streaming_client body encoder_stream =
   Seq.iter

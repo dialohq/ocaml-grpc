@@ -60,15 +60,16 @@ module Rpc = struct
 
   let bidirectional_streaming ~f reqd =
     let body = H2.Reqd.request_body reqd in
-    let responses = Connection.grpc_recv_streaming body in
-    let status_promise, status_notify = Eio.Promise.create () in
     let request_reader, request_writer = Seq.create_reader_writer () in
+    let response_reader, response_writer = Seq.create_reader_writer () in
+    Connection.grpc_recv_streaming body request_writer;
+    let status_promise, status_notify = Eio.Promise.create () in
     Eio.Fiber.both
       (fun () ->
-        let status = f responses request_writer in
+        let status = f request_reader response_writer in
         Eio.Promise.resolve status_notify status)
       (fun () ->
-        Connection.grpc_send_streaming reqd request_reader status_promise)
+        Connection.grpc_send_streaming reqd response_reader status_promise)
 
   let client_streaming ~f reqd =
     bidirectional_streaming reqd ~f:(fun requests response_writer ->
@@ -76,7 +77,8 @@ module Rpc = struct
         (match response with
         | None -> ()
         | Some response ->
-            Seq.write response_writer response |> Seq.close_writer);
+            Seq.write response_writer response;
+            Seq.close_writer response_writer);
         status)
 
   let server_streaming ~f reqd =
@@ -94,7 +96,8 @@ module Rpc = struct
             (match response with
             | None -> ()
             | Some response ->
-                Seq.write response_writer response |> Seq.close_writer);
+                Seq.write response_writer response;
+                Seq.close_writer response_writer);
             status)
 end
 

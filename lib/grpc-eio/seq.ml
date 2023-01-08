@@ -2,15 +2,15 @@ include Stdlib.Seq
 open Eio
 
 type 'a reader = 'a t
-type 'a writer = 'a node Promise.u
+type 'a writer = { mutable resolver : 'a node Promise.u }
 
 let write writer item =
   let promise, resolver = Promise.create () in
   let next = Cons (item, fun () -> Promise.await promise) in
-  Promise.resolve writer next;
-  resolver
+  Promise.resolve writer.resolver next;
+  writer.resolver <- resolver
 
-let close_writer writer = Promise.resolve writer Nil
+let close_writer writer = Promise.resolve writer.resolver Nil
 let read reader = reader ()
 
 let rec exhaust_reader reader =
@@ -25,4 +25,4 @@ let read_and_exhaust reader =
 
 let create_reader_writer () =
   let promise, resolver = Promise.create () in
-  ((fun () -> Promise.await promise), resolver)
+  ((fun () -> Promise.await promise), { resolver })
