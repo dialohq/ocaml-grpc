@@ -47,10 +47,10 @@ let handle_request t reqd =
 module Rpc = struct
   type unary = string -> Grpc.Status.t * string option
   type client_streaming = string Seq.t -> Grpc.Status.t * string option
-  type server_streaming = string -> string Seq.writer -> Grpc.Status.t
+  type server_streaming = string -> (string -> unit) -> Grpc.Status.t
 
   type bidirectional_streaming =
-    string Seq.t -> string Seq.writer -> Grpc.Status.t
+    string Seq.t -> (string -> unit) -> Grpc.Status.t
 
   type t =
     | Unary of unary
@@ -66,38 +66,35 @@ module Rpc = struct
     let status_promise, status_notify = Eio.Promise.create () in
     Eio.Fiber.both
       (fun () ->
-        let status = f request_reader response_writer in
+        let respond = Seq.write response_writer in
+        let status = f request_reader respond in
+        Seq.exhaust_reader request_reader;
+        Seq.close_writer response_writer;
         Eio.Promise.resolve status_notify status)
       (fun () ->
         Connection.grpc_send_streaming reqd response_reader status_promise)
 
   let client_streaming ~f reqd =
-    bidirectional_streaming reqd ~f:(fun requests response_writer ->
+    bidirectional_streaming reqd ~f:(fun requests respond ->
         let status, response = f requests in
-        (match response with
-        | None -> ()
-        | Some response ->
-            Seq.write response_writer response;
-            Seq.close_writer response_writer);
+        (match response with None -> () | Some response -> respond response);
         status)
 
   let server_streaming ~f reqd =
-    bidirectional_streaming reqd ~f:(fun requests response_writer ->
+    bidirectional_streaming reqd ~f:(fun requests respond ->
         match Seq.read_and_exhaust requests with
         | None -> Grpc.Status.(v OK)
-        | Some request -> f request response_writer)
+        | Some request -> f request respond)
 
   let unary ~f reqd =
-    bidirectional_streaming reqd ~f:(fun requests response_writer ->
+    bidirectional_streaming reqd ~f:(fun requests respond ->
         match Seq.read_and_exhaust requests with
         | None -> Grpc.Status.(v OK)
         | Some request ->
             let status, response = f request in
             (match response with
             | None -> ()
-            | Some response ->
-                Seq.write response_writer response;
-                Seq.close_writer response_writer);
+            | Some response -> respond response);
             status)
 end
 

@@ -7,11 +7,11 @@ module Rpc : sig
   type client_streaming = string Seq.t -> Grpc.Status.t * string option
   (** [client_streaming] is the type for an rpc where the client streams the requests and the server responds once. *)
 
-  type server_streaming = string -> string Seq.writer -> Grpc.Status.t
+  type server_streaming = string -> (string -> unit) -> Grpc.Status.t
   (** [server_streaming] is the type for an rpc where the client sends one request and the server sends multiple responses. *)
 
   type bidirectional_streaming =
-    string Seq.t -> string Seq.writer -> Grpc.Status.t
+    string Seq.t -> (string -> unit) -> Grpc.Status.t
   (** [bidirectional_streaming] is the type for an rpc where both the client and server can send multiple messages. *)
 
   type t =
