@@ -8,7 +8,7 @@ module Rpc : sig
         requests and a stream of responses. *)
 
   val client_streaming :
-    f:(string Seq.writer -> string option -> 'a) -> 'a handler
+    f:(string Seq.writer -> string option Eio.Promise.t -> 'a) -> 'a handler
   (** [client_streaming ~f write read] sets up the sending and receiving
         logic using [write] and [read], then calls [f] with a push function for
         requests and promise for the response. *)

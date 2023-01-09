@@ -84,8 +84,13 @@ module Rpc = struct
 
   let client_streaming ~f =
     bidirectional_streaming ~f:(fun request_writer responses ->
-        let response = Seq.read_and_exhaust responses in
-        f request_writer response)
+        let response, response_resolver = Eio.Promise.create () in
+        Eio.Fiber.pair
+          (fun () -> f request_writer response)
+          (fun () ->
+            Eio.Promise.resolve response_resolver
+              (Seq.read_and_exhaust responses))
+        |> fst)
 
   let server_streaming ~f request =
     bidirectional_streaming ~f:(fun request_writer responses ->
