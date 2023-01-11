@@ -72,7 +72,10 @@ module Rpc = struct
         Seq.close_writer response_writer;
         Eio.Promise.resolve status_notify status)
       (fun () ->
-        Connection.grpc_send_streaming reqd response_reader status_promise)
+        try Connection.grpc_send_streaming reqd response_reader status_promise
+        with exn ->
+          (* https://github.com/anmonteiro/ocaml-h2/issues/175 *)
+          Eio.traceln "%s" (Printexc.to_string exn))
 
   let client_streaming ~f reqd =
     bidirectional_streaming reqd ~f:(fun requests respond ->
