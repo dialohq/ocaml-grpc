@@ -41,20 +41,15 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
   in
   let* handler_res = handler write_body read_body in
   let* response = response in
-  let out =
-    if response.status <> `OK then
-      Error (Grpc.Status.extract_status response.headers)
-    else Ok (handler_res, response.headers)
-  in
-  match out with
-  | Error _ as e -> Lwt.return e
-  | Ok (out, headers) ->
+  match response.status with
+  | `OK ->
       let+ status =
         match H2.Headers.get headers "grpc-status" with
         | Some _ -> Lwt.return (Grpc.Status.extract_status headers)
         | None -> status
       in
-      Ok (out, status)
+      Ok (handler_res, status)
+  | status -> Lwt.return (Error status)
 
 module Rpc = struct
   type 'a handler = H2.Body.Writer.t -> H2.Body.Reader.t Lwt.t -> 'a Lwt.t
