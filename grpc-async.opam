@@ -12,8 +12,8 @@ homepage: "https://github.com/dialohq/ocaml-grpc"
 doc: "https://dialohq.github.io/ocaml-grpc"
 bug-reports: "https://github.com/dialohq/ocaml-grpc/issues"
 depends: [
-  "ocaml" {>= "4.11"}
   "dune" {>= "2.7"}
+  "ocaml" {>= "4.11"}
   "grpc" {= version}
   "h2-async" {>= "0.9.0"}
   "stringext"

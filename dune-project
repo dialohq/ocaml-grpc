@@ -27,7 +27,7 @@
   (uri
    (>= 4.0.0))
   (h2
-   (>= 0.7.0))
+   (>= 0.9.0))
   ppx_deriving))
 
 (package
@@ -36,11 +36,10 @@
  (description
   "Functionality for building gRPC services and rpcs with `lwt`.")
  (depends
-  grpc
+  (grpc
+   (= :version))
   (lwt
-   (>= 5.0.0))
-  (h2
-   (>= 0.9.0))
+   (>= 5.3.0))
   stringext))
 
 (package
@@ -49,9 +48,10 @@
  (description
   "Functionality for building gRPC services and rpcs with `async`.")
  (depends
-  grpc
-  async
-  (h2
+  (ocaml
+   (>= 4.11))
+  (grpc
+   (= :version))
+  (h2-async
    (>= 0.9.0))
-  h2-async
   stringext))
