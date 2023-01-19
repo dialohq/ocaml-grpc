@@ -104,4 +104,9 @@
  (synopsis "An Eio implementation of gRPC")
  (description
   "Functionality for building gRPC services and rpcs with `eio`.")
- (depends grpc eio h2-eio stringext))
+ (depends
+  (grpc
+   (= :version))
+  h2-eio
+  stringext))
+
