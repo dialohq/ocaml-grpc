@@ -46,11 +46,10 @@ let get_response_and_bodies request =
 let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
     ?(headers = default_headers) () =
   let request = make_request ~service ~rpc ~scheme ~headers in
-  let flush_headers_immediately = None in
   let status, trailers_handler = make_trailers_handler () in
   let response, read_body, write_body =
     get_response_and_bodies
-      (do_request ?flush_headers_immediately request ~trailers_handler)
+      (do_request ~flush_headers_immediately:true request ~trailers_handler)
   in
   match response.status with
   | `OK ->
