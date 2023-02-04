@@ -68,7 +68,6 @@ module Rpc = struct
       (fun () ->
         let respond = Seq.write response_writer in
         let status = f request_reader respond in
-        Seq.exhaust_reader request_reader;
         Seq.close_writer response_writer;
         Eio.Promise.resolve status_notify status)
       (fun () ->
