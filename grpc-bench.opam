@@ -11,12 +11,12 @@ homepage: "https://github.com/dialohq/ocaml-grpc"
 doc: "https://dialohq.github.io/ocaml-grpc"
 bug-reports: "https://github.com/dialohq/ocaml-grpc/issues"
 depends: [
-  "dune" {>= "2.7"}
+  "dune" {>= "3.6"}
   "lwt"
   "notty"
   "bechamel"
   "bechamel-notty"
-  "grpc" {= version}
+  "grpc-lwt" {= version}
   "ocaml-protoc"
   "h2-lwt-unix"
   "odoc" {with-doc}

@@ -1,4 +1,4 @@
-(lang dune 3.0)
+(lang dune 3.6)
 
 (generate_opam_files true)
 
@@ -61,12 +61,13 @@
  (synopsis "Various grpc examples")
  (description "Various grpc examples.")
  (depends
-  (grpc (= :version))
   (grpc-lwt (= :version))
   (grpc-async (= :version))
   ocaml-protoc
   ocaml-protoc-plugin
   conduit-lwt-unix
+  cohttp-lwt-unix
+  tls-async
   stringext))
 
 (package
@@ -78,6 +79,6 @@
    notty
    bechamel
    bechamel-notty
-  (grpc (= :version))
+  (grpc-lwt (= :version))
    ocaml-protoc 
    h2-lwt-unix))

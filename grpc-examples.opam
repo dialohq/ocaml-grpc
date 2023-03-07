@@ -11,13 +11,14 @@ homepage: "https://github.com/dialohq/ocaml-grpc"
 doc: "https://dialohq.github.io/ocaml-grpc"
 bug-reports: "https://github.com/dialohq/ocaml-grpc/issues"
 depends: [
-  "dune" {>= "2.7"}
-  "grpc" {= version}
+  "dune" {>= "3.6"}
   "grpc-lwt" {= version}
   "grpc-async" {= version}
   "ocaml-protoc"
   "ocaml-protoc-plugin"
   "conduit-lwt-unix"
+  "cohttp-lwt-unix"
+  "tls-async"
   "stringext"
   "odoc" {with-doc}
 ]
