@@ -63,7 +63,6 @@
  (depends
   (grpc-lwt (= :version))
   (grpc-async (= :version))
-  ocaml-protoc
   ocaml-protoc-plugin
   conduit-lwt-unix
   cohttp-lwt-unix

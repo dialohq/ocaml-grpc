@@ -1,16 +1,28 @@
 (library
  (name greeter)
  (public_name grpc-examples)
- (libraries ocaml-protoc))
+ (libraries ocaml-protoc-plugin))
+
+; (rule
+;  (targets
+;   greeter_pb.ml
+;   greeter_pb.mli
+;   greeter_pp.ml
+;   greeter_pp.mli
+;   greeter_types.ml
+;   greeter_types.mli)
+;  (action
+;   (run ocaml-protoc -binary -pp -ml_out ./ greeter.proto))
+;  (deps greeter.proto))
 
 (rule
- (targets
-  greeter_pb.ml
-  greeter_pb.mli
-  greeter_pp.ml
-  greeter_pp.mli
-  greeter_types.ml
-  greeter_types.mli)
+ (targets greeter.ml)
+ (deps
+  (:proto greeter.proto))
  (action
-  (run ocaml-protoc -binary -pp -ml_out ./ greeter.proto))
- (deps greeter.proto))
+  (run
+    protoc
+    -I
+    .
+    "--ocaml_out=annot=[@@deriving show { with_path = false }]:."
+    %{proto})))

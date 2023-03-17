@@ -5,7 +5,7 @@
  (libraries
   grpc
   grpc-async
-  ocaml-protoc
+  ocaml-protoc-plugin
   async
   async_kernel
   async_unix

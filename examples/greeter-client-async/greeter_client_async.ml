@@ -34,18 +34,24 @@ let call_server address port req =
     H2_async.Client.create_connection ~error_handler socket
   in
   (* code generation *)
-  let enc = Pbrt.Encoder.create () in
-  Greeter.Greeter_pb.encode_hello_request req enc;
+  let open Ocaml_protoc_plugin in
+  let open Greeter.Mypackage in
+  let (decode, encode) = Service.make_service_functions Greeter.sayHello in
+  let enc = encode req |> Writer.contents in
+
   Grpc_async.Client.call ~service:"mypackage.Greeter" ~rpc:"SayHello"
     ~do_request:(H2_async.Client.request connection ~error_handler:ignore)
     ~handler:
-      (Grpc_async.Client.Rpc.unary ~encoded_request:(Pbrt.Encoder.to_string enc)
+      (Grpc_async.Client.Rpc.unary ~encoded_request:(enc)
          ~handler:(function
-        | None -> return (Greeter.Greeter_types.default_hello_reply ())
-        | Some response ->
+           | None -> return (Greeter.SayHello.Response.make ())
+           | Some response ->
             let response =
-              Pbrt.Decoder.of_string response
-              |> Greeter.Greeter_pb.decode_hello_reply
+              Reader.create response
+              |> decode
+              |> function
+                | Ok v -> v
+                | Error e -> failwith (Printf.sprintf "Could not decode request: %s" (Result.show_error e))
             in
             return response))
     ()
@@ -56,7 +62,7 @@ let () =
   let name =
     match Sys.get_argv () with [| _arg0; name |] -> name | _ -> "anonymous"
   in
-  let req = Greeter.Greeter_types.default_hello_request ~name () in
+  let req = Greeter.Mypackage.HelloRequest.make ~name () in
   don't_wait_for
     (let%bind res = call_server address port req in
      match res with
