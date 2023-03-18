@@ -1,3 +1,5 @@
 (executable
  (name greeter_client_lwt)
+ (package grpc-examples)
+ (public_name greeter_client_lwt)
  (libraries grpc grpc-lwt ocaml-protoc lwt lwt.unix greeter h2 h2-lwt-unix))

@@ -1,4 +1,4 @@
-(lang dune 2.7)
+(lang dune 3.6)
 
 (generate_opam_files true)
 
@@ -55,3 +55,30 @@
   (h2-async
    (>= 0.9.0))
   stringext))
+
+(package
+ (name grpc-examples)
+ (synopsis "Various grpc examples")
+ (description "Various grpc examples.")
+ (depends
+  (grpc-lwt (= :version))
+  (grpc-async (= :version))
+  ocaml-protoc
+  ocaml-protoc-plugin
+  conduit-lwt-unix
+  cohttp-lwt-unix
+  tls-async
+  stringext))
+
+(package
+ (name grpc-bench)
+ (synopsis "grpc benchmarking")
+ (description "grpc benchmarking.")
+ (depends
+   lwt
+   notty
+   bechamel
+   bechamel-notty
+  (grpc-lwt (= :version))
+   ocaml-protoc 
+   h2-lwt-unix))

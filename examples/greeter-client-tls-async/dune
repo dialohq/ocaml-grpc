@@ -1,5 +1,7 @@
 (executable
  (name greeter_client_tls_async)
+ (package grpc-examples)
+ (public_name greeter_client_tls_async)
  (libraries
   grpc
   grpc-async

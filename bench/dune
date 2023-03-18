@@ -1,4 +1,15 @@
 (executable
  (name service)
- (libraries bechamel notty.unix bechamel-notty grpc grpc-lwt ocaml-protoc lwt
-   lwt.unix h2 h2-lwt-unix bigstringaf))
+ (package grpc-bench)
+ (public_name grpc-bench)
+ (libraries
+  bechamel
+  notty.unix
+  bechamel-notty
+  grpc-lwt
+  ocaml-protoc
+  lwt
+  lwt.unix
+  h2
+  h2-lwt-unix
+  bigstringaf))
