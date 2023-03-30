@@ -67,7 +67,7 @@ let () =
     (let%bind res = call_server address port req in
      match res with
      | Ok (res, _) ->
-         printf "%s\n%!" res.message;
+         printf "%s\n%!" res;
          Async.exit 0
      | Error _ ->
          printf "an error occurred\n";

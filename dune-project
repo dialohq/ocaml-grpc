@@ -1,6 +1,7 @@
 (lang dune 3.6)
 
 (generate_opam_files true)
+(using mdx 0.2)
 
 (name grpc)
 
@@ -67,6 +68,7 @@
   conduit-lwt-unix
   cohttp-lwt-unix
   tls-async
+  lwt_ssl
   stringext))
 
 (package
