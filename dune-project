@@ -74,10 +74,6 @@
  (synopsis "grpc benchmarking")
  (description "grpc benchmarking.")
  (depends
-   lwt
-   notty
    bechamel
    bechamel-notty
-  (grpc-lwt (= :version))
-   ocaml-protoc 
-   h2-lwt-unix))
+  (grpc (= :version))))

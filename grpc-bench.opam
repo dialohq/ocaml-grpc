@@ -12,13 +12,9 @@ doc: "https://dialohq.github.io/ocaml-grpc"
 bug-reports: "https://github.com/dialohq/ocaml-grpc/issues"
 depends: [
   "dune" {>= "3.6"}
-  "lwt"
-  "notty"
   "bechamel"
   "bechamel-notty"
-  "grpc-lwt" {= version}
-  "ocaml-protoc"
-  "h2-lwt-unix"
+  "grpc" {= version}
   "odoc" {with-doc}
 ]
 build: [
