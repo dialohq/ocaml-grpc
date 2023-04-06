@@ -1,0 +1,18 @@
+(executable
+ (name test_grpc_status)
+ (package grpc-examples)
+ (public_name test_grpc_status)
+ (libraries
+  grpc
+  grpc-async
+  ocaml-protoc
+  async
+  async_kernel
+  async_unix
+  core_kernel
+  core
+  greeter
+  h2
+  h2-async)
+ (preprocess
+  (pps ppx_jane)))
