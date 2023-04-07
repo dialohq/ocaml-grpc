@@ -53,7 +53,7 @@ let () =
   let rec do_req connection counter =
     (* Should blow up before that count with very high probability, and this helps
        when testing the solution. *)
-    if counter > 10_000 then Lwt.return_unit
+    if counter > 100_000 then Lwt.return_unit
     else
       let name = next_name counter in
       let req = Greeter.Greeter_types.default_hello_request ~name () in
