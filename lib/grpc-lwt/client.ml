@@ -19,6 +19,35 @@ let default_headers =
   H2.Headers.of_list
     [ ("te", "trailers"); ("content-type", "application/grpc+proto") ]
 
+let trailers_handler status_notify headers =
+  let code, message =
+    match H2.Headers.get headers "grpc-status" with
+    | None ->
+        (Grpc.Status.Unknown, Some "Expected gprc-status header, got nothing")
+    | Some s -> (
+        match int_of_string_opt s with
+        | None ->
+            let msg =
+              Printf.sprintf "Expected valid gprc-status header, got %s" s
+            in
+            (Grpc.Status.Unknown, Some msg)
+        | Some i -> (
+            match Grpc.Status.code_of_int i with
+            | None ->
+                let msg =
+                  Printf.sprintf "Expected valid gprc-status code, got %i" i
+                in
+                (Grpc.Status.Unknown, Some msg)
+            | Some c -> (c, H2.Headers.get headers "grpc-message")))
+  in
+  let status = Grpc.Status.v ?message code in
+  Lwt.wakeup_later status_notify status
+
+let response_handler read_body_notify response_notify (response : H2.Response.t)
+    body =
+  Lwt.wakeup_later read_body_notify body;
+  Lwt.wakeup_later response_notify response
+
 let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
     ?(headers = default_headers) () =
   let request = make_request ~service ~rpc ~scheme ~headers in
@@ -26,49 +55,18 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
   let read_body, read_body_notify = Lwt.task () in
   let response, response_notify = Lwt.task () in
   let status, status_notify = Lwt.task () in
-  let trailers_handler headers =
-    let code =
-      match H2.Headers.get headers "grpc-status" with
-      | None -> None
-      | Some s -> (
-          match int_of_string_opt s with
-          | None -> None
-          | Some i -> Grpc.Status.code_of_int i)
-    in
-    match code with
-    | None -> ()
-    | Some code -> (
-        match Lwt.state status with
-        | Sleep ->
-            let message = H2.Headers.get headers "grpc-message" in
-            let status = Grpc.Status.v ?message code in
-            Lwt.wakeup_later status_notify status
-        | _ -> (* This should never happen, but just in case. *) ())
-  in
-  let response_handler (response : H2.Response.t) body =
-    Lwt.wakeup_later read_body_notify body;
-    Lwt.wakeup_later response_notify response;
-    trailers_handler response.headers
-  in
   let write_body =
-    do_request ?flush_headers_immediately request ~response_handler
-      ~trailers_handler
+    do_request ?flush_headers_immediately request
+      ~response_handler:(response_handler read_body_notify response_notify)
+      ~trailers_handler:(trailers_handler status_notify)
   in
   let* handler_res = handler write_body read_body in
   let* response = response in
-  let+ status =
-    match Lwt.is_sleeping status with
-    (* In case no grpc-status appears in headers or trailers. *)
-    | false -> status
-    | true ->
-        Lwt.return
-          (Grpc.Status.v ~message:"Server did not return grpc-status"
-             Grpc.Status.Unknown)
-  in
   let out =
     if response.status <> `OK then Error (Grpc.Status.v Grpc.Status.Unknown)
     else Ok handler_res
   in
+  let+ status = status in
   match out with Error _ as e -> e | Ok out -> Ok (out, status)
 
 module Rpc = struct

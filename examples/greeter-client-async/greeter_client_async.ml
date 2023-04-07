@@ -62,8 +62,8 @@ let () =
      match res with
      | Ok (res, _) ->
          printf "%s\n%!" res.message;
-         return ()
+         Async.exit 0
      | Error _ ->
          printf "an error occurred\n";
-         return ());
+         Async.exit 1);
   never_returns (Scheduler.go ())
