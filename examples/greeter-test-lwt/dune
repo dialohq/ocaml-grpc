@@ -1,0 +1,5 @@
+(executable
+ (name test_grpc_status)
+ (package grpc-examples)
+ (public_name test_grpc_status)
+ (libraries grpc grpc-lwt ocaml-protoc lwt lwt.unix greeter h2 h2-lwt-unix))
