@@ -1,7 +1,7 @@
 (executable
- (name test_grpc_status)
+ (name test_grpc_status_async)
  (package grpc-examples)
- (public_name test_grpc_status)
+ (public_name test_grpc_status_async)
  (libraries
   grpc
   grpc-async
