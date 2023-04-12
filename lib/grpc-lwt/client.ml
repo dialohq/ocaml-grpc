@@ -66,8 +66,11 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
     if response.status <> `OK then Error (Grpc.Status.v Grpc.Status.Unknown)
     else Ok handler_res
   in
-  let+ status = status in
-  match out with Error _ as e -> e | Ok out -> Ok (out, status)
+  match out with
+  | Error _ as e -> Lwt.return e
+  | Ok out ->
+      let+ status = status in
+      Ok (out, status)
 
 module Rpc = struct
   type 'a handler = H2.Body.Writer.t -> H2.Body.Reader.t Lwt.t -> 'a Lwt.t
