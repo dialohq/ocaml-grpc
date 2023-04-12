@@ -64,10 +64,11 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
     | `OK -> Ok handler_res
     | _ -> Error (Grpc.Status.v Grpc.Status.Unknown)
   in
-  let%bind trailers_status = Ivar.read trailers_status_ivar in
   match out with
   | Error _ as e -> return e
-  | Ok out -> return (Ok (out, trailers_status))
+  | Ok out ->
+      let%bind trailers_status = Ivar.read trailers_status_ivar in
+      return (Ok (out, trailers_status))
 
 module Rpc = struct
   type 'a handler =
