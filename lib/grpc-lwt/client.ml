@@ -20,28 +20,7 @@ let default_headers =
     [ ("te", "trailers"); ("content-type", "application/grpc+proto") ]
 
 let trailers_handler status_notify headers =
-  let code, message =
-    match H2.Headers.get headers "grpc-status" with
-    | None ->
-        (Grpc.Status.Unknown, Some "Expected gprc-status header, got nothing")
-    | Some s -> (
-        match int_of_string_opt s with
-        | None ->
-            let msg =
-              Printf.sprintf "Expected valid gprc-status header, got %s" s
-            in
-            (Grpc.Status.Unknown, Some msg)
-        | Some i -> (
-            match Grpc.Status.code_of_int i with
-            | None ->
-                let msg =
-                  Printf.sprintf "Expected valid gprc-status code, got %i" i
-                in
-                (Grpc.Status.Unknown, Some msg)
-            | Some c -> (c, H2.Headers.get headers "grpc-message")))
-  in
-  let status = Grpc.Status.v ?message code in
-  Lwt.wakeup_later status_notify status
+  Lwt.wakeup_later status_notify (Grpc.Status.extract_status headers)
 
 let response_handler read_body_notify response_notify (response : H2.Response.t)
     body =
@@ -63,7 +42,8 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
   let* handler_res = handler write_body read_body in
   let* response = response in
   let out =
-    if response.status <> `OK then Error (Grpc.Status.v Grpc.Status.Unknown)
+    if response.status <> `OK then
+      Error (Grpc.Status.extract_status response.headers)
     else Ok handler_res
   in
   match out with

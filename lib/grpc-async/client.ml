@@ -21,24 +21,7 @@ let default_headers =
     [ ("te", "trailers"); ("content-type", "application/grpc+proto") ]
 
 let trailers_handler trailers_status_ivar headers =
-  let code, message =
-    match H2.Headers.get headers "grpc-status" with
-    | None ->
-        (Grpc.Status.Unknown, Some "Expected gprc-status header, got nothing")
-    | Some s -> (
-        match int_of_string_opt s with
-        | None ->
-            let msg = sprintf "Expected valid gprc-status header, got %s" s in
-            (Grpc.Status.Unknown, Some msg)
-        | Some i -> (
-            match Grpc.Status.code_of_int i with
-            | None ->
-                let msg = sprintf "Expected valid gprc-status code, got %i" i in
-                (Grpc.Status.Unknown, Some msg)
-            | Some c -> (c, H2.Headers.get headers "grpc-message")))
-  in
-  let status = Grpc.Status.v ?message code in
-  Ivar.fill trailers_status_ivar status
+  Ivar.fill trailers_status_ivar (Grpc.Status.extract_status headers)
 
 let response_handler read_body_ivar out_ivar (response : H2.Response.t)
     (body : H2.Body.Reader.t) =
@@ -62,7 +45,7 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
   let out =
     match response.status with
     | `OK -> Ok handler_res
-    | _ -> Error (Grpc.Status.v Grpc.Status.Unknown)
+    | _ -> Error (Grpc.Status.extract_status response.headers)
   in
   match out with
   | Error _ as e -> return e

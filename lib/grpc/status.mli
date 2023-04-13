@@ -37,3 +37,7 @@ val code : t -> code
 
 val message : t -> string option
 (** [message t] returns the message associated with [t], if there is one. *)
+
+val extract_status : H2.Headers.t -> t
+(** [extract_status headers] returns the status embedded in the headers, or a default
+    when the status is invalid or missing. *)
