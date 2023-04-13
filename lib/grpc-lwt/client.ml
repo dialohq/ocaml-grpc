@@ -44,12 +44,16 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
   let out =
     if response.status <> `OK then
       Error (Grpc.Status.extract_status response.headers)
-    else Ok handler_res
+    else Ok (handler_res, response.headers)
   in
   match out with
   | Error _ as e -> Lwt.return e
-  | Ok out ->
-      let+ status = status in
+  | Ok (out, headers) ->
+      let+ status =
+        match H2.Headers.get headers "grpc-status" with
+        | Some _ -> Lwt.return (Grpc.Status.extract_status headers)
+        | None -> status
+      in
       Ok (out, status)
 
 module Rpc = struct
