@@ -20,66 +20,42 @@ let default_headers =
   H2.Headers.of_list
     [ ("te", "trailers"); ("content-type", "application/grpc+proto") ]
 
+let trailers_handler trailers_status_ivar headers =
+  Ivar.fill trailers_status_ivar (Grpc.Status.extract_status headers)
+
+let response_handler read_body_ivar out_ivar (response : H2.Response.t)
+    (body : H2.Body.Reader.t) =
+  Ivar.fill read_body_ivar body;
+  Ivar.fill out_ivar response
+
 let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
     ?(headers = default_headers) () =
   let request = make_request ~service ~rpc ~scheme ~headers in
   let read_body_ivar = Ivar.create () in
-  let handler_res_ivar = Ivar.create () in
   let out_ivar = Ivar.create () in
   let trailers_status_ivar = Ivar.create () in
-  let trailers_handler headers =
-    let code =
-      match H2.Headers.get headers "grpc-status" with
-      | None -> None
-      | Some s -> (
-          match int_of_string_opt s with
-          | None -> None
-          | Some i -> Grpc.Status.code_of_int i)
-    in
-    match code with
-    | None -> ()
-    | Some code -> (
-        match Ivar.is_empty trailers_status_ivar with
-        | true ->
-            let message = H2.Headers.get headers "grpc-message" in
-            let status = Grpc.Status.v ?message code in
-            Ivar.fill trailers_status_ivar status
-        | _ -> (* This should never happen, but just in case. *) ())
-  in
-  let response_handler (response : H2.Response.t) (body : H2.Body.Reader.t) =
-    Ivar.fill read_body_ivar body;
-    don't_wait_for
-      (match response.status with
-      | `OK ->
-          let%bind handler_res = Ivar.read handler_res_ivar in
-          Ivar.fill out_ivar (Ok handler_res);
-          return ()
-      | _ ->
-          Ivar.fill out_ivar (Error (Grpc.Status.v Grpc.Status.Unknown));
-          return ());
-    trailers_handler response.headers
-  in
-  let flush_headers_immediately = None in
   let write_body : H2.Body.Writer.t =
-    do_request ?flush_headers_immediately
-      ?trailers_handler:(Some trailers_handler) request ~response_handler
+    do_request ?flush_headers_immediately:None
+      ?trailers_handler:(Some (trailers_handler trailers_status_ivar))
+      request
+      ~response_handler:(response_handler read_body_ivar out_ivar)
   in
-  don't_wait_for
-    (let%bind handler_res = handler write_body (Ivar.read read_body_ivar) in
-     Ivar.fill handler_res_ivar handler_res;
-     return ());
-  let%bind out = Ivar.read out_ivar in
-  let%bind trailers_status =
-    (* In case no grpc-status appears in headers or trailers. *)
-    if Ivar.is_full trailers_status_ivar then Ivar.read trailers_status_ivar
-    else
-      return
-        (Grpc.Status.v ~message:"Server did not return grpc-status"
-           Grpc.Status.Unknown)
+  let%bind handler_res = handler write_body (Ivar.read read_body_ivar) in
+  let%bind response = Ivar.read out_ivar in
+  let out =
+    match response.status with
+    | `OK -> Ok (handler_res, response.headers)
+    | _ -> Error (Grpc.Status.extract_status response.headers)
   in
   match out with
   | Error _ as e -> return e
-  | Ok out -> return (Ok (out, trailers_status))
+  | Ok (out, headers) ->
+      let%bind status =
+        match H2.Headers.get headers "grpc-status" with
+        | Some _ -> return (Grpc.Status.extract_status headers)
+        | None -> Ivar.read trailers_status_ivar
+      in
+      return (Ok (out, status))
 
 module Rpc = struct
   type 'a handler =
