@@ -65,6 +65,8 @@
   (grpc-lwt (= :version))
   (grpc-async (= :version))
   ocaml-protoc-plugin
+  ppx_deriving_yojson
+  h2-lwt-unix
   conduit-lwt-unix
   cohttp-lwt-unix
   tls-async

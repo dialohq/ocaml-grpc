@@ -1,5 +1,8 @@
 (library
  (name routeguide)
+ (package grpc-examples)
+ (preprocess
+  (pps ppx_deriving.show ppx_deriving.eq))
  (libraries ocaml-protoc-plugin))
 
 (rule
@@ -13,15 +16,3 @@
     .
     "--ocaml_out=annot=[@@deriving show { with_path = false }]:."
     %{proto})))
-
-; (rule
-;  (targets
-;    helloworld_pb.ml
-;    helloworld_pb.mli
-;    helloworld_pp.ml
-;    helloworld_pp.mli
-;    helloworld_types.ml
-;    helloworld_types.mli)
-;  (action
-;   (run ocaml-protoc -binary -pp -ml_out ./ helloworld.proto))
-;  (deps helloworld.proto))
