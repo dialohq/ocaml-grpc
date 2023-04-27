@@ -14,5 +14,5 @@
     protoc
     -I
     .
-    "--ocaml_out=annot=[@@deriving show { with_path = false }]:."
+    "--ocaml_out=annot=[@@deriving show { with_path = false }, eq]:."
     %{proto})))

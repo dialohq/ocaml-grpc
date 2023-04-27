@@ -1,6 +1,6 @@
 (executables
  (names server client)
  (package grpc-examples)
- (public_names routeguide_server_lwt routeguide_client_lwt)
+ (public_names routeguide-server routeguide-client)
  (libraries grpc grpc-lwt ocaml-protoc-plugin lwt lwt.unix routeguide h2 h2-lwt-unix yojson ppx_deriving_yojson.runtime)
  (preprocess (pps ppx_deriving_yojson ppx_deriving.eq)))
