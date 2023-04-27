@@ -1,7 +1,8 @@
-(lang dune 3.6)
+(lang dune 3.7)
 
 (generate_opam_files true)
-(using mdx 0.2)
+
+(using mdx 0.3)
 
 (name grpc)
 
@@ -22,6 +23,7 @@
  (synopsis "A modular gRPC library")
  (description
   "This library builds some of the signatures and implementations of gRPC functionality. This is used in the more specialised package `grpc-lwt` which has more machinery, however this library can also be used to do some bits yourself.")
+ (tags (network rpc serialisation))
  (depends
   (ocaml
    (>= 4.08))
@@ -36,6 +38,7 @@
  (synopsis "An Lwt implementation of gRPC")
  (description
   "Functionality for building gRPC services and rpcs with `lwt`.")
+ (tags (network rpc serialisation))
  (depends
   (grpc
    (= :version))
@@ -48,6 +51,7 @@
  (synopsis "An Async implementation of gRPC")
  (description
   "Functionality for building gRPC services and rpcs with `async`.")
+ (tags (network rpc serialisation))
  (depends
   (ocaml
    (>= 4.11))
@@ -61,6 +65,7 @@
  (name grpc-examples)
  (synopsis "Various grpc examples")
  (description "Various grpc examples.")
+ (tags (network rpc serialisation))
  (depends
   (grpc-lwt (= :version))
   (grpc-async (= :version))
@@ -71,12 +76,14 @@
   cohttp-lwt-unix
   tls-async
   lwt_ssl
+  (mdx (and (>= "2.2.1") :with-test))
   stringext))
 
 (package
  (name grpc-bench)
  (synopsis "grpc benchmarking")
  (description "grpc benchmarking.")
+ (tags (network rpc serialisation benchmark))
  (depends
    bechamel
    bechamel-notty

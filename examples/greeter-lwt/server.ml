@@ -1,5 +1,8 @@
+(* $MDX part-begin=server-imports *)
 open Grpc_lwt
+(* $MDX part-end *)
 
+(* $MDX part-begin=server-hello *)
 let say_hello buffer =
   let open Ocaml_protoc_plugin in
   let open Greeter.Mypackage in
@@ -25,7 +28,9 @@ let greeter_service =
 let server =
   Server.(
     v () |> add_service ~name:"mypackage.Greeter" ~service:greeter_service)
+(* $MDX part-end *)
 
+(* $MDX part-begin=server-main *)
 let () =
   let open Lwt.Syntax in
   let port = 8080 in
@@ -49,3 +54,4 @@ let () =
 
   let forever, _ = Lwt.wait () in
   Lwt_main.run forever
+(* $MDX part-end *)

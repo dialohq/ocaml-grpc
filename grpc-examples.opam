@@ -7,11 +7,12 @@ authors: [
   "Andrew Jeffery <dev@jeffas.io>, Daniel Quernheim <quernd@users.noreply.github.com>, Michael Bacarella <m@bacarella.com>, Sven Anderson <sven@anderson.de>, Wojtek Czekalski <me@wczekalski.com>, dimitris.mostrous <dimitris.mostrous@gmail.com>"
 ]
 license: "BSD-3-Clause"
+tags: ["network" "rpc" "serialisation"]
 homepage: "https://github.com/dialohq/ocaml-grpc"
 doc: "https://dialohq.github.io/ocaml-grpc"
 bug-reports: "https://github.com/dialohq/ocaml-grpc/issues"
 depends: [
-  "dune" {>= "3.6"}
+  "dune" {>= "3.7"}
   "grpc-lwt" {= version}
   "grpc-async" {= version}
   "ocaml-protoc-plugin"
@@ -20,6 +21,8 @@ depends: [
   "conduit-lwt-unix"
   "cohttp-lwt-unix"
   "tls-async"
+  "lwt_ssl"
+  "mdx" {>= "2.2.1" & with-test}
   "stringext"
   "odoc" {with-doc}
 ]
