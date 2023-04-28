@@ -87,6 +87,7 @@
  (description "grpc benchmarking.")
  (tags (network rpc serialisation benchmark))
  (depends
-   bechamel
-   bechamel-notty
+  (bechamel(>= 0.4.0))
+  (bechamel-notty (>= 0.4.0))
+  (bigstringaf (>= 0.9.1))
   (grpc (= :version))))

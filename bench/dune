@@ -2,10 +2,4 @@
  (name service)
  (package grpc-bench)
  (public_name grpc-bench)
- (libraries
-  bechamel
-  notty.unix
-  bechamel-notty
-  grpc
-  ocaml-protoc-plugin
-  bigstringaf))
+ (libraries bechamel notty.unix bechamel-notty grpc bigstringaf))
