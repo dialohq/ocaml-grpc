@@ -27,6 +27,7 @@ To run the sample code and walk through this tutorial, the only prerequisite is 
 
 Clone the OCaml gRPC repository:
 
+<!-- $MDX skip -->
 ```shell
 $ git clone https://github.com/dialohq/ocaml-grpc
 $ cd ocaml-grpc
@@ -34,18 +35,21 @@ $ cd ocaml-grpc
 
 Run the server
 
+<!-- $MDX skip -->
 ```shell
 $ dune exec -- routeguide-server ./examples/routeguide/data/route_guide_db.json
 ```
 
 In a separate shell, run the client
 
+<!-- $MDX skip -->
 ```shell
 $ dune exec -- routeguide-client
 ```
 
-You should see some logging output in both terminal windows. On the shell where you ran the client binary, you should see the output of the bi-directional streaming rpc, printing 1 line per second
+You should see some logging output in both terminal windows. On the shell where you ran the client binary, you should see the output of the bi-directional streaming rpc, printing 1 line per second.
 
+<!-- $MDX skip -->
 ```shell
 NOTE = RouteNote { location: Some(Point { latitude: 409146139, longitude: -746188906 }), message: "at 1.000319208s" }
 ```
@@ -56,6 +60,7 @@ If you scroll up you should see the output of the other three request types; sim
 
 For this tutorial, we will start by creating a new OCaml project with Dune:
 
+<!-- $MDX skip -->
 ```shell
 $ dune init project routeguide
 $ cd routeguide
@@ -66,6 +71,7 @@ $ opam switch create . 4.14.1 --deps-only --with-test -y
 
 Our first step is to define the gRPC service and the method *request* and *response* types using [protocol buffers](). We will keep our `.proto` files in a directory in our project's root. There is no requirement where the `.proto` definitions live, [Dune]() will build them regardless.
 
+<!-- $MDX skip -->
 ```shell
 $ mkdir proto && touch proto/route_guide.proto
 ```
@@ -74,6 +80,7 @@ You can see the complete `.proto` file in [examples/routeguide/proto/route_guide
 
 To define a service, first we define a *service` in your *.proto* file:
 
+<!-- $MDX skip -->
 ```protocol-buffer
 service RouteGuide {
    ...
@@ -83,13 +90,14 @@ service RouteGuide {
 Then you define `rpc` methods inside this service definition, specifying their *request* and *response* types. gRPC lets you define four kinds of service methods, all of which will be used in the `RouteGuide` service:
 
  * A *simple RPC* where the client sends a request to the server and waits for a response to come back. Just like a normal function call.
-``` protocol-buffer
+<!-- $MDX skip -->
+```protocol-buffer
   // Obtains the feature at a given position.
   rpc GetFeature(Point) returns (Feature) {}
 ```
  * A *server-side streaming RPC*  where the client sends a request to the server and gets a stream to read back a seqeuence of messages. The client reads from the returned stream until there are no more messages. In the example, it specifies a server-side streaming method by placing the `stream` keyword before the *response* type.
-
-``` protocol-buffer
+<!-- $MDX skip -->
+```protocol-buffer
   // Obtains the Features available within the given Rectangle.  Results are
   // streamed rather than returned at once (e.g. in a response message with a
   // repeated field), as the rectangle may cover a large area and contain a
@@ -98,24 +106,24 @@ Then you define `rpc` methods inside this service definition, specifying their *
 ```
 
  * A *client-side streaming RPC*  where the client writes a sequence of messages and sends them to the server. Once the client has finished writing the messages, it waits for the server to read them all and return its response. To use client-side streaming,  the `stream` keword is placed before the *request* type.
-
-``` protocol-buffer
+<!-- $MDX skip -->
+```protocol-buffer
   // Accepts a stream of Points on a route being traversed, returning a
   // RouteSummary when traversal is completed.
   rpc RecordRoute(stream Point) returns (RouteSummary) {}
 ```
 
  * A *bi-directional streaming RPC* where both sides send a sequence of messages. The two streams operate independently, so clients and servers can read and write in whatever order they like. For example, the server could wait to receive all the client messages before writing its responses, or it could alternately read a message then write a message, or some other combination of reads and writes. The order of messages in each steam is preserved. You specify this type of method by placing the `stream` keyword before both the *request* and *response* types.
-
-``` protocol-buffer
+<!-- $MDX skip -->
+```protocol-buffer
   // Accepts a stream of RouteNotes sent while a route is being traversed,
   // while receiving other RouteNotes (e.g. from other users).
   rpc RouteChat(stream RouteNote) returns (stream RouteNote) {}
 ```
 
 The `.proto` file also contains protocol buffer message type defintions for the *request* and *response* types used in the service methods. For example here is the `Point` message type:
-
-``` protocol-buffer
+<!-- $MDX skip -->
+```protocol-buffer
 // Points are represented as latitude-longitude pairs in the E7 representation
 // (degrees multiplied by 10**7 and rounded to the nearest integer).
 // Latitudes should be in the range +/- 90 degrees and longitude should be in
@@ -132,17 +140,13 @@ OCaml gRPC can be configured to generate code as part of dune's normal build pro
 
 OCaml gRPC provides a pluggable approach to protocol buffer serialisation and code generation. For this tutorial we use `ocaml-protoc-plugin` which has good coverage of the protobuf spec. Consult the [comparison](https://github.com/issuu/ocaml-protoc-plugin#comparison-with-other-ocaml-protobuf-handlers) with other OCaml protobuf implementations for more details.
 
-Edit the `dune-project` to add `ocaml-protoc-plugin` as a dependency.
+Edit the `dune-project` to add `ocaml-protoc-plugin` as a dependency. Then add a `dune` file into the `proto` directory alongside the `route_guide.proto`.
 
-```common-lisp
-???
-```
-
-Then add a `dune` file into the `proto` directory alongside the `route_guide.proto`.
-
-```common-lisp
+<!-- $MDX include,file=routeguide/proto/dune -->
+```ocaml
 (library
  (name routeguide)
+ (preprocess (pps ppx_deriving.show ppx_deriving.eq))
  (libraries ocaml-protoc-plugin))
 
 (rule
@@ -154,10 +158,11 @@ Then add a `dune` file into the `proto` directory alongside the `route_guide.pro
     protoc
     -I
     .
-    "--ocaml_out=annot=[@@deriving show { with_path = false }]:."
+    "--ocaml_out=annot=[@@deriving show { with_path = false }, eq]:."
     %{proto})))
 ```
 
+<!-- $MDX skip -->
 ```shell
 $ dune build proto
 ```
@@ -183,11 +188,8 @@ You can find our example `RouteGuide` server in [examples/routeguide/src/server.
 As you can see, our server uses the `Service` module from `Grpc_lwt` to build up a service implementation.
 The individual service functions from our proto definition are implemented using `add_rpc` with matching names and rpc types, which must match the `route_guide.proto` definitions.
 
-``` ocaml
-open Grpc_lwt
-
-...
-
+<!-- $MDX include,file=routeguide/src/server.ml,part=server-grpc -->
+```ocaml
 let route_guide_service =
   Server.Service.(
     v ()
@@ -207,7 +209,8 @@ let server =
 
 Let's look at the simplest type first, `GetFeature` which just gets a `Point` from the client and returns the corresponding feature information from its database in a `Feature`.
 
-``` ocaml
+<!-- $MDX include,file=routeguide/src/server.ml,part=server-get-feature -->
+```ocaml
 let get_feature buffer =
   let decode, encode = Service.make_service_functions RouteGuide.getFeature in
   (* Decode the request. *)
@@ -218,21 +221,20 @@ let get_feature buffer =
         failwith
           (Printf.sprintf "Could not decode request: %s" (Result.show_error e))
   in
-  let* () = Lwt_io.printlf "GetFeature = {:%s}" (point_to_s point) in
+  let* () = Lwt_io.printlf "GetFeature = {:%s}" (Point.show point) in
 
   (* Lookup the feature and if found return it. *)
   let feature =
     List.find_opt
       (fun (f : Feature.t) ->
         match (f.location, point) with
-        | Some p1, p2 ->
-            p1.latitude == p2.latitude && p1.longitude == p2.longitude
+        | Some p1, p2 -> Point.equal p1 p2
         | _, _ -> false)
       !features
   in
   let* () =
     Lwt_io.printlf "Found feature %s"
-      (feature |> Option.map feature_to_s |> Option.value ~default:"Missing")
+      (feature |> Option.map Feature.show |> Option.value ~default:"Missing")
   in
   Lwt.return
   @@
@@ -250,7 +252,8 @@ The method is passed the client's `Point` protocol buffer request. It decodes th
 
 Now let's look at one of our streaming RPCs. `list_features` is a server-side streaming RPC, so we need to send back multiple `Feature`s to our client.
 
-``` ocaml
+<!-- $MDX include,file=routeguide/src/server.ml,part=server-list-features -->
+```ocaml
 let list_features (buffer : string) (f : string -> unit) : Grpc.Status.t Lwt.t =
   (* Decode request. *)
   let decode, encode = Service.make_service_functions RouteGuide.listFeatures in
@@ -280,7 +283,8 @@ Like `get_feature` `list_feature`'s input is a single message. A `Rectangle` tha
 
 Now let's look at something a little more complicated: the client-side streaming function `RecordRoute`, where we get a stream of `Point`s from the client and return a single `RouteSummary` with information about their trip. As you can see, this time the method gets a `string Lwt_stream.t` representing the stream of points from the client. It decodes the stream of points, performs some calculations while accumulating the result, and finally responds with a route summary.
 
-``` ocaml
+<!-- $MDX include,file=routeguide/src/server.ml,part=server-record-route -->
+```ocaml
 let record_route (stream : string Lwt_stream.t) =
   let* () = Lwt_io.printf "RecordRoute\n" in
   let* () = Lwt_io.(flush stdout) in
@@ -300,7 +304,7 @@ let record_route (stream : string Lwt_stream.t) =
                 (Printf.sprintf "Could not decode request: %s"
                    (Result.show_error e))
         in
-        let* () = Lwt_io.printf "  ==> Point = {%s}\n" (point_to_s point) in
+        let* () = Lwt_io.printf "  ==> Point = {%s}\n" (Point.show point) in
 
         (* Increment the point count *)
         let point_count = point_count + 1 in
@@ -308,7 +312,7 @@ let record_route (stream : string Lwt_stream.t) =
         (* Find features *)
         let feature_count =
           List.find_all
-            (fun (feature : Feature.t) -> Option.get feature.location == point)
+            (fun (feature : Feature.t) -> Point.equal (Option.get feature.location) point)
             !features
           |> fun x -> List.length x + feature_count
         in
@@ -338,7 +342,8 @@ let record_route (stream : string Lwt_stream.t) =
 
 Finally, let's look at our bidirectional streaming RPC `route_chat`, which receives a stream of `RouteNote`s and returns a stream of `RouteNote`s.
 
-``` ocaml
+<!-- $MDX include,file=routeguide/src/server.ml,part=server-route-chat -->
+```ocaml
 let route_chat (stream : string Lwt_stream.t) (f : string -> unit) =
   let* () = Lwt_io.printf "RouteChat\n" in
   let* () = Lwt_io.(flush stdout) in
@@ -355,7 +360,7 @@ let route_chat (stream : string Lwt_stream.t) (f : string -> unit) =
                 (Printf.sprintf "Could not decode request: %s"
                    (Result.show_error e))
         in
-        let* () = Lwt_io.printf "  ==> Note = {%s}\n" (route_note_to_s note) in
+        let* () = Lwt_io.printf "  ==> Note = {%s}\n" (RouteNote.show note) in
         let* () = Lwt_io.(flush stdout) in
         Lwt.return (encode note |> Writer.contents |> f))
       stream
@@ -372,7 +377,8 @@ let route_chat (stream : string Lwt_stream.t) (f : string -> unit) =
 
 Once we've implemented all our functions, we also need to startup a gRPC server so that clients can actually use our service. This is how our it looks:
 
-``` ocaml
+<!-- $MDX include,file=routeguide/src/server.ml,part=server-main -->
+```ocaml
 let () =
   let port = 8080 in
   let listen_address = Unix.(ADDR_INET (inet_addr_any, port)) in
@@ -401,7 +407,7 @@ let () =
   Lwt_main.run forever
 ```
 
-To handle requests we use `h2-lwt-unix`an implementation of the HTTP/2 specification entirely in OCaml. What that means is we can swap in other h2 implementations like MirageOS to run in a Unikernel or Async to us JaneStreet's alternatve async implementation. Furthermore we can add TLS or SSL encryptiononto our HTTP/2 stack. 
+To handle requests we use `h2-lwt-unix`, an implementation of the HTTP/2 specification entirely in OCaml. What that means is we can swap in other h2 implementations like MirageOS to run in a Unikernel or Async to use JaneStreet's alternatve async implementation. Furthermore we can add TLS or SSL encryptionon to our HTTP/2 stack. 
 
 ## Creating the client
 
@@ -409,7 +415,8 @@ In this section, we will look at creating a gRPC client for our `RouteGuide` ser
 
 To call service methods, we first need to create a H2 connection to communicate with the server. This connection will get reused by all calls to the server.
 
-``` ocaml
+<!-- $MDX include,file=routeguide/src/client.ml,part=client-h2 -->
+```ocaml
 let client address port : H2_lwt_unix.Client.t Lwt.t =
   let* addresses =
     Lwt_unix.getaddrinfo address (string_of_int port)
@@ -427,15 +434,17 @@ To call service methods, we take the H2 connection and build up a gRPC call for 
 
 Calling the simple RPC `get_feature` requires building up a `Client.call` representation that matches the proto defintion, filling in the labelled arguments `~service` and `~rpc` with the matching service implementations. `~do_request` gets the H2 function for writing to a Http/2 Body. The real work is done in the `~handler` function using `Client.Rpc.unary` to setup a Unary RPC response handler, which sends the encoded `Point` and calls the function `~f` with the response. Here we decode the response and log it to the console.
 
-``` ocaml
+<!-- $MDX include,file=routeguide/src/client.ml,part=client-get-feature -->
+```ocaml
 let call_get_feature connection point =
   let encode, decode = Service.make_client_functions RouteGuide.getFeature in
-
   let* response =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"GetFeature"
       ~do_request:(H2_lwt_unix.Client.request connection ~error_handler:ignore)
       ~handler:
-        (Client.Rpc.unary (encode point |> Writer.contents) ~f:(fun response ->
+        (Client.Rpc.unary
+           (encode point |> Writer.contents)
+           ~f:(fun response ->
              let+ response = response in
              match response with
              | Some response -> (
@@ -449,15 +458,15 @@ let call_get_feature connection point =
       ()
   in
   match response with
-  | Ok (res, _ok) -> Lwt_io.printlf "RESPONSE = {%s}" (feature_to_s res)
+  | Ok (res, _ok) -> Lwt_io.printlf "RESPONSE = {%s}" (Feature.show res)
   | Error _ -> Lwt_io.printl "an error occurred"
 ```
 
 ### Server-side streaming RPC
 
 Here we call the server-side streaming method `list_features`, which returns a stream of geographical `Feature`s.
-
-``` ocaml
+<!-- $MDX include,file=routeguide/src/client.ml,part=client-list-features -->
+```ocaml
 let print_features connection =
   let rectangle =
     Rectangle.make
@@ -468,10 +477,12 @@ let print_features connection =
 
   let encode, decode = Service.make_client_functions RouteGuide.listFeatures in
   let* stream =
-    Client.call ~service:"routeguide.RouteGuide" ~rpc:"ListFeatures" 
+    Client.call ~service:"routeguide.RouteGuide" ~rpc:"ListFeatures"
       ~do_request:(H2_lwt_unix.Client.request connection ~error_handler:ignore)
       ~handler:
-        (Client.Rpc.server_streaming (encode rectangle |> Writer.contents) ~f:(fun responses ->
+        (Client.Rpc.server_streaming
+           (encode rectangle |> Writer.contents)
+           ~f:(fun responses ->
              let stream =
                Lwt_stream.map
                  (fun str ->
@@ -489,10 +500,9 @@ let print_features connection =
   match stream with
   | Ok (results, _ok) ->
       Lwt_list.iter_s
-        (fun f -> Lwt_io.printlf "RESPONSE = {%s}" (feature_to_s f))
+        (fun f -> Lwt_io.printlf "RESPONSE = {%s}" (Feature.show f))
         results
-  | Error e ->
-      failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
+  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
 ```
 
 As in the simple RPC we pass a single request value. However, instead of getting back a single value we get a stream of `Feature`s. We use `Lwt_stream.map` to iterate over the stream and decode each into a `Feature.t` and then print out the features when they are all decoded. Equally we could have printed the features as they are being decoded inside the `Lwt_stream.map` rather than gathering them all into a List and printing them at the end. Notice that the type signature for `Client.RPC.server_streaming` is similar to `unary` in that we provide an encoded request and provide a handler function to consume the response.
@@ -500,16 +510,16 @@ As in the simple RPC we pass a single request value. However, instead of getting
 ### Client-side streaming RPCs
 
 The client-side streaming method `record_route` takes a stream of `Point`s and returns a single `RouteSummary` value.
-
-``` ocaml
+<!-- $MDX include,file=routeguide/src/client.ml,part=client-random-point -->
+```ocaml
 let random_point () : Point.t =
   let latitude = (Random.int 180 - 90) * 10000000 in
   let longitude = (Random.int 360 - 180) * 10000000 in
   Point.make ~latitude ~longitude ()
 ```
 We create a function for generating random points and then use that to generate a sequence of 100 points to record on our route.
-
-``` ocaml
+<!-- $MDX include,file=routeguide/src/client.ml,part=client-record-route -->
+```ocaml
 let run_record_route connection =
   let points =
     Random.int 100
@@ -549,7 +559,7 @@ let run_record_route connection =
   in
   match response with
   | Ok (result, _ok) ->
-      Lwt_io.printlf "SUMMARY = {%s}" (route_summary_to_s result)
+      Lwt_io.printlf "SUMMARY = {%s}" (RouteSummary.show result)
   | Error e ->
      failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
 ```
@@ -559,8 +569,8 @@ With this stream of points we setup another handler using `Client.Rpc.client_str
 ### Bidirectional streaming RPC
 
 Finally, let's look at our bidirectional streaming RPC. THe `route_chat` method takes a stream of `RouteNotes` and returns either another stream of `RouteNotes` or an error.
-
-``` ocaml
+<!-- $MDX include,file=routeguide/src/client.ml,part=client-route-chat-1 -->
+```ocaml
 let run_route_chat connection =
   (* Generate locations. *)
   let location_count = 5 in
@@ -579,9 +589,9 @@ let run_route_chat connection =
   in
 ```
 
-We start by generating a short sequence of locations, similar to how we did for `record_route`. 
-
-``` ocaml
+We start by generating a short sequence of locations, similar to how we did for `record_route`.
+<!-- $MDX include,file=routeguide/src/client.ml,part=client-route-chat-2 -->
+```ocaml
   let encode, decode = Service.make_client_functions RouteGuide.routeChat in
   let rec go f stream notes =
     match notes with
@@ -604,7 +614,7 @@ We start by generating a short sequence of locations, similar to how we did for 
                 (Printf.sprintf "Could not decode request: %s"
                    (Result.show_error e))
         in
-        let* () = Lwt_io.printf "NOTE = {%s}\n" (route_note_to_s route_note) in
+        let* () = Lwt_io.printf "NOTE = {%s}\n" (RouteNote.show route_note) in
         go f stream xs
   in
   let* result =
@@ -627,13 +637,13 @@ Other combinations of sending and receiving are possible, the reader is encourag
 ## Try it out!
 
 ### Run the server
-
-``` shell
+<!-- $MDX skip -->
+```shell
 $ dune exec -- routeguide-server ./examples/routeguide/data/route_guide_db.json
 ```
 
 ### Run the client
-
-``` shell
+<!-- $MDX skip -->
+```shell
 $ dune exec -- routeguide-client
 ```

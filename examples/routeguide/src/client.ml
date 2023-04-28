@@ -13,7 +13,8 @@ let client address port : H2_lwt_unix.Client.t Lwt.t =
   let* () = Lwt_unix.connect socket (List.hd addresses).Unix.ai_addr in
   let error_handler _ = print_endline "error" in
   H2_lwt_unix.Client.create_connection ~error_handler socket
-
+(* $MDX part-end *)
+(* $MDX part-begin=client-get-feature *)
 let call_get_feature connection point =
   let encode, decode = Service.make_client_functions RouteGuide.getFeature in
   let* response =
@@ -38,7 +39,8 @@ let call_get_feature connection point =
   match response with
   | Ok (res, _ok) -> Lwt_io.printlf "RESPONSE = {%s}" (Feature.show res)
   | Error _ -> Lwt_io.printl "an error occurred"
-
+(* $MDX part-end *)
+(* $MDX part-begin=client-list-features *)
 let print_features connection =
   let rectangle =
     Rectangle.make
@@ -75,12 +77,14 @@ let print_features connection =
         (fun f -> Lwt_io.printlf "RESPONSE = {%s}" (Feature.show f))
         results
   | Error e -> failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
-
+(* $MDX part-end *)
+(* $MDX part-begin=client-random-point *)
 let random_point () : Point.t =
   let latitude = (Random.int 180 - 90) * 10000000 in
   let longitude = (Random.int 360 - 180) * 10000000 in
   Point.make ~latitude ~longitude ()
-
+(* $MDX part-end *)
+(* $MDX part-begin=client-record-route *)
 let run_record_route connection =
   let points =
     Random.int 100
@@ -123,7 +127,8 @@ let run_record_route connection =
       Lwt_io.printlf "SUMMARY = {%s}" (RouteSummary.show result)
   | Error e ->
      failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
-
+(* $MDX part-end *)
+(* $MDX part-begin=client-route-chat-1 *)
 let run_route_chat connection =
   (* Generate locations. *)
   let location_count = 5 in
@@ -140,7 +145,8 @@ let run_route_chat connection =
                  x - 1 ))
     |> List.of_seq
   in
-
+  (* $MDX part-end *)
+  (* $MDX part-begin=client-route-chat-2 *)
   let encode, decode = Service.make_client_functions RouteGuide.routeChat in
   let rec go f stream notes =
     match notes with
@@ -178,7 +184,8 @@ let run_route_chat connection =
   | Ok ((), _ok) -> Lwt.return ()
   | Error e ->
      failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
-
+(* $MDX part-end *)
+(* $MDX part-begin=client-main *)
 let () =
   let port = 8080 in
   let address = "localhost" in
@@ -203,3 +210,4 @@ let () =
      let* () = run_route_chat connection in
 
      Lwt.return ())
+(* $MDX part-end *)

@@ -72,6 +72,7 @@ let calc_distance (p1 : Point.t) (p2 : Point.t) : int =
   let c = 2.0 *. atan2 (sqrt a) (sqrt (1.0 -. a)) in
   Float.to_int (r *. c)
 
+(* $MDX part-begin=server-get-feature *)
 let get_feature buffer =
   let decode, encode = Service.make_service_functions RouteGuide.getFeature in
   (* Decode the request. *)
@@ -105,7 +106,8 @@ let get_feature buffer =
   | None ->
      (* No feature was found, return an unnamed feature. *)
      (Grpc.Status.(v OK), Some (Feature.make ~location:point () |> encode |> Writer.contents))
-
+(* $MDX part-end *)
+(* $MDX part-begin=server-list-features *)
 let list_features (buffer : string) (f : string -> unit) : Grpc.Status.t Lwt.t =
   (* Decode request. *)
   let decode, encode = Service.make_service_functions RouteGuide.listFeatures in
@@ -127,7 +129,8 @@ let list_features (buffer : string) (f : string -> unit) : Grpc.Status.t Lwt.t =
       !features
   in
   Lwt.return Grpc.Status.(v OK)
-
+(* $MDX part-end *)
+(* $MDX part-begin=server-record-route *)
 let record_route (stream : string Lwt_stream.t) =
   let* () = Lwt_io.printf "RecordRoute\n" in
   let* () = Lwt_io.(flush stdout) in
@@ -179,7 +182,8 @@ let record_route (stream : string Lwt_stream.t) =
   let* () = Lwt_io.printf "RecordRoute exit\n" in
   let* () = Lwt_io.(flush stdout) in
   Lwt.return (Grpc.Status.(v OK), Some (encode summary |> Writer.contents))
-
+(* $MDX part-end *)
+(* $MDX part-begin=server-route-chat *)
 let route_chat (stream : string Lwt_stream.t) (f : string -> unit) =
   let* () = Lwt_io.printf "RouteChat\n" in
   let* () = Lwt_io.(flush stdout) in
@@ -205,7 +209,8 @@ let route_chat (stream : string Lwt_stream.t) (f : string -> unit) =
   let* () = Lwt_io.printf "RouteChat exit\n" in
   let* () = Lwt_io.(flush stdout) in
   Lwt.return Grpc.Status.(v OK)
-
+(* $MDX part-end *)
+(* $MDX part-begin=server-grpc *)
 let route_guide_service =
   Server.Service.(
     v ()
@@ -219,7 +224,8 @@ let server =
   Server.(
     v ()
     |> add_service ~name:"routeguide.RouteGuide" ~service:route_guide_service)
-
+(* $MDX part-end *)
+(* $MDX part-begin=server-main *)
 let () =
   let port = 8080 in
   let listen_address = Unix.(ADDR_INET (inet_addr_any, port)) in
@@ -246,3 +252,4 @@ let () =
 
   let forever, _ = Lwt.wait () in
   Lwt_main.run forever
+               (* $MDX part-end *)
