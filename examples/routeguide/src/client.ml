@@ -1,31 +1,34 @@
-open Grpc_lwt
-open Lwt.Syntax
+open Grpc_eio
 open Routeguide.Route_guide.Routeguide
 open Ocaml_protoc_plugin
 
 (* $MDX part-begin=client-h2 *)
-let client address port : H2_lwt_unix.Client.t Lwt.t =
-  let* addresses =
-    Lwt_unix.getaddrinfo address (string_of_int port)
-      [ Unix.(AI_FAMILY PF_INET) ]
+let client ~sw host port network =
+  let inet, port =
+    Eio_unix.run_in_systhread (fun () ->
+        Unix.getaddrinfo host port [ Unix.(AI_FAMILY PF_INET) ])
+    |> List.filter_map (fun (addr : Unix.addr_info) ->
+           match addr.ai_addr with
+           | Unix.ADDR_UNIX _ -> None
+           | ADDR_INET (addr, port) -> Some (addr, port))
+    |> List.hd
   in
-  let socket = Lwt_unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
-  let* () = Lwt_unix.connect socket (List.hd addresses).Unix.ai_addr in
-  let error_handler _ = print_endline "error" in
-  H2_lwt_unix.Client.create_connection ~error_handler socket
+  let addr = `Tcp (Eio_unix.Ipaddr.of_unix inet, port) in
+  let socket = Eio.Net.connect ~sw network addr in
+  H2_eio.Client.create_connection ~sw ~error_handler:ignore
+      (socket :> Eio.Flow.two_way)
 
 (* $MDX part-end *)
 (* $MDX part-begin=client-get-feature *)
 let call_get_feature connection point =
   let encode, decode = Service.make_client_functions RouteGuide.getFeature in
-  let* response =
+  let response =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"GetFeature"
-      ~do_request:(H2_lwt_unix.Client.request connection ~error_handler:ignore)
+      ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Rpc.unary
            (encode point |> Writer.contents)
            ~f:(fun response ->
-             let+ response = response in
              match response with
              | Some response -> (
                  Reader.create response |> decode |> function
@@ -38,8 +41,8 @@ let call_get_feature connection point =
       ()
   in
   match response with
-  | Ok (res, _ok) -> Lwt_io.printlf "RESPONSE = {%s}" (Feature.show res)
-  | Error _ -> Lwt_io.printl "an error occurred"
+  | Ok (res, _ok) -> Printf.printf "RESPONSE = {%s}" (Feature.show res)
+  | Error _ -> Printf.printf "an error occurred"
 
 (* $MDX part-end *)
 (* $MDX part-begin=client-list-features *)
@@ -52,15 +55,15 @@ let print_features connection =
   in
 
   let encode, decode = Service.make_client_functions RouteGuide.listFeatures in
-  let* stream =
+  let stream =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"ListFeatures"
-      ~do_request:(H2_lwt_unix.Client.request connection ~error_handler:ignore)
+      ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Rpc.server_streaming
            (encode rectangle |> Writer.contents)
            ~f:(fun responses ->
              let stream =
-               Lwt_stream.map
+               Seq.map
                  (fun str ->
                    Reader.create str |> decode |> function
                    | Ok feature -> feature
@@ -70,15 +73,15 @@ let print_features connection =
                             (Result.show_error e)))
                  responses
              in
-             Lwt_stream.to_list stream))
+             stream))
       ()
   in
   match stream with
   | Ok (results, _ok) ->
-      Lwt_list.iter_s
-        (fun f -> Lwt_io.printlf "RESPONSE = {%s}" (Feature.show f))
+      Seq.iter
+        (fun f -> Printf.printf "RESPONSE = {%s}" (Feature.show f))
         results
-  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
+  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
 
 (* $MDX part-end *)
 (* $MDX part-begin=client-random-point *)
@@ -93,29 +96,25 @@ let run_record_route connection =
   let points =
     Random.int 100
     |> Seq.unfold (function 0 -> None | x -> Some (random_point (), x - 1))
-    |> List.of_seq
   in
 
   let encode, decode = Service.make_client_functions RouteGuide.recordRoute in
-  let* response =
+  let response =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"RecordRoute"
-      ~do_request:(H2_lwt_unix.Client.request connection ~error_handler:ignore)
+      ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Rpc.client_streaming ~f:(fun f response ->
              (* Stream points to server. *)
-             let* () =
-               Lwt_list.iter_s
+             Seq.iter
                  (fun point ->
-                   Lwt.return
-                     (encode point |> Writer.contents |> fun x -> f (Some x)))
-                 points
-             in
+                     (encode point |> Writer.contents |> fun x -> Seq.write f x))
+                 points;
+
              (* Signal we have finished sending points. *)
-             f None;
+             Seq.close_writer f;
 
              (* Decode RouteSummary responses. *)
-             response
-             |> Lwt.map @@ function
+             Eio.Promise.await response |> function
                 | Some str -> (
                     Reader.create str |> decode |> function
                     | Ok feature -> feature
@@ -128,15 +127,15 @@ let run_record_route connection =
   in
   match response with
   | Ok (result, _ok) ->
-      Lwt_io.printlf "SUMMARY = {%s}" (RouteSummary.show result)
-  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
+      Printf.printf "SUMMARY = {%s}" (RouteSummary.show result)
+  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
 
 (* $MDX part-end *)
 (* $MDX part-begin=client-route-chat-1 *)
-let run_route_chat connection =
+let run_route_chat clock connection =
   (* Generate locations. *)
   let location_count = 5 in
-  let* () = Lwt_io.printf "Generating %i locations\n" location_count in
+  Printf.printf "Generating %i locations\n" location_count;
   let route_notes =
     location_count
     |> Seq.unfold (function
@@ -155,63 +154,79 @@ let run_route_chat connection =
   let rec go f stream notes =
     match notes with
     | [] ->
-        f None;
-        (* Signal no more notes from the client. *)
-        Lwt.return ()
-    | route_note :: xs ->
-        let () = encode route_note |> Writer.contents |> fun x -> f (Some x) in
+       Seq.close_writer f (* Signal no more notes from the client. *)
+    | route_note :: xs -> begin
+        encode route_note |> Writer.contents |> fun x -> Seq.write f x;
 
         (* Yield and sleep, waiting for server reply. *)
-        let* () = Lwt_unix.sleep 1.0 in
+        Eio.Time.sleep clock 1.0;
+        Eio.Fiber.yield ();
 
-        let* response = Lwt_stream.next stream in
-        let route_note =
-          Reader.create response |> decode |> function
-          | Ok route_note -> route_note
-          | Error e ->
-              failwith
-                (Printf.sprintf "Could not decode request: %s"
-                   (Result.show_error e))
-        in
-        let* () = Lwt_io.printf "NOTE = {%s}\n" (RouteNote.show route_note) in
-        go f stream xs
+        match Seq.uncons stream with
+        | None -> failwith "Expecting response"
+        | Some (response, stream') ->
+           let route_note =
+             Reader.create response
+             |> decode
+             |> function
+               | Ok route_note -> route_note
+               | Error e ->
+                  failwith
+                    (Printf.sprintf "Could not decode request: %s"
+                       (Result.show_error e))
+           in
+           Printf.printf "NOTE = {%s}\n" (RouteNote.show route_note);
+           go f stream' xs
+      end
   in
-  let* result =
+  let result =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"RouteChat"
-      ~do_request:(H2_lwt_unix.Client.request connection ~error_handler:ignore)
+      ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Rpc.bidirectional_streaming ~f:(fun f stream ->
              go f stream route_notes))
       ()
   in
   match result with
-  | Ok ((), _ok) -> Lwt.return ()
-  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
+  | Ok ((), _ok) -> ()
+  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
 
 (* $MDX part-end *)
 (* $MDX part-begin=client-main *)
-let () =
-  let port = 8080 in
-  let address = "localhost" in
+
+let main env =
+  let port = "8080" in
+  let host = "localhost" in
+  let clock = Eio.Stdenv.clock env in
+  let network = Eio.Stdenv.net env in
   let () = Random.self_init () in
 
-  Lwt_main.run
-    (let* () = Lwt_io.printl "*** SIMPLE RPC ***" in
-     let request =
+  let run sw =
+    let connection = client ~sw host port network in
+
+    Printf.printf "*** SIMPLE RPC ***\n";
+    let request =
        RouteGuide.GetFeature.Request.make ~latitude:409146138
          ~longitude:(-746188906) ()
      in
-     let* connection = client address port in
-     let* () = call_get_feature connection request in
+     let result = call_get_feature connection request in
 
-     let* () = Lwt_io.printl "\n*** SERVER STREAMING ***" in
-     let* () = print_features connection in
+     Printf.printf "\n*** SERVER STREAMING ***\n";
+     print_features connection;
 
-     let* () = Lwt_io.printl "\n*** CLIENT STREAMING ***" in
-     let* () = run_record_route connection in
+     Printf.printf "\n*** CLIENT STREAMING ***\n";
+     run_record_route connection;
 
-     let* () = Lwt_io.printl "\n*** BIDIRECTIONAL STREAMING ***" in
-     let* () = run_route_chat connection in
+     Printf.printf "\n*** BIDIRECTIONAL STREAMING ***\n";
+     run_route_chat clock connection;
 
-     Lwt.return ())
+     Eio.Promise.await (H2_eio.Client.shutdown connection);
+     result
+  in
+
+  Eio.Switch.run run
+
+let () =
+  Eio_main.run main
+
 (* $MDX part-end *)
