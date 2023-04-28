@@ -9,8 +9,8 @@
   (:proto greeter.proto))
  (action
   (run
-    protoc
-    -I
-    .
-    "--ocaml_out=annot=[@@deriving show { with_path = false }]:."
-    %{proto})))
+   protoc
+   -I
+   .
+   "--ocaml_out=annot=[@@deriving show { with_path = false }]:."
+   %{proto})))

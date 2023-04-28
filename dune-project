@@ -67,6 +67,8 @@
  (description "Various grpc examples.")
  (tags (network rpc serialisation))
  (depends
+  (ocaml
+   (>= 4.13))
   (grpc-lwt (= :version))
   (grpc-async (= :version))
   ocaml-protoc-plugin

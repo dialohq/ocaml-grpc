@@ -18,26 +18,25 @@ let call_server ~host ~port req =
   H2_async.Client.TLS.create_connection_with_default ~error_handler socket
     where_to_connect
   >>= fun tls_conn ->
-
   (* code generation *)
   let open Ocaml_protoc_plugin in
   let open Greeter.Mypackage in
-  let (decode, encode) = Service.make_service_functions Greeter.sayHello in
+  let decode, encode = Service.make_service_functions Greeter.sayHello in
   let enc = encode req |> Writer.contents in
   Grpc_async.Client.call ~service:"mypackage.Greeter" ~rpc:"SayHello"
     ~do_request:(H2_async.Client.TLS.request tls_conn ~error_handler:ignore)
     ~handler:
-      (Grpc_async.Client.Rpc.unary ~encoded_request:(enc)
-         ~handler:(function
+      (Grpc_async.Client.Rpc.unary ~encoded_request:enc ~handler:(function
         | None -> return (Greeter.SayHello.Response.make ())
         | Some response ->
-           let response =
-             Reader.create response
-             |> decode
-             |> function
-               | Ok v -> v
-               | Error e -> failwith (Printf.sprintf "Could not decode request: %s" (Result.show_error e))
-           in
+            let response =
+              Reader.create response |> decode |> function
+              | Ok v -> v
+              | Error e ->
+                  failwith
+                    (Printf.sprintf "Could not decode request: %s"
+                       (Result.show_error e))
+            in
             return response))
     ()
 

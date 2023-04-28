@@ -2,7 +2,6 @@ open Grpc_lwt
 open Lwt.Syntax
 
 let call_server address port req =
-
   let* addresses =
     Lwt_unix.getaddrinfo address (string_of_int port)
       [ Unix.(AI_FAMILY PF_INET) ]
@@ -16,21 +15,23 @@ let call_server address port req =
   (* code generation *)
   let open Ocaml_protoc_plugin in
   let open Greeter.Mypackage in
-  let (decode, encode) = Service.make_service_functions Greeter.sayHello in
+  let decode, encode = Service.make_service_functions Greeter.sayHello in
   let enc = encode req |> Writer.contents in
 
   Client.call ~service:"mypackage.Greeter" ~rpc:"SayHello"
-    ~do_request:(H2_lwt_unix.Client.SSL.request connection ~error_handler:ignore)
+    ~do_request:
+      (H2_lwt_unix.Client.SSL.request connection ~error_handler:ignore)
     ~handler:
-      (Client.Rpc.unary (enc) ~f:(fun decoder ->
+      (Client.Rpc.unary enc ~f:(fun decoder ->
            let+ decoder = decoder in
            match decoder with
-           | Some decoder ->
-              (Reader.create decoder
-               |> decode
-               |> function
-                 | Ok v -> v
-                 | Error e -> failwith (Printf.sprintf "Could not decode request: %s" (Result.show_error e)))
+           | Some decoder -> (
+               Reader.create decoder |> decode |> function
+               | Ok v -> v
+               | Error e ->
+                   failwith
+                     (Printf.sprintf "Could not decode request: %s"
+                        (Result.show_error e)))
            | None -> Greeter.SayHello.Response.make ()))
     ()
 

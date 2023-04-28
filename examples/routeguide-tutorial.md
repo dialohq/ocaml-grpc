@@ -146,7 +146,9 @@ Edit the `dune-project` to add `ocaml-protoc-plugin` as a dependency. Then add a
 ```ocaml
 (library
  (name routeguide)
- (preprocess (pps ppx_deriving.show ppx_deriving.eq))
+ (package grpc-examples)
+ (preprocess
+  (pps ppx_deriving.show ppx_deriving.eq))
  (libraries ocaml-protoc-plugin))
 
 (rule
@@ -155,11 +157,11 @@ Edit the `dune-project` to add `ocaml-protoc-plugin` as a dependency. Then add a
   (:proto route_guide.proto))
  (action
   (run
-    protoc
-    -I
-    .
-    "--ocaml_out=annot=[@@deriving show { with_path = false }, eq]:."
-    %{proto})))
+   protoc
+   -I
+   .
+   "--ocaml_out=annot=[@@deriving show { with_path = false }, eq]:."
+   %{proto})))
 ```
 
 <!-- $MDX skip -->
@@ -240,10 +242,11 @@ let get_feature buffer =
   @@
   match feature with
   | Some feature ->
-     (Grpc.Status.(v OK), Some (feature |> encode |> Writer.contents))
+      (Grpc.Status.(v OK), Some (feature |> encode |> Writer.contents))
   | None ->
-     (* No feature was found, return an unnamed feature. *)
-     (Grpc.Status.(v OK), Some (Feature.make ~location:point () |> encode |> Writer.contents))
+      (* No feature was found, return an unnamed feature. *)
+      ( Grpc.Status.(v OK),
+        Some (Feature.make ~location:point () |> encode |> Writer.contents) )
 ```
 
 The method is passed the client's `Point` protocol buffer request. It decodes the request into a `Point.t` and uses that to look up the feature. It returns a `Feature` protocol buffer object with the response information indicating the successful response, based on the feature found or an unnamed default feature.
@@ -312,7 +315,8 @@ let record_route (stream : string Lwt_stream.t) =
         (* Find features *)
         let feature_count =
           List.find_all
-            (fun (feature : Feature.t) -> Point.equal (Option.get feature.location) point)
+            (fun (feature : Feature.t) ->
+              Point.equal (Option.get feature.location) point)
             !features
           |> fun x -> List.length x + feature_count
         in
@@ -560,8 +564,7 @@ let run_record_route connection =
   match response with
   | Ok (result, _ok) ->
       Lwt_io.printlf "SUMMARY = {%s}" (RouteSummary.show result)
-  | Error e ->
-     failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
+  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
 ```
 
 With this stream of points we setup another handler using `Client.Rpc.client_streaming`. The type of the callback arguments is important to understand, `f` is the function for sending data down the gRPC stream to the server. Calling it with `f (Some value)` will send the value to the server, while calling it with `f None` signals that we have finished streaming.  Here you can see we iterate over all the points and call `f` with Some value, and when we have sent everything we call `f None` to signal we are finished. Then we decode the `response` provided and print it out.
@@ -627,8 +630,7 @@ We start by generating a short sequence of locations, similar to how we did for 
   in
   match result with
   | Ok ((), _ok) -> Lwt.return ()
-  | Error e ->
-     failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
+  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
 ```
 
 Then we again use the `Client.Rpc` module to setup a `bidirectional_streaming` function with an interesting type signature `val bidirectional_streaming f:((string option -> unit) -> string Lwt_stream.t -> 'a Lwt.t) -> 'a Grpc_lwt.Client.Rpc.handler`. Somewhat intimidating but hopefully understandable in context. The function `f` represents the writer function for sending notes to the server, with the same semantics as before. Calling it with `Some value` represents sending a value to the stream and `f None` means there is no more data to write. The `string Lwt_stream.t` is the stream of `record_note` responses coming back from the server, which we need to decode and print out. We define a recursive function `go` to fold over the list, sending `route_notes`, sleeping to wait for a server response, and printing out that response. When we run out of `route_notes` to send we call `f None` to tell the server we are done and it can stop listening.

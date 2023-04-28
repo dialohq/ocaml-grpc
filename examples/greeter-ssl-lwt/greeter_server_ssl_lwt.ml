@@ -3,20 +3,20 @@ open Grpc_lwt
 let say_hello buffer =
   let open Ocaml_protoc_plugin in
   let open Greeter.Mypackage in
-  let (decode, encode) = Service.make_service_functions Greeter.sayHello in
-  let request = 
-    Reader.create buffer 
-    |> decode 
-    |> function
-      | Ok v -> v
-      | Error e -> failwith (Printf.sprintf "Could not decode request: %s" (Result.show_error e))
+  let decode, encode = Service.make_service_functions Greeter.sayHello in
+  let request =
+    Reader.create buffer |> decode |> function
+    | Ok v -> v
+    | Error e ->
+        failwith
+          (Printf.sprintf "Could not decode request: %s" (Result.show_error e))
   in
   let message =
     if request = "" then "You forgot your name!"
     else Format.sprintf "Hello, %s!" request
   in
   let reply = Greeter.SayHello.Response.make ~message () in
-  Lwt.return (Grpc.Status.(v OK), Some (encode reply |> Writer.contents ))
+  Lwt.return (Grpc.Status.(v OK), Some (encode reply |> Writer.contents))
 
 let greeter_service =
   Server.Service.(

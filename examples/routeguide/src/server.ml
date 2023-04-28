@@ -12,6 +12,7 @@ let features : Feature.t list ref = ref []
 
 module RouteNotesMap = Hashtbl.Make (struct
   type t = Point.t
+
   let equal = Point.equal
   let hash s = Hashtbl.hash s
 end)
@@ -102,10 +103,12 @@ let get_feature buffer =
   @@
   match feature with
   | Some feature ->
-     (Grpc.Status.(v OK), Some (feature |> encode |> Writer.contents))
+      (Grpc.Status.(v OK), Some (feature |> encode |> Writer.contents))
   | None ->
-     (* No feature was found, return an unnamed feature. *)
-     (Grpc.Status.(v OK), Some (Feature.make ~location:point () |> encode |> Writer.contents))
+      (* No feature was found, return an unnamed feature. *)
+      ( Grpc.Status.(v OK),
+        Some (Feature.make ~location:point () |> encode |> Writer.contents) )
+
 (* $MDX part-end *)
 (* $MDX part-begin=server-list-features *)
 let list_features (buffer : string) (f : string -> unit) : Grpc.Status.t Lwt.t =
@@ -129,6 +132,7 @@ let list_features (buffer : string) (f : string -> unit) : Grpc.Status.t Lwt.t =
       !features
   in
   Lwt.return Grpc.Status.(v OK)
+
 (* $MDX part-end *)
 (* $MDX part-begin=server-record-route *)
 let record_route (stream : string Lwt_stream.t) =
@@ -158,7 +162,8 @@ let record_route (stream : string Lwt_stream.t) =
         (* Find features *)
         let feature_count =
           List.find_all
-            (fun (feature : Feature.t) -> Point.equal (Option.get feature.location) point)
+            (fun (feature : Feature.t) ->
+              Point.equal (Option.get feature.location) point)
             !features
           |> fun x -> List.length x + feature_count
         in
@@ -182,6 +187,7 @@ let record_route (stream : string Lwt_stream.t) =
   let* () = Lwt_io.printf "RecordRoute exit\n" in
   let* () = Lwt_io.(flush stdout) in
   Lwt.return (Grpc.Status.(v OK), Some (encode summary |> Writer.contents))
+
 (* $MDX part-end *)
 (* $MDX part-begin=server-route-chat *)
 let route_chat (stream : string Lwt_stream.t) (f : string -> unit) =
@@ -209,6 +215,7 @@ let route_chat (stream : string Lwt_stream.t) (f : string -> unit) =
   let* () = Lwt_io.printf "RouteChat exit\n" in
   let* () = Lwt_io.(flush stdout) in
   Lwt.return Grpc.Status.(v OK)
+
 (* $MDX part-end *)
 (* $MDX part-begin=server-grpc *)
 let route_guide_service =
@@ -224,6 +231,7 @@ let server =
   Server.(
     v ()
     |> add_service ~name:"routeguide.RouteGuide" ~service:route_guide_service)
+
 (* $MDX part-end *)
 (* $MDX part-begin=server-main *)
 let () =
@@ -252,4 +260,4 @@ let () =
 
   let forever, _ = Lwt.wait () in
   Lwt_main.run forever
-               (* $MDX part-end *)
+(* $MDX part-end *)

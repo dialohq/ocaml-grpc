@@ -130,11 +130,11 @@ In the proto directory of your project create a `dune` file and add the followin
   (:proto greeter.proto))
  (action
   (run
-    protoc
-    -I
-    .
-    "--ocaml_out=annot=[@@deriving show { with_path = false }]:."
-    %{proto})))
+   protoc
+   -I
+   .
+   "--ocaml_out=annot=[@@deriving show { with_path = false }]:."
+   %{proto})))
 ```
 
 Make sure the dependencies are installed
@@ -162,20 +162,20 @@ Next up, we implement the Greeter service we previously defined in our `.proto` 
 let say_hello buffer =
   let open Ocaml_protoc_plugin in
   let open Greeter.Mypackage in
-  let (decode, encode) = Service.make_service_functions Greeter.sayHello in
+  let decode, encode = Service.make_service_functions Greeter.sayHello in
   let request =
-    Reader.create buffer
-    |> decode
-    |> function
-      | Ok v -> v
-      | Error e -> failwith (Printf.sprintf "Could not decode request: %s" (Result.show_error e))
+    Reader.create buffer |> decode |> function
+    | Ok v -> v
+    | Error e ->
+        failwith
+          (Printf.sprintf "Could not decode request: %s" (Result.show_error e))
   in
   let message =
     if request = "" then "You forgot your name!"
     else Format.sprintf "Hello, %s!" request
   in
   let reply = Greeter.SayHello.Response.make ~message () in
-  Lwt.return (Grpc.Status.(v OK), Some (encode reply |> Writer.contents ))
+  Lwt.return (Grpc.Status.(v OK), Some (encode reply |> Writer.contents))
 
 let greeter_service =
   Server.Service.(

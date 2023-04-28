@@ -11,8 +11,8 @@
   (:proto route_guide.proto))
  (action
   (run
-    protoc
-    -I
-    .
-    "--ocaml_out=annot=[@@deriving show { with_path = false }, eq]:."
-    %{proto})))
+   protoc
+   -I
+   .
+   "--ocaml_out=annot=[@@deriving show { with_path = false }, eq]:."
+   %{proto})))

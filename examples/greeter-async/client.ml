@@ -36,22 +36,22 @@ let call_server address port req =
   (* code generation *)
   let open Ocaml_protoc_plugin in
   let open Greeter.Mypackage in
-  let (decode, encode) = Service.make_service_functions Greeter.sayHello in
+  let decode, encode = Service.make_service_functions Greeter.sayHello in
   let enc = encode req |> Writer.contents in
 
   Grpc_async.Client.call ~service:"mypackage.Greeter" ~rpc:"SayHello"
     ~do_request:(H2_async.Client.request connection ~error_handler:ignore)
     ~handler:
-      (Grpc_async.Client.Rpc.unary ~encoded_request:(enc)
-         ~handler:(function
-           | None -> return (Greeter.SayHello.Response.make ())
-           | Some response ->
+      (Grpc_async.Client.Rpc.unary ~encoded_request:enc ~handler:(function
+        | None -> return (Greeter.SayHello.Response.make ())
+        | Some response ->
             let response =
-              Reader.create response
-              |> decode
-              |> function
-                | Ok v -> v
-                | Error e -> failwith (Printf.sprintf "Could not decode request: %s" (Result.show_error e))
+              Reader.create response |> decode |> function
+              | Ok v -> v
+              | Error e ->
+                  failwith
+                    (Printf.sprintf "Could not decode request: %s"
+                       (Result.show_error e))
             in
             return response))
     ()

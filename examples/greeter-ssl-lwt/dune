@@ -2,4 +2,13 @@
  (names greeter_server_ssl_lwt greeter_client_ssl_lwt)
  (package grpc-examples)
  (public_names greeter_server_ssl_lwt greeter_client_ssl_lwt)
- (libraries grpc grpc-lwt ocaml-protoc-plugin lwt lwt.unix lwt_ssl greeter h2 h2-lwt-unix))
+ (libraries
+  grpc
+  grpc-lwt
+  ocaml-protoc-plugin
+  lwt
+  lwt.unix
+  lwt_ssl
+  greeter
+  h2
+  h2-lwt-unix))
