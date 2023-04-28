@@ -37,7 +37,7 @@ let main env =
         ~handler:(Grpc_eio.Client.Rpc.unary encoded_request ~f)
         ()
     in
-    H2_eio.Client.shutdown connection;
+    Eio.Promise.await (H2_eio.Client.shutdown connection);
     result
   in
   Eio.Switch.run run
