@@ -23,6 +23,8 @@ depends: [
   "grpc-async"
   "grpc-eio"
   "ocaml-protoc-plugin" {>= "4.5"}
+  "async" {>= "v0.15" & < "v0.16"}
+  "ppx_jane" {>= "v0.15" & < "v0.16"}
   "ppx_deriving_yojson"
   "h2-lwt-unix"
   "conduit-lwt-unix"

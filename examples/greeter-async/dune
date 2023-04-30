@@ -1,7 +1,7 @@
-(executable
- (name client)
+(executables
+ (names client server)
  (package grpc-examples)
- (public_name greeter_client_async)
+ (public_names greeter_client_async greeter_server_async)
  (libraries
   grpc
   grpc-async
@@ -11,6 +11,7 @@
   async_unix
   core_kernel
   core
+  core_unix.command_unix
   greeter
   h2
   h2-async)

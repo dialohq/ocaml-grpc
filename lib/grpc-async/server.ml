@@ -1,3 +1,4 @@
+open! Async
 module ServiceMap = Map.Make (String)
 
 type service = H2.Reqd.t -> unit
@@ -45,17 +46,16 @@ let handle_request t reqd =
   | _ -> respond_with `Not_found
 
 module Rpc = struct
-  open Lwt.Syntax
-
-  type unary = string -> (Grpc.Status.t * string option) Lwt.t
+  type unary = string -> (Grpc.Status.t * string option) Deferred.t
 
   type client_streaming =
-    string Lwt_stream.t -> (Grpc.Status.t * string option) Lwt.t
+    string Pipe.Reader.t -> (Grpc.Status.t * string option) Deferred.t
 
-  type server_streaming = string -> (string -> unit) -> Grpc.Status.t Lwt.t
+  type server_streaming =
+    string -> string Pipe.Writer.t -> Grpc.Status.t Deferred.t
 
   type bidirectional_streaming =
-    string Lwt_stream.t -> (string -> unit) -> Grpc.Status.t Lwt.t
+    string Pipe.Reader.t -> string Pipe.Writer.t -> Grpc.Status.t Deferred.t
 
   type t =
     | Unary of unary
@@ -64,53 +64,56 @@ module Rpc = struct
     | Bidirectional_streaming of bidirectional_streaming
 
   let bidirectional_streaming ~(f : bidirectional_streaming) (reqd : H2.Reqd.t)
-      =
-    (* Create an incoming string Lwt_stream.t and a function to push values onto the stream. *)
-    let decoder_stream, decoder_push = Lwt_stream.create () in
+      : unit Deferred.t =
+    let decoder_stream, decoder_push = Async.Pipe.create () in
     let body = H2.Reqd.request_body reqd in
 
     (* Pass the H2 body reader and the push function to grpc_recv_streaming. *)
     Connection.grpc_recv_streaming body decoder_push;
 
-    (* Create outgoing string Lwt_stream.t and a function to push outgoing values onto the stream. *)
-    let encoder_stream, encoder_push = Lwt_stream.create () in
+    (* Create outgoing string Pipe.t. *)
+    let encoder_stream, encoder_push = Async.Pipe.create () in
 
     (* Signal MVar for comms between receiving and sending. *)
-    let status_mvar = Lwt_mvar.create_empty () in
-    Lwt.async (fun () ->
-        Connection.grpc_send_streaming reqd encoder_stream status_mvar);
-    let* status =
-      f decoder_stream (fun encoder -> encoder_push (Some encoder))
-    in
-    encoder_push None;
-    Lwt_mvar.put status_mvar status
+    let status_mvar = Async.Mvar.create () in
 
-  let client_streaming ~(f : client_streaming) (reqd : H2.Reqd.t) : unit Lwt.t =
+    don't_wait_for
+      (Connection.grpc_send_streaming reqd encoder_stream status_mvar);
+    let%bind status = f decoder_stream encoder_push in
+    if not (Pipe.is_closed encoder_push) then Pipe.close encoder_push;
+    if not (Pipe.is_closed decoder_push) then Pipe.close decoder_push;
+    Mvar.put status_mvar status
+
+  let client_streaming ~(f : client_streaming) (reqd : H2.Reqd.t) =
     bidirectional_streaming reqd ~f:(fun decoder_stream encoder_push ->
-        let+ (status : Grpc.Status.t), (encoder : string option) =
-          f decoder_stream
+        let%bind status, encoder = f decoder_stream in
+        let%bind () =
+          match encoder with
+          | Some encoder -> Pipe.write encoder_push encoder
+          | None -> return ()
         in
-        (match encoder with None -> () | Some encoder -> encoder_push encoder);
-        status)
+        return status)
 
-  let server_streaming ~f reqd =
+  let server_streaming ~(f : server_streaming) (reqd : H2.Reqd.t) =
     bidirectional_streaming reqd ~f:(fun decoder_stream encoder_push ->
-        let* decoder = Lwt_stream.get decoder_stream in
+        let%bind decoder = Pipe.read decoder_stream in
         match decoder with
-        | None -> Lwt.return Grpc.Status.(v OK)
-        | Some decoder -> f decoder encoder_push)
+        | `Eof -> return Grpc.Status.(v OK)
+        | `Ok decoder -> f decoder encoder_push)
 
-  let unary ~f reqd =
+  let unary ~(f : unary) (reqd : H2.Reqd.t) =
     bidirectional_streaming reqd ~f:(fun decoder_stream encoder_push ->
-        let* decoder = Lwt_stream.get decoder_stream in
+        let%bind decoder = Pipe.read decoder_stream in
         match decoder with
-        | None -> Lwt.return Grpc.Status.(v OK)
-        | Some decoder ->
-            let+ status, encoder = f decoder in
-            (match encoder with
-            | None -> ()
-            | Some encoder -> encoder_push encoder);
-            status)
+        | `Eof -> return Grpc.Status.(v OK)
+        | `Ok decoder ->
+            let%bind status, encoder = f decoder in
+            let%bind () =
+              match encoder with
+              | None -> return ()
+              | Some encoder -> Pipe.write encoder_push encoder
+            in
+            return status)
 end
 
 module Service = struct
@@ -133,13 +136,11 @@ module Service = struct
       match rpc with
       | Some rpc -> (
           match rpc with
-          | Unary f -> Lwt.async (fun () -> Rpc.unary ~f reqd)
-          | Client_streaming f ->
-              Lwt.async (fun () -> Rpc.client_streaming ~f reqd)
-          | Server_streaming f ->
-              Lwt.async (fun () -> Rpc.server_streaming ~f reqd)
+          | Unary f -> don't_wait_for (Rpc.unary ~f reqd)
+          | Client_streaming f -> don't_wait_for (Rpc.client_streaming ~f reqd)
+          | Server_streaming f -> don't_wait_for (Rpc.server_streaming ~f reqd)
           | Bidirectional_streaming f ->
-              Lwt.async (fun () -> Rpc.bidirectional_streaming ~f reqd))
+              don't_wait_for (Rpc.bidirectional_streaming ~f reqd))
       | None -> respond_with `Not_found
     else respond_with `Not_found
 end

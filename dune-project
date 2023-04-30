@@ -65,6 +65,10 @@
    (= :version))
   (h2-async
    (>= 0.9.0))
+  (async
+   (and (>= v0.15) (< v0.16)))
+  (ppx_jane
+   (and (>= v0.15) (< v0.16)))
   stringext))
 
 (package
@@ -78,6 +82,10 @@
   grpc-async
   grpc-eio
   (ocaml-protoc-plugin (>= 4.5))
+  (async
+   (and (>= v0.15) (< v0.16)))
+  (ppx_jane
+   (and (>= v0.15) (< v0.16)))
   ppx_deriving_yojson
   h2-lwt-unix
   conduit-lwt-unix
@@ -98,7 +106,8 @@
   (bechamel(>= 0.4.0))
   notty
   (bechamel-notty (>= 0.4.0))
-  (bigstringaf (>= 0.9.1))))
+  (bigstringaf (>= 0.9.1))
+  (notty (>= 0.2.3))))
 
 (package
  (name grpc-eio)
@@ -110,4 +119,3 @@
    (= :version))
   h2-eio
   stringext))
-

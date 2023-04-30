@@ -24,6 +24,7 @@ depends: [
   "notty"
   "bechamel-notty" {>= "0.4.0"}
   "bigstringaf" {>= "0.9.1"}
+  "notty" {>= "0.2.3"}
   "odoc" {with-doc}
 ]
 build: [
