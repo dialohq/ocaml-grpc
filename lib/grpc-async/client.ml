@@ -40,10 +40,10 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
       request
       ~response_handler:(response_handler read_body_ivar out_ivar)
   in
-  let%bind handler_res = handler write_body (Ivar.read read_body_ivar) in
   let%bind response = Ivar.read out_ivar in
   match response.status with
   | `OK ->
+      let%bind handler_res = handler write_body (Ivar.read read_body_ivar) in
       let%map status =
         match H2.Headers.get headers "grpc-status" with
         | Some _ -> return (Grpc.Status.extract_status headers)
