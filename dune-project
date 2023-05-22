@@ -9,7 +9,13 @@
 (license "BSD-3-Clause")
 
 (authors
- "Andrew Jeffery <dev@jeffas.io>, Daniel Quernheim <quernd@users.noreply.github.com>, Michael Bacarella <m@bacarella.com>, Sven Anderson <sven@anderson.de>, Wojtek Czekalski <me@wczekalski.com>, dimitris.mostrous <dimitris.mostrous@gmail.com>")
+ "Andrew Jeffery <dev@jeffas.io>"
+ "Daniel Quernheim <quernd@users.noreply.github.com>"
+ "Michael Bacarella <m@bacarella.com>"
+ "Sven Anderson <sven@anderson.de>"
+ "Tim McGilchrist <timmcgil@gmail.com>"
+ "Wojtek Czekalski <me@wczekalski.com>"
+ "dimitris.mostrous <dimitris.mostrous@gmail.com>")
 
 (maintainers "Daniel Quernheim <grpc@quernd.uber.space>")
 
