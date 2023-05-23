@@ -39,10 +39,10 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
       ~response_handler:(response_handler read_body_notify response_notify)
       ~trailers_handler:(trailers_handler status_notify)
   in
+  let* handler_res = handler write_body read_body in
   let* response = response in
   match response.status with
   | `OK ->
-      let* handler_res = handler write_body read_body in
       let+ status =
         match H2.Headers.get headers "grpc-status" with
         | Some _ -> Lwt.return (Grpc.Status.extract_status headers)
