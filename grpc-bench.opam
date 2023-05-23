@@ -4,21 +4,25 @@ synopsis: "grpc benchmarking"
 description: "grpc benchmarking."
 maintainer: ["Daniel Quernheim <grpc@quernd.uber.space>"]
 authors: [
-  "Andrew Jeffery <dev@jeffas.io>, Daniel Quernheim <quernd@users.noreply.github.com>, Michael Bacarella <m@bacarella.com>, Sven Anderson <sven@anderson.de>, Wojtek Czekalski <me@wczekalski.com>, dimitris.mostrous <dimitris.mostrous@gmail.com>"
+  "Andrew Jeffery <dev@jeffas.io>"
+  "Daniel Quernheim <quernd@users.noreply.github.com>"
+  "Michael Bacarella <m@bacarella.com>"
+  "Sven Anderson <sven@anderson.de>"
+  "Tim McGilchrist <timmcgil@gmail.com>"
+  "Wojtek Czekalski <me@wczekalski.com>"
+  "dimitris.mostrous <dimitris.mostrous@gmail.com>"
 ]
 license: "BSD-3-Clause"
+tags: ["network" "rpc" "serialisation" "benchmark"]
 homepage: "https://github.com/dialohq/ocaml-grpc"
 doc: "https://dialohq.github.io/ocaml-grpc"
 bug-reports: "https://github.com/dialohq/ocaml-grpc/issues"
 depends: [
-  "dune" {>= "3.6"}
-  "lwt"
-  "notty"
-  "bechamel"
-  "bechamel-notty"
-  "grpc-lwt" {= version}
-  "ocaml-protoc"
-  "h2-lwt-unix"
+  "dune" {>= "3.7"}
+  "bechamel" {>= "0.4.0"}
+  "bechamel-notty" {>= "0.4.0"}
+  "bigstringaf" {>= "0.9.1"}
+  "grpc" {= version}
   "odoc" {with-doc}
 ]
 build: [

@@ -1,18 +1,20 @@
 (executable
- (name greeter_client_async)
+ (name client)
  (package grpc-examples)
- (public_name greeter_client_async)
+ (public_name greeter_client_tls_async)
  (libraries
   grpc
   grpc-async
-  ocaml-protoc
+  ocaml-protoc-plugin
   async
   async_kernel
   async_unix
   core_kernel
   core
   greeter
+  tls-async
   h2
-  h2-async)
+  h2-async
+  core_unix.command_unix)
  (preprocess
   (pps ppx_jane)))

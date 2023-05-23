@@ -1,0 +1,8 @@
+(mdx
+ (package grpc-examples)
+ (files helloworld-tutorial.md routeguide-tutorial.md)
+ (enabled_if
+  (<> %{os_type} "Win32"))
+ (deps
+  (source_tree examples)
+  (package grpc-examples)))
