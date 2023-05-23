@@ -503,7 +503,7 @@ let print_features connection =
         (fun f -> Printf.printf "RESPONSE = {%s}" (Feature.show f))
         results
   | Error e ->
-      failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
+      failwith (Printf.sprintf "HTTP2 error: %s" (H2.Status.to_string e))
 ```
 
 As in the simple RPC we pass a single request value. However, instead of getting back a single value we get a stream of `Feature`s. We use `Seq.map` to iterate over the stream and decode each into a `Feature.t` and then print out the features when they are all decoded. Equally we could have printed the features as they are being decoded inside the `Seq.map` rather than gathering them all into a List and printing them at the end. Notice that the type signature for `Client.RPC.server_streaming` is similar to `unary` in that we provide an encoded request and provide a handler function to consume the response.
@@ -558,7 +558,7 @@ let run_record_route connection =
   | Ok (result, _ok) ->
       Printf.printf "SUMMARY = {%s}" (RouteSummary.show result)
   | Error e ->
-      failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
+      failwith (Printf.sprintf "HTTP2 error: %s" (H2.Status.to_string e))
 ```
 
 With this stream of points we setup another handler using `Client.Rpc.client_streaming`. The type of the callback arguments is important to understand, `f` is the function for sending data down the gRPC stream to the server. Calling it with `f (Some value)` will send the value to the server, while calling it with `f None` signals that we have finished streaming.  Here you can see we iterate over all the points and call `f` with Some value, and when we have sent everything we call `f None` to signal we are finished. Then we decode the `response` provided and print it out.
@@ -626,7 +626,7 @@ We start by generating a short sequence of locations, similar to how we did for 
   match result with
   | Ok ((), _ok) -> ()
   | Error e ->
-      failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
+      failwith (Printf.sprintf "HTTP2 error: %s" (H2.Status.to_string e))
 ```
 
 Then we again use the `Client.Rpc` module to setup a `bidirectional_streaming` function with an interesting type signature `val bidirectional_streaming f:(string Seq.writer -> string Seq.t -> 'a) -> 'a handler`. Somewhat intimidating but hopefully understandable in context. The function `f` represents the writer function for sending notes to the server, with the same semantics as before. Calling it with `Some value` represents sending a value to the stream and `f None` means there is no more data to write. The `string Seq.t` is the stream of `record_note` responses coming back from the server, which we need to decode and print out. We define a recursive function `go` to fold over the list, sending `route_notes`, sleeping to wait for a server response, and printing out that response. When we run out of `route_notes` to send we call `Seq.close_writer f` to tell the server we are done and it can stop listening.
