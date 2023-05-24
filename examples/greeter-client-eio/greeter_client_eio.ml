@@ -20,15 +20,23 @@ let main env =
         (socket :> Eio.Flow.two_way)
     in
 
-    let encoder = Pbrt.Encoder.create () in
-    let request = Greeter.Greeter_types.default_hello_request ~name () in
-    Greeter.Greeter_pb.encode_hello_request request encoder;
-    let encoded_request = Pbrt.Encoder.to_string encoder in
-    let f = function
-      | Some response ->
-          let decoded_response = Pbrt.Decoder.of_string response in
-          Greeter.Greeter_pb.decode_hello_reply decoded_response
-      | None -> Greeter.Greeter_types.default_hello_reply ()
+    let open Ocaml_protoc_plugin in
+    let open Greeter.Mypackage in
+    let encode, decode = Service.make_client_functions Greeter.sayHello in
+    let encoded_request =
+      HelloRequest.make ~name () |> encode |> Writer.contents
+    in
+
+    let f decoder =
+      match decoder with
+      | Some decoder -> (
+          Reader.create decoder |> decode |> function
+          | Ok v -> v
+          | Error e ->
+              failwith
+                (Printf.sprintf "Could not decode request: %s"
+                   (Result.show_error e)))
+      | None -> Greeter.SayHello.Response.make ()
     in
 
     let result =
@@ -44,6 +52,6 @@ let main env =
 
 let () =
   match Eio_main.run main with
-  | Ok ({ message }, status) ->
+  | Ok (message, status) ->
       Eio.traceln "%s: %s" (Grpc.Status.show status) message
   | Error err -> Eio.traceln "Error: %a" H2.Status.pp_hum err

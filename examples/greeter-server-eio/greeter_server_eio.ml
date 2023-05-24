@@ -1,16 +1,22 @@
 open Grpc_eio
 
 let say_hello buffer =
-  let decoder = Pbrt.Decoder.of_string buffer in
-  let req = Greeter.Greeter_pb.decode_hello_request decoder in
-  let message =
-    if req.name = "" then "You forgot your name!"
-    else Format.sprintf "Hello, %s!" req.name
+  let open Ocaml_protoc_plugin in
+  let open Greeter.Mypackage in
+  let decode, encode = Service.make_service_functions Greeter.sayHello in
+  let request =
+    Reader.create buffer |> decode |> function
+    | Ok v -> v
+    | Error e ->
+        failwith
+          (Printf.sprintf "Could not decode request: %s" (Result.show_error e))
   in
-  let reply = Greeter.Greeter_types.default_hello_reply ~message () in
-  let encoder = Pbrt.Encoder.create () in
-  Greeter.Greeter_pb.encode_hello_reply reply encoder;
-  (Grpc.Status.(v OK), Some (Pbrt.Encoder.to_string encoder))
+  let message =
+    if request = "" then "You forgot your name!"
+    else Format.sprintf "Hello, %s!" request
+  in
+  let reply = Greeter.SayHello.Response.make ~message () in
+  (Grpc.Status.(v OK), Some (encode reply |> Writer.contents))
 
 let connection_handler server sw =
   let error_handler client_address ?request:_ _error start_response =
