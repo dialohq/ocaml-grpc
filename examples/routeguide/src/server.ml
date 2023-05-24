@@ -94,7 +94,8 @@ let get_feature buffer =
         | _, _ -> false)
       !features
   in
-  Eio.traceln "Found feature %s" (feature |> Option.map Feature.show |> Option.value ~default:"Missing");
+  Eio.traceln "Found feature %s"
+    (feature |> Option.map Feature.show |> Option.value ~default:"Missing");
   match feature with
   | Some feature ->
       (Grpc.Status.(v OK), Some (feature |> encode |> Writer.contents))
@@ -136,8 +137,9 @@ let record_route clock stream =
   let start = Eio.Time.now clock in
   let decode, encode = Service.make_service_functions RouteGuide.recordRoute in
 
-  let (point_count, feature_count, distance) =
-    Seq.fold_left (fun (point_count, feature_count, distance) i ->
+  let point_count, feature_count, distance =
+    Seq.fold_left
+      (fun (point_count, feature_count, distance) i ->
         let point =
           Reader.create i |> decode |> function
           | Ok v -> v
@@ -167,7 +169,8 @@ let record_route clock stream =
           | None -> distance
         in
         last_point := Some point;
-        (point_count, feature_count, distance)) (0,0,0) stream
+        (point_count, feature_count, distance))
+      (0, 0, 0) stream
   in
   let stop = Eio.Time.now clock in
   let elapsed_time = int_of_float (stop -. start) in
@@ -179,23 +182,23 @@ let record_route clock stream =
 
 (* $MDX part-end *)
 (* $MDX part-begin=server-route-chat *)
-let route_chat stream  (f : string -> unit) =
+let route_chat stream (f : string -> unit) =
   Printf.printf "RouteChat\n";
 
   let decode, encode = Service.make_service_functions RouteGuide.routeChat in
   Seq.iter
-      (fun i ->
-        let note =
-          Reader.create i |> decode |> function
-          | Ok v -> v
-          | Error e ->
-              failwith
-                (Printf.sprintf "Could not decode request: %s"
-                   (Result.show_error e))
-        in
-        Printf.printf "  ==> Note = {%s}\n" (RouteNote.show note);
-        (encode note |> Writer.contents |> f))
-      stream;
+    (fun i ->
+      let note =
+        Reader.create i |> decode |> function
+        | Ok v -> v
+        | Error e ->
+            failwith
+              (Printf.sprintf "Could not decode request: %s"
+                 (Result.show_error e))
+      in
+      Printf.printf "  ==> Note = {%s}\n" (RouteNote.show note);
+      encode note |> Writer.contents |> f)
+    stream;
 
   Printf.printf "RouteChat exit\n";
   Grpc.Status.(v OK)
@@ -214,7 +217,8 @@ let route_guide_service clock =
 let server clock =
   Server.(
     v ()
-    |> add_service ~name:"routeguide.RouteGuide" ~service:(route_guide_service clock))
+    |> add_service ~name:"routeguide.RouteGuide"
+         ~service:(route_guide_service clock))
 
 (* $MDX part-end *)
 let connection_handler server sw =
@@ -230,8 +234,8 @@ let connection_handler server sw =
         Grpc_eio.Server.handle_request server request_descriptor)
   in
   fun socket addr ->
-  H2_eio.Server.create_connection_handler ?config:None ~request_handler
-    ~error_handler addr socket
+    H2_eio.Server.create_connection_handler ?config:None ~request_handler
+      ~error_handler addr socket
 
 (* $MDX part-begin=server-main *)
 let serve server env =
@@ -242,9 +246,12 @@ let serve server env =
   Eio.Switch.run @@ fun sw ->
   let handler = connection_handler (server clock) sw in
   let server_socket =
-    Eio.Net.listen net ~sw ~reuse_addr:true ~backlog:10 addr in
+    Eio.Net.listen net ~sw ~reuse_addr:true ~backlog:10 addr
+  in
   let rec listen () =
-    Eio.Net.accept_fork ~sw server_socket ~on_error:(fun exn -> Eio.traceln "%s" (Printexc.to_string exn)) handler;
+    Eio.Net.accept_fork ~sw server_socket
+      ~on_error:(fun exn -> Eio.traceln "%s" (Printexc.to_string exn))
+      handler;
     listen ()
   in
   Eio.traceln "Listening on port %i for grpc requests\n" port;

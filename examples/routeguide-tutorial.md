@@ -204,7 +204,8 @@ let route_guide_service clock =
 let server clock =
   Server.(
     v ()
-    |> add_service ~name:"routeguide.RouteGuide" ~service:(route_guide_service clock))
+    |> add_service ~name:"routeguide.RouteGuide"
+         ~service:(route_guide_service clock))
 ```
 
 ### Simple RPC
@@ -234,7 +235,8 @@ let get_feature buffer =
         | _, _ -> false)
       !features
   in
-  Eio.traceln "Found feature %s" (feature |> Option.map Feature.show |> Option.value ~default:"Missing");
+  Eio.traceln "Found feature %s"
+    (feature |> Option.map Feature.show |> Option.value ~default:"Missing");
   match feature with
   | Some feature ->
       (Grpc.Status.(v OK), Some (feature |> encode |> Writer.contents))
@@ -290,8 +292,9 @@ let record_route clock stream =
   let start = Eio.Time.now clock in
   let decode, encode = Service.make_service_functions RouteGuide.recordRoute in
 
-  let (point_count, feature_count, distance) =
-    Seq.fold_left (fun (point_count, feature_count, distance) i ->
+  let point_count, feature_count, distance =
+    Seq.fold_left
+      (fun (point_count, feature_count, distance) i ->
         let point =
           Reader.create i |> decode |> function
           | Ok v -> v
@@ -321,7 +324,8 @@ let record_route clock stream =
           | None -> distance
         in
         last_point := Some point;
-        (point_count, feature_count, distance)) (0,0,0) stream
+        (point_count, feature_count, distance))
+      (0, 0, 0) stream
   in
   let stop = Eio.Time.now clock in
   let elapsed_time = int_of_float (stop -. start) in
@@ -338,23 +342,23 @@ Finally, let's look at our bidirectional streaming RPC `route_chat`, which recei
 
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-route-chat -->
 ```ocaml
-let route_chat stream  (f : string -> unit) =
+let route_chat stream (f : string -> unit) =
   Printf.printf "RouteChat\n";
 
   let decode, encode = Service.make_service_functions RouteGuide.routeChat in
   Seq.iter
-      (fun i ->
-        let note =
-          Reader.create i |> decode |> function
-          | Ok v -> v
-          | Error e ->
-              failwith
-                (Printf.sprintf "Could not decode request: %s"
-                   (Result.show_error e))
-        in
-        Printf.printf "  ==> Note = {%s}\n" (RouteNote.show note);
-        (encode note |> Writer.contents |> f))
-      stream;
+    (fun i ->
+      let note =
+        Reader.create i |> decode |> function
+        | Ok v -> v
+        | Error e ->
+            failwith
+              (Printf.sprintf "Could not decode request: %s"
+                 (Result.show_error e))
+      in
+      Printf.printf "  ==> Note = {%s}\n" (RouteNote.show note);
+      encode note |> Writer.contents |> f)
+    stream;
 
   Printf.printf "RouteChat exit\n";
   Grpc.Status.(v OK)
@@ -376,9 +380,12 @@ let serve server env =
   Eio.Switch.run @@ fun sw ->
   let handler = connection_handler (server clock) sw in
   let server_socket =
-    Eio.Net.listen net ~sw ~reuse_addr:true ~backlog:10 addr in
+    Eio.Net.listen net ~sw ~reuse_addr:true ~backlog:10 addr
+  in
   let rec listen () =
-    Eio.Net.accept_fork ~sw server_socket ~on_error:(fun exn -> Eio.traceln "%s" (Printexc.to_string exn)) handler;
+    Eio.Net.accept_fork ~sw server_socket
+      ~on_error:(fun exn -> Eio.traceln "%s" (Printexc.to_string exn))
+      handler;
     listen ()
   in
   Eio.traceln "Listening on port %i for grpc requests\n" port;
@@ -419,7 +426,7 @@ let client ~sw host port network =
   let addr = `Tcp (Eio_unix.Ipaddr.of_unix inet, port) in
   let socket = Eio.Net.connect ~sw network addr in
   H2_eio.Client.create_connection ~sw ~error_handler:ignore
-      (socket :> Eio.Flow.two_way)
+    (socket :> Eio.Flow.two_way)
 ```
 
 To call service methods, we take the H2 connection and build up a gRPC call for the service method using `Client.call` from the Client module.
@@ -495,7 +502,8 @@ let print_features connection =
       Seq.iter
         (fun f -> Printf.printf "RESPONSE = {%s}" (Feature.show f))
         results
-  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
+  | Error e ->
+      failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
 ```
 
 As in the simple RPC we pass a single request value. However, instead of getting back a single value we get a stream of `Feature`s. We use `Lwt_stream.map` to iterate over the stream and decode each into a `Feature.t` and then print out the features when they are all decoded. Equally we could have printed the features as they are being decoded inside the `Lwt_stream.map` rather than gathering them all into a List and printing them at the end. Notice that the type signature for `Client.RPC.server_streaming` is similar to `unary` in that we provide an encoded request and provide a handler function to consume the response.
@@ -527,29 +535,30 @@ let run_record_route connection =
         (Client.Rpc.client_streaming ~f:(fun f response ->
              (* Stream points to server. *)
              Seq.iter
-                 (fun point ->
-                     (encode point |> Writer.contents |> fun x -> Seq.write f x))
-                 points;
+               (fun point ->
+                 encode point |> Writer.contents |> fun x -> Seq.write f x)
+               points;
 
              (* Signal we have finished sending points. *)
              Seq.close_writer f;
 
              (* Decode RouteSummary responses. *)
              Eio.Promise.await response |> function
-                | Some str -> (
-                    Reader.create str |> decode |> function
-                    | Ok feature -> feature
-                    | Error err ->
-                        failwith
-                          (Printf.sprintf "Could not decode request: %s"
-                             (Result.show_error err)))
-                | None -> failwith (Printf.sprintf "No RouteSummary received.")))
+             | Some str -> (
+                 Reader.create str |> decode |> function
+                 | Ok feature -> feature
+                 | Error err ->
+                     failwith
+                       (Printf.sprintf "Could not decode request: %s"
+                          (Result.show_error err)))
+             | None -> failwith (Printf.sprintf "No RouteSummary received.")))
       ()
   in
   match response with
   | Ok (result, _ok) ->
       Printf.printf "SUMMARY = {%s}" (RouteSummary.show result)
-  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
+  | Error e ->
+      failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
 ```
 
 With this stream of points we setup another handler using `Client.Rpc.client_streaming`. The type of the callback arguments is important to understand, `f` is the function for sending data down the gRPC stream to the server. Calling it with `f (Some value)` will send the value to the server, while calling it with `f None` signals that we have finished streaming.  Here you can see we iterate over all the points and call `f` with Some value, and when we have sent everything we call `f None` to signal we are finished. Then we decode the `response` provided and print it out.
@@ -583,10 +592,10 @@ We start by generating a short sequence of locations, similar to how we did for 
   let encode, decode = Service.make_client_functions RouteGuide.routeChat in
   let rec go f stream notes =
     match notes with
-    | [] ->
-       Seq.close_writer f (* Signal no more notes from the client. *)
-    | route_note :: xs -> begin
-        encode route_note |> Writer.contents |> fun x -> Seq.write f x;
+    | [] -> Seq.close_writer f (* Signal no more notes from the client. *)
+    | route_note :: xs -> (
+        encode route_note |> Writer.contents |> fun x ->
+        Seq.write f x;
 
         (* Yield and sleep, waiting for server reply. *)
         Eio.Time.sleep clock 1.0;
@@ -595,19 +604,16 @@ We start by generating a short sequence of locations, similar to how we did for 
         match Seq.uncons stream with
         | None -> failwith "Expecting response"
         | Some (response, stream') ->
-           let route_note =
-             Reader.create response
-             |> decode
-             |> function
-               | Ok route_note -> route_note
-               | Error e ->
+            let route_note =
+              Reader.create response |> decode |> function
+              | Ok route_note -> route_note
+              | Error e ->
                   failwith
                     (Printf.sprintf "Could not decode request: %s"
                        (Result.show_error e))
-           in
-           Printf.printf "NOTE = {%s}\n" (RouteNote.show route_note);
-           go f stream' xs
-      end
+            in
+            Printf.printf "NOTE = {%s}\n" (RouteNote.show route_note);
+            go f stream' xs)
   in
   let result =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"RouteChat"
@@ -619,7 +625,8 @@ We start by generating a short sequence of locations, similar to how we did for 
   in
   match result with
   | Ok ((), _ok) -> ()
-  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
+  | Error e ->
+      failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
 ```
 
 Then we again use the `Client.Rpc` module to setup a `bidirectional_streaming` function with an interesting type signature `val bidirectional_streaming f:((string option -> unit) -> string Lwt_stream.t -> 'a Lwt.t) -> 'a Grpc_lwt.Client.Rpc.handler`. Somewhat intimidating but hopefully understandable in context. The function `f` represents the writer function for sending notes to the server, with the same semantics as before. Calling it with `Some value` represents sending a value to the stream and `f None` means there is no more data to write. The `string Lwt_stream.t` is the stream of `record_note` responses coming back from the server, which we need to decode and print out. We define a recursive function `go` to fold over the list, sending `route_notes`, sleeping to wait for a server response, and printing out that response. When we run out of `route_notes` to send we call `f None` to tell the server we are done and it can stop listening.

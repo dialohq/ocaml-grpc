@@ -16,7 +16,7 @@ let client ~sw host port network =
   let addr = `Tcp (Eio_unix.Ipaddr.of_unix inet, port) in
   let socket = Eio.Net.connect ~sw network addr in
   H2_eio.Client.create_connection ~sw ~error_handler:ignore
-      (socket :> Eio.Flow.two_way)
+    (socket :> Eio.Flow.two_way)
 
 (* $MDX part-end *)
 (* $MDX part-begin=client-get-feature *)
@@ -81,7 +81,8 @@ let print_features connection =
       Seq.iter
         (fun f -> Printf.printf "RESPONSE = {%s}" (Feature.show f))
         results
-  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
+  | Error e ->
+      failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
 
 (* $MDX part-end *)
 (* $MDX part-begin=client-random-point *)
@@ -106,29 +107,30 @@ let run_record_route connection =
         (Client.Rpc.client_streaming ~f:(fun f response ->
              (* Stream points to server. *)
              Seq.iter
-                 (fun point ->
-                     (encode point |> Writer.contents |> fun x -> Seq.write f x))
-                 points;
+               (fun point ->
+                 encode point |> Writer.contents |> fun x -> Seq.write f x)
+               points;
 
              (* Signal we have finished sending points. *)
              Seq.close_writer f;
 
              (* Decode RouteSummary responses. *)
              Eio.Promise.await response |> function
-                | Some str -> (
-                    Reader.create str |> decode |> function
-                    | Ok feature -> feature
-                    | Error err ->
-                        failwith
-                          (Printf.sprintf "Could not decode request: %s"
-                             (Result.show_error err)))
-                | None -> failwith (Printf.sprintf "No RouteSummary received.")))
+             | Some str -> (
+                 Reader.create str |> decode |> function
+                 | Ok feature -> feature
+                 | Error err ->
+                     failwith
+                       (Printf.sprintf "Could not decode request: %s"
+                          (Result.show_error err)))
+             | None -> failwith (Printf.sprintf "No RouteSummary received.")))
       ()
   in
   match response with
   | Ok (result, _ok) ->
       Printf.printf "SUMMARY = {%s}" (RouteSummary.show result)
-  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
+  | Error e ->
+      failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
 
 (* $MDX part-end *)
 (* $MDX part-begin=client-route-chat-1 *)
@@ -153,10 +155,10 @@ let run_route_chat clock connection =
   let encode, decode = Service.make_client_functions RouteGuide.routeChat in
   let rec go f stream notes =
     match notes with
-    | [] ->
-       Seq.close_writer f (* Signal no more notes from the client. *)
-    | route_note :: xs -> begin
-        encode route_note |> Writer.contents |> fun x -> Seq.write f x;
+    | [] -> Seq.close_writer f (* Signal no more notes from the client. *)
+    | route_note :: xs -> (
+        encode route_note |> Writer.contents |> fun x ->
+        Seq.write f x;
 
         (* Yield and sleep, waiting for server reply. *)
         Eio.Time.sleep clock 1.0;
@@ -165,19 +167,16 @@ let run_route_chat clock connection =
         match Seq.uncons stream with
         | None -> failwith "Expecting response"
         | Some (response, stream') ->
-           let route_note =
-             Reader.create response
-             |> decode
-             |> function
-               | Ok route_note -> route_note
-               | Error e ->
+            let route_note =
+              Reader.create response |> decode |> function
+              | Ok route_note -> route_note
+              | Error e ->
                   failwith
                     (Printf.sprintf "Could not decode request: %s"
                        (Result.show_error e))
-           in
-           Printf.printf "NOTE = {%s}\n" (RouteNote.show route_note);
-           go f stream' xs
-      end
+            in
+            Printf.printf "NOTE = {%s}\n" (RouteNote.show route_note);
+            go f stream' xs)
   in
   let result =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"RouteChat"
@@ -189,7 +188,8 @@ let run_route_chat clock connection =
   in
   match result with
   | Ok ((), _ok) -> ()
-  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
+  | Error e ->
+      failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
 
 (* $MDX part-end *)
 (* $MDX part-begin=client-main *)
@@ -206,27 +206,26 @@ let main env =
 
     Printf.printf "*** SIMPLE RPC ***\n";
     let request =
-       RouteGuide.GetFeature.Request.make ~latitude:409146138
-         ~longitude:(-746188906) ()
-     in
-     let result = call_get_feature connection request in
+      RouteGuide.GetFeature.Request.make ~latitude:409146138
+        ~longitude:(-746188906) ()
+    in
+    let result = call_get_feature connection request in
 
-     Printf.printf "\n*** SERVER STREAMING ***\n";
-     print_features connection;
+    Printf.printf "\n*** SERVER STREAMING ***\n";
+    print_features connection;
 
-     Printf.printf "\n*** CLIENT STREAMING ***\n";
-     run_record_route connection;
+    Printf.printf "\n*** CLIENT STREAMING ***\n";
+    run_record_route connection;
 
-     Printf.printf "\n*** BIDIRECTIONAL STREAMING ***\n";
-     run_route_chat clock connection;
+    Printf.printf "\n*** BIDIRECTIONAL STREAMING ***\n";
+    run_route_chat clock connection;
 
-     Eio.Promise.await (H2_eio.Client.shutdown connection);
-     result
+    Eio.Promise.await (H2_eio.Client.shutdown connection);
+    result
   in
 
   Eio.Switch.run run
 
-let () =
-  Eio_main.run main
+let () = Eio_main.run main
 
 (* $MDX part-end *)
