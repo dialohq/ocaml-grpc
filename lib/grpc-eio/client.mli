@@ -2,18 +2,24 @@ module Rpc : sig
   type 'a handler = H2.Body.Writer.t -> H2.Body.Reader.t -> 'a
 
   val bidirectional_streaming :
-    f:(string Seq.writer -> string Seq.t -> 'a) -> 'a handler
+    f:(send:(string -> unit) -> close:(unit -> unit) -> Stream.t -> 'a) ->
+    'a handler
   (** [bidirectional_streaming ~f write read] sets up the sending and receiving
         logic using [write] and [read], then calls [f] with a push function for
         requests and a stream of responses. *)
 
   val client_streaming :
-    f:(string Seq.writer -> string option Eio.Promise.t -> 'a) -> 'a handler
+    f:
+      (send:(string -> unit) ->
+      close:(unit -> unit) ->
+      string option Eio.Promise.t ->
+      'a) ->
+    'a handler
   (** [client_streaming ~f write read] sets up the sending and receiving
         logic using [write] and [read], then calls [f] with a push function for
         requests and promise for the response. *)
 
-  val server_streaming : f:(string Seq.t -> 'a) -> string -> 'a handler
+  val server_streaming : f:(Stream.t -> 'a) -> string -> 'a handler
   (** [server_streaming ~f enc write read] sets up the sending and receiving
         logic using [write] and [read], then sends [enc] and calls [f] with a
         stream of responses. *)
