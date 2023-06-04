@@ -46,11 +46,9 @@ let handle_request t reqd =
 
 module Rpc = struct
   type unary = string -> Grpc.Status.t * string option
-  type client_streaming = string Seq.t -> Grpc.Status.t * string option
+  type client_streaming = Stream.t -> Grpc.Status.t * string option
   type server_streaming = string -> (string -> unit) -> Grpc.Status.t
-
-  type bidirectional_streaming =
-    string Seq.t -> (string -> unit) -> Grpc.Status.t
+  type bidirectional_streaming = Stream.t -> (string -> unit) -> Grpc.Status.t
 
   type t =
     | Unary of unary
@@ -60,21 +58,10 @@ module Rpc = struct
 
   let bidirectional_streaming ~f reqd =
     let body = H2.Reqd.request_body reqd in
-    let request_reader, request_writer = Seq.create_reader_writer () in
-    let response_reader, response_writer = Seq.create_reader_writer () in
-    Connection.grpc_recv_streaming body request_writer;
-    let status_promise, status_notify = Eio.Promise.create () in
-    Eio.Fiber.both
-      (fun () ->
-        let respond = Seq.write response_writer in
-        let status = f request_reader respond in
-        Seq.close_writer response_writer;
-        Eio.Promise.resolve status_notify status)
-      (fun () ->
-        try Connection.grpc_send_streaming reqd response_reader status_promise
-        with exn ->
-          (* https://github.com/anmonteiro/ocaml-h2/issues/175 *)
-          Eio.traceln "%s" (Printexc.to_string exn))
+    let request_stream = Connection.grpc_recv_streaming body in
+    let on_msg, on_eof = Connection.grpc_send_streaming reqd in
+    let status = f request_stream on_msg in
+    on_eof status
 
   let client_streaming ~f reqd =
     bidirectional_streaming reqd ~f:(fun requests respond ->
@@ -84,20 +71,29 @@ module Rpc = struct
 
   let server_streaming ~f reqd =
     bidirectional_streaming reqd ~f:(fun requests respond ->
-        match Seq.read_and_exhaust requests with
-        | None -> Grpc.Status.(v OK)
-        | Some request -> f request respond)
+        let status_promise, status_resolver = Eio.Promise.create () in
+        Stream.schedule_read
+          ~on_msg:(fun request ->
+            Eio.Promise.resolve status_resolver (f request respond))
+          ~on_eof:(fun () ->
+            Eio.Promise.resolve status_resolver Grpc.Status.(v OK))
+          requests;
+        Eio.Promise.await status_promise)
 
   let unary ~f reqd =
     bidirectional_streaming reqd ~f:(fun requests respond ->
-        match Seq.read_and_exhaust requests with
-        | None -> Grpc.Status.(v OK)
-        | Some request ->
+        let status_promise, status_resolver = Eio.Promise.create () in
+        Stream.schedule_read
+          ~on_msg:(fun request ->
             let status, response = f request in
             (match response with
             | None -> ()
             | Some response -> respond response);
-            status)
+            Eio.Promise.resolve status_resolver status)
+          ~on_eof:(fun () ->
+            Eio.Promise.resolve status_resolver Grpc.Status.(v OK))
+          requests;
+        Eio.Promise.await status_promise)
 end
 
 module Service = struct

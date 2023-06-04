@@ -70,37 +70,25 @@ module Rpc = struct
   type 'a handler = H2.Body.Writer.t -> H2.Body.Reader.t -> 'a
 
   let bidirectional_streaming ~f write_body read_body =
-    let response_reader, response_writer = Seq.create_reader_writer () in
-    let request_reader, request_writer = Seq.create_reader_writer () in
-    Connection.grpc_recv_streaming read_body response_writer;
-    let res, res_notify = Eio.Promise.create () in
-    Eio.Fiber.both
-      (fun () ->
-        Eio.Promise.resolve res_notify (f request_writer response_reader))
-      (fun () ->
-        Connection.grpc_send_streaming_client write_body request_reader);
-    Eio.Promise.await res
+    let send, close = Connection.grpc_send_streaming_client write_body in
+    let response_reader = Connection.grpc_recv_streaming read_body in
+    f ~send ~close response_reader
 
   let client_streaming ~f =
-    bidirectional_streaming ~f:(fun request_writer responses ->
-        let response, response_resolver = Eio.Promise.create () in
-        Eio.Fiber.pair
-          (fun () -> f request_writer response)
-          (fun () ->
-            Eio.Promise.resolve response_resolver
-              (Seq.read_and_exhaust responses))
-        |> fst)
+    bidirectional_streaming ~f:(fun ~send ~close responses ->
+        let response = Stream.take responses in
+        f ~send ~close response)
 
   let server_streaming ~f request =
-    bidirectional_streaming ~f:(fun request_writer responses ->
-        Seq.write request_writer request;
-        Seq.close_writer request_writer;
+    bidirectional_streaming ~f:(fun ~send ~close responses ->
+        send request;
+        close ();
         f responses)
 
   let unary ~f request =
-    bidirectional_streaming ~f:(fun request_writer responses ->
-        Seq.write request_writer request;
-        Seq.close_writer request_writer;
-        let response = Seq.read_and_exhaust responses in
+    bidirectional_streaming ~f:(fun ~send ~close responses ->
+        send request;
+        close ();
+        let response = Stream.take responses |> Eio.Promise.await in
         f response)
 end

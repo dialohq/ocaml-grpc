@@ -170,7 +170,8 @@ let record_route (clock : #Eio.Time.clock) (stream : string Seq.t) =
         in
         last_point := Some point;
         (point_count, feature_count, distance))
-      (0, 0, 0) stream
+      (0, 0, 0)
+      (Grpc_eio.Stream.to_seq stream)
   in
   let stop = Eio.Time.now clock in
   let elapsed_time = int_of_float (stop -. start) in
@@ -198,7 +199,7 @@ let route_chat (stream : string Seq.t) (f : string -> unit) =
       in
       Printf.printf "  ==> Note = {%s}\n" (RouteNote.show note);
       encode note |> Writer.contents |> f)
-    stream;
+    (Grpc_eio.Stream.to_seq stream);
 
   Printf.printf "RouteChat exit\n";
   Grpc.Status.(v OK)

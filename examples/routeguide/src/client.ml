@@ -71,7 +71,7 @@ let print_features connection =
                        failwith
                          (Printf.sprintf "Could not decode request: %s"
                             (Result.show_error e)))
-                 responses
+                 (Grpc_eio.Stream.to_seq responses)
              in
              stream))
       ()
@@ -104,15 +104,14 @@ let run_record_route connection =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"RecordRoute"
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
-        (Client.Rpc.client_streaming ~f:(fun f response ->
+        (Client.Rpc.client_streaming ~f:(fun ~send ~close response ->
              (* Stream points to server. *)
              Seq.iter
-               (fun point ->
-                 encode point |> Writer.contents |> fun x -> Seq.write f x)
+               (fun point -> encode point |> Writer.contents |> send)
                points;
 
              (* Signal we have finished sending points. *)
-             Seq.close_writer f;
+             close ();
 
              (* Decode RouteSummary responses. *)
              Eio.Promise.await response |> function
