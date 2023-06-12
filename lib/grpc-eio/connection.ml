@@ -21,17 +21,23 @@ let grpc_send_streaming request =
     H2.Body.Writer.write_string body payload
   in
   let on_eof status =
-    H2.Reqd.schedule_trailers request
-      (H2.Headers.of_list
-         ([
-            ( "grpc-status",
-              string_of_int (Grpc.Status.int_of_code (Grpc.Status.code status))
-            );
-          ]
-         @
-         match Grpc.Status.message status with
-         | None -> []
-         | Some message -> [ ("grpc-message", message) ]));
+    (try
+       H2.Reqd.schedule_trailers request
+         (H2.Headers.of_list
+            ([
+               ( "grpc-status",
+                 string_of_int
+                   (Grpc.Status.int_of_code (Grpc.Status.code status)) );
+             ]
+            @
+            match Grpc.Status.message status with
+            | None -> []
+            | Some message -> [ ("grpc-message", message) ]))
+     with
+     | Failure "h2.Reqd.schedule_trailers: stream already closed"
+     (* https://github.com/anmonteiro/ocaml-h2/issues/175 *)
+     ->
+       ());
     H2.Body.Writer.close body
   in
   (on_msg, on_eof)
