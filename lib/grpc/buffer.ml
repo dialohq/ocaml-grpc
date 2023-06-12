@@ -21,12 +21,7 @@ let copy_from_bigstringaf ~src_off ~src ~dst ~length =
     ~len:length;
   dst.length <- dst.length + length
 
-let sub ~start ~length t =
-  let contents = Bytes.sub t.contents start length in
-  { contents; length }
-
-let to_bytes t = Bytes.sub t.contents 0 t.length
-let to_string t = to_bytes t |> Bytes.to_string
+let sub_string ~start ~length t = Bytes.sub_string t.contents start length
 
 let shift_left ~by t =
   Bytes.blit t.contents by t.contents 0 (t.length - by);
