@@ -23,7 +23,7 @@ module Rpc : sig
     The stream is closed when the deferred returned by the handler becomes determined. *)
 
   val server_streaming :
-    handler:(string Async.Pipe.Reader.t -> 'a Deferred.t) ->
+    handler:(string Pipe.Reader.t -> 'a Deferred.t) ->
     encoded_request:string ->
     'a handler
   (** [server_streaming ~handler encoded_request write read] sets up the sending and

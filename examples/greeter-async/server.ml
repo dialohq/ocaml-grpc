@@ -1,4 +1,4 @@
-open Async
+open! Async
 open Grpc_async
 
 let say_hello buffer =

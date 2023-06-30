@@ -7,13 +7,9 @@
   grpc-async
   ocaml-protoc-plugin
   async
-  async_kernel
-  async_unix
-  core_kernel
   core
   core_unix.command_unix
   greeter
-  h2
   h2-async)
  (preprocess
   (pps ppx_jane)))
