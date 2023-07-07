@@ -13,7 +13,7 @@ let main env =
              | ADDR_INET (addr, port) -> Some (addr, port))
       |> List.hd
     in
-    let addr = `Tcp (Eio_unix.Ipaddr.of_unix inet, port) in
+    let addr = `Tcp (Eio_unix.Net.Ipaddr.of_unix inet, port) in
     let socket = Eio.Net.connect ~sw network addr in
     let connection =
       H2_eio.Client.create_connection ~sw ~error_handler:ignore
