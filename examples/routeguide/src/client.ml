@@ -148,25 +148,24 @@ let run_route_chat clock connection =
                    ~message:(Printf.sprintf "Random Message %i" x)
                    (),
                  x - 1 ))
-    |> List.of_seq
   in
   (* $MDX part-end *)
   (* $MDX part-begin=client-route-chat-2 *)
   let encode, decode = Service.make_client_functions RouteGuide.routeChat in
-  let rec go f stream notes =
-    match notes with
-    | [] -> Seq.close_writer f (* Signal no more notes from the client. *)
-    | route_note :: xs -> (
+  let rec go writer reader notes =
+    match Seq.uncons notes with
+    | None -> Seq.close_writer writer (* Signal no more notes from the client. *)
+    | Some (route_note, xs) -> (
         encode route_note |> Writer.contents |> fun x ->
-        Seq.write f x;
+        Seq.write writer x;
 
         (* Yield and sleep, waiting for server reply. *)
         Eio.Time.sleep clock 1.0;
         Eio.Fiber.yield ();
 
-        match Seq.uncons stream with
+        match Seq.uncons reader with
         | None -> failwith "Expecting response"
-        | Some (response, stream') ->
+        | Some (response, reader') ->
             let route_note =
               Reader.create response |> decode |> function
               | Ok route_note -> route_note
@@ -176,14 +175,14 @@ let run_route_chat clock connection =
                        (Result.show_error e))
             in
             Printf.printf "NOTE = {%s}\n" (RouteNote.show route_note);
-            go f stream' xs)
+            go writer reader' xs)
   in
   let result =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"RouteChat"
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
-        (Client.Rpc.bidirectional_streaming ~f:(fun f stream ->
-             go f stream route_notes))
+        (Client.Rpc.bidirectional_streaming ~f:(fun writer reader ->
+             go writer reader route_notes))
       ()
   in
   match result with

@@ -64,10 +64,10 @@ For this tutorial, we will start by creating a new OCaml project with Dune:
 ```shell
 $ dune init project routeguide
 $ cd routeguide
-$ opam switch create . 4.14.1 --deps-only --with-test -y
+$ opam switch create . 5.0.0 --deps-only --with-test -y
 ```
 
-`ocaml-grpc` works on OCaml `4.11` and above, the latest `4.14` version will give the best results. This tutorial uses LWT, a concurrent programming library for OCaml, other options exist like Async or EIO example code for both exists in [examples]().
+`ocaml-grpc` works on OCaml `4.11` and above, the latest `5.0.0` version will give the best results. This tutorial uses EIO, a concurrent programming library for OCaml, other options exist like Async or LWT, example code for both exists in [examples]().
 
 Our first step is to define the gRPC service and the method *request* and *response* types using [protocol buffers](). We will keep our `.proto` files in a directory in our project's root. There is no requirement where the `.proto` definitions live, [Dune]() will build them regardless.
 
@@ -187,7 +187,7 @@ You can find our example `RouteGuide` server in [examples/routeguide/src/server.
 
 ### Implementing RouteGuide
 
-As you can see, our server uses the `Service` module from `Grpc_lwt` to build up a service implementation.
+As you can see, our server uses the `Service` module from `Grpc_eio` to build up a service implementation.
 The individual service functions from our proto definition are implemented using `add_rpc` with matching names and rpc types, which must match the `route_guide.proto` definitions.
 
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-grpc -->
@@ -214,7 +214,7 @@ Let's look at the simplest type first, `GetFeature` which just gets a `Point` fr
 
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-get-feature -->
 ```ocaml
-let get_feature buffer =
+let get_feature (buffer : string) =
   let decode, encode = Service.make_service_functions RouteGuide.getFeature in
   (* Decode the request. *)
   let point =
@@ -281,11 +281,11 @@ Like `get_feature` `list_feature`'s input is a single message. A `Rectangle` tha
 
 ### Client-side streaming RPC
 
-Now let's look at something a little more complicated: the client-side streaming function `RecordRoute`, where we get a stream of `Point`s from the client and return a single `RouteSummary` with information about their trip. As you can see, this time the method gets a `string Lwt_stream.t` representing the stream of points from the client. It decodes the stream of points, performs some calculations while accumulating the result, and finally responds with a route summary.
+Now let's look at something a little more complicated: the client-side streaming function `RecordRoute`, where we get a stream of `Point`s from the client and return a single `RouteSummary` with information about their trip. As you can see, this time the method gets a `string Seq.t` representing the stream of points from the client. It decodes the stream of points, performs some calculations while accumulating the result, and finally responds with a route summary.
 
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-record-route -->
 ```ocaml
-let record_route clock stream =
+let record_route (clock : #Eio.Time.clock) (stream : string Seq.t) =
   Eio.traceln "RecordRoute";
 
   let last_point = ref None in
@@ -342,7 +342,7 @@ Finally, let's look at our bidirectional streaming RPC `route_chat`, which recei
 
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-route-chat -->
 ```ocaml
-let route_chat stream (f : string -> unit) =
+let route_chat (stream : string Seq.t) (f : string -> unit) =
   Printf.printf "RouteChat\n";
 
   let decode, encode = Service.make_service_functions RouteGuide.routeChat in
@@ -364,7 +364,7 @@ let route_chat stream (f : string -> unit) =
   Grpc.Status.(v OK)
 ```
 
-`route_chat` receives a `string Lwt_stream.t` of requests which it decodes, logs to stdout to show it has received the note, and then encodes again to send back to the client. Finally it responds with an `OK` indicating it has finished. The logic is we receive one `RouteNote` and respond directly with the same `RouteNote` using the `f` function supplied.
+`route_chat` receives a `string Seq.t` of requests which it decodes, logs to stdout to show it has received the note, and then encodes again to send back to the client. Finally it responds with an `OK` indicating it has finished. The logic is we receive one `RouteNote` and respond directly with the same `RouteNote` using the `f` function supplied.
 
 ### Starting the server
 
@@ -506,7 +506,7 @@ let print_features connection =
       failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
 ```
 
-As in the simple RPC we pass a single request value. However, instead of getting back a single value we get a stream of `Feature`s. We use `Lwt_stream.map` to iterate over the stream and decode each into a `Feature.t` and then print out the features when they are all decoded. Equally we could have printed the features as they are being decoded inside the `Lwt_stream.map` rather than gathering them all into a List and printing them at the end. Notice that the type signature for `Client.RPC.server_streaming` is similar to `unary` in that we provide an encoded request and provide a handler function to consume the response.
+As in the simple RPC we pass a single request value. However, instead of getting back a single value we get a stream of `Feature`s. We use `Seq.map` to iterate over the stream and decode each into a `Feature.t` and then print out the features when they are all decoded. Equally we could have printed the features as they are being decoded inside the `Seq.map` rather than gathering them all into a List and printing them at the end. Notice that the type signature for `Client.RPC.server_streaming` is similar to `unary` in that we provide an encoded request and provide a handler function to consume the response.
 
 ### Client-side streaming RPCs
 
@@ -582,7 +582,6 @@ let run_route_chat clock connection =
                    ~message:(Printf.sprintf "Random Message %i" x)
                    (),
                  x - 1 ))
-    |> List.of_seq
   in
 ```
 
@@ -590,20 +589,20 @@ We start by generating a short sequence of locations, similar to how we did for 
 <!-- $MDX include,file=routeguide/src/client.ml,part=client-route-chat-2 -->
 ```ocaml
   let encode, decode = Service.make_client_functions RouteGuide.routeChat in
-  let rec go f stream notes =
-    match notes with
-    | [] -> Seq.close_writer f (* Signal no more notes from the client. *)
-    | route_note :: xs -> (
+  let rec go writer reader notes =
+    match Seq.uncons notes with
+    | None -> Seq.close_writer writer (* Signal no more notes from the client. *)
+    | Some (route_note, xs) -> (
         encode route_note |> Writer.contents |> fun x ->
-        Seq.write f x;
+        Seq.write writer x;
 
         (* Yield and sleep, waiting for server reply. *)
         Eio.Time.sleep clock 1.0;
         Eio.Fiber.yield ();
 
-        match Seq.uncons stream with
+        match Seq.uncons reader with
         | None -> failwith "Expecting response"
-        | Some (response, stream') ->
+        | Some (response, reader') ->
             let route_note =
               Reader.create response |> decode |> function
               | Ok route_note -> route_note
@@ -613,14 +612,14 @@ We start by generating a short sequence of locations, similar to how we did for 
                        (Result.show_error e))
             in
             Printf.printf "NOTE = {%s}\n" (RouteNote.show route_note);
-            go f stream' xs)
+            go writer reader' xs)
   in
   let result =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"RouteChat"
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
-        (Client.Rpc.bidirectional_streaming ~f:(fun f stream ->
-             go f stream route_notes))
+        (Client.Rpc.bidirectional_streaming ~f:(fun writer reader ->
+             go writer reader route_notes))
       ()
   in
   match result with
@@ -629,7 +628,7 @@ We start by generating a short sequence of locations, similar to how we did for 
       failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
 ```
 
-Then we again use the `Client.Rpc` module to setup a `bidirectional_streaming` function with an interesting type signature `val bidirectional_streaming f:((string option -> unit) -> string Lwt_stream.t -> 'a Lwt.t) -> 'a Grpc_lwt.Client.Rpc.handler`. Somewhat intimidating but hopefully understandable in context. The function `f` represents the writer function for sending notes to the server, with the same semantics as before. Calling it with `Some value` represents sending a value to the stream and `f None` means there is no more data to write. The `string Lwt_stream.t` is the stream of `record_note` responses coming back from the server, which we need to decode and print out. We define a recursive function `go` to fold over the list, sending `route_notes`, sleeping to wait for a server response, and printing out that response. When we run out of `route_notes` to send we call `f None` to tell the server we are done and it can stop listening.
+Then we again use the `Client.Rpc` module to setup a `bidirectional_streaming` function with an interesting type signature `val bidirectional_streaming f:(string Seq.writer -> string Seq.t -> 'a) -> 'a handler`. Somewhat intimidating but hopefully understandable in context. The function `f` represents the writer function for sending notes to the server, with the same semantics as before. Calling it with `Some value` represents sending a value to the stream and `f None` means there is no more data to write. The `string Seq.t` is the stream of `record_note` responses coming back from the server, which we need to decode and print out. We define a recursive function `go` to fold over the list, sending `route_notes`, sleeping to wait for a server response, and printing out that response. When we run out of `route_notes` to send we call `Seq.close_writer f` to tell the server we are done and it can stop listening.
 Other combinations of sending and receiving are possible, the reader is encouraged to try them out.
 
 ## Try it out!
