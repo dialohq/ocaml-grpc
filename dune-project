@@ -68,6 +68,7 @@
   stringext))
 
 (package
+
  (name grpc-examples)
  (synopsis "Various grpc examples")
  (description "Various grpc examples.")
@@ -85,6 +86,7 @@
   tls-async
   lwt_ssl
   (mdx (and (>= "2.2.1") :with-test))
+  (eio_main (>= 0.10))
   stringext))
 
 (package
@@ -97,3 +99,15 @@
   (bechamel-notty (>= 0.4.0))
   (bigstringaf (>= 0.9.1))
   (grpc (= :version))))
+
+(package
+ (name grpc-eio)
+ (synopsis "An Eio implementation of gRPC")
+ (description
+  "Functionality for building gRPC services and rpcs with `eio`.")
+ (depends
+  (grpc
+   (= :version))
+  h2-eio
+  stringext))
+

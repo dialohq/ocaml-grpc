@@ -1,6 +1,7 @@
-open Grpc_eio
+open Grpc_lwt
 open Routeguide.Route_guide.Routeguide
 open Ocaml_protoc_plugin
+open Lwt.Syntax
 
 (* Derived data types to make reading JSON data easier. *)
 type location = { latitude : int; longitude : int } [@@deriving yojson]
@@ -72,8 +73,7 @@ let calc_distance (p1 : Point.t) (p2 : Point.t) : int =
   let c = 2.0 *. atan2 (sqrt a) (sqrt (1.0 -. a)) in
   Float.to_int (r *. c)
 
-(* $MDX part-begin=server-get-feature *)
-let get_feature (buffer : string) =
+let get_feature buffer =
   let decode, encode = Service.make_service_functions RouteGuide.getFeature in
   (* Decode the request. *)
   let point =
@@ -83,7 +83,7 @@ let get_feature (buffer : string) =
         failwith
           (Printf.sprintf "Could not decode request: %s" (Result.show_error e))
   in
-  Eio.traceln "GetFeature = {:%s}" (Point.show point);
+  let* () = Lwt_io.printlf "GetFeature = {:%s}" (Point.show point) in
 
   (* Lookup the feature and if found return it. *)
   let feature =
@@ -94,8 +94,12 @@ let get_feature (buffer : string) =
         | _, _ -> false)
       !features
   in
-  Eio.traceln "Found feature %s"
-    (feature |> Option.map Feature.show |> Option.value ~default:"Missing");
+  let* () =
+    Lwt_io.printlf "Found feature %s"
+      (feature |> Option.map Feature.show |> Option.value ~default:"Missing")
+  in
+  Lwt.return
+  @@
   match feature with
   | Some feature ->
       (Grpc.Status.(v OK), Some (feature |> encode |> Writer.contents))
@@ -104,9 +108,7 @@ let get_feature (buffer : string) =
       ( Grpc.Status.(v OK),
         Some (Feature.make ~location:point () |> encode |> Writer.contents) )
 
-(* $MDX part-end *)
-(* $MDX part-begin=server-list-features *)
-let list_features (buffer : string) (f : string -> unit) =
+let list_features (buffer : string) (f : string -> unit) : Grpc.Status.t Lwt.t =
   (* Decode request. *)
   let decode, encode = Service.make_service_functions RouteGuide.listFeatures in
   let rectangle =
@@ -126,20 +128,19 @@ let list_features (buffer : string) (f : string -> unit) =
         else ())
       !features
   in
-  Grpc.Status.(v OK)
+  Lwt.return Grpc.Status.(v OK)
 
-(* $MDX part-end *)
-(* $MDX part-begin=server-record-route *)
-let record_route (clock : #Eio.Time.clock) (stream : string Seq.t) =
-  Eio.traceln "RecordRoute";
+let record_route (stream : string Lwt_stream.t) =
+  let* () = Lwt_io.printf "RecordRoute\n" in
+  let* () = Lwt_io.(flush stdout) in
 
   let last_point = ref None in
-  let start = Eio.Time.now clock in
+  let start = Unix.gettimeofday () in
   let decode, encode = Service.make_service_functions RouteGuide.recordRoute in
 
-  let point_count, feature_count, distance =
-    Seq.fold_left
-      (fun (point_count, feature_count, distance) i ->
+  let* point_count, feature_count, distance =
+    Lwt_stream.fold_s
+      (fun i (point_count, feature_count, distance) ->
         let point =
           Reader.create i |> decode |> function
           | Ok v -> v
@@ -148,7 +149,7 @@ let record_route (clock : #Eio.Time.clock) (stream : string Seq.t) =
                 (Printf.sprintf "Could not decode request: %s"
                    (Result.show_error e))
         in
-        Eio.traceln "  ==> Point = {%s}" (Point.show point);
+        let* () = Lwt_io.printf "  ==> Point = {%s}\n" (Point.show point) in
 
         (* Increment the point count *)
         let point_count = point_count + 1 in
@@ -168,96 +169,63 @@ let record_route (clock : #Eio.Time.clock) (stream : string Seq.t) =
           | Some last_point -> calc_distance last_point point
           | None -> distance
         in
+
         last_point := Some point;
-        (point_count, feature_count, distance))
-      (0, 0, 0) stream
+        Lwt.return (point_count, feature_count, distance))
+      stream (0, 0, 0)
   in
-  let stop = Eio.Time.now clock in
+  let stop = Unix.gettimeofday () in
   let elapsed_time = int_of_float (stop -. start) in
   let summary =
     RouteSummary.make ~point_count ~feature_count ~distance ~elapsed_time ()
   in
-  Eio.traceln "RecordRoute exit\n";
-  (Grpc.Status.(v OK), Some (encode summary |> Writer.contents))
+  let* () = Lwt_io.printf "RecordRoute exit\n" in
+  let* () = Lwt_io.(flush stdout) in
+  Lwt.return (Grpc.Status.(v OK), Some (encode summary |> Writer.contents))
 
-(* $MDX part-end *)
-(* $MDX part-begin=server-route-chat *)
-let route_chat (stream : string Seq.t) (f : string -> unit) =
-  Printf.printf "RouteChat\n";
+let route_chat (stream : string Lwt_stream.t) (f : string -> unit) =
+  let* () = Lwt_io.printf "RouteChat\n" in
+  let* () = Lwt_io.(flush stdout) in
 
   let decode, encode = Service.make_service_functions RouteGuide.routeChat in
-  Seq.iter
-    (fun i ->
-      let note =
-        Reader.create i |> decode |> function
-        | Ok v -> v
-        | Error e ->
-            failwith
-              (Printf.sprintf "Could not decode request: %s"
-                 (Result.show_error e))
-      in
-      Printf.printf "  ==> Note = {%s}\n" (RouteNote.show note);
-      encode note |> Writer.contents |> f)
-    stream;
+  let* () =
+    Lwt_stream.iter_s
+      (fun i ->
+        let note =
+          Reader.create i |> decode |> function
+          | Ok v -> v
+          | Error e ->
+              failwith
+                (Printf.sprintf "Could not decode request: %s"
+                   (Result.show_error e))
+        in
+        let* () = Lwt_io.printf "  ==> Note = {%s}\n" (RouteNote.show note) in
+        let* () = Lwt_io.(flush stdout) in
+        Lwt.return (encode note |> Writer.contents |> f))
+      stream
+  in
 
-  Printf.printf "RouteChat exit\n";
-  Grpc.Status.(v OK)
+  let* () = Lwt_io.printf "RouteChat exit\n" in
+  let* () = Lwt_io.(flush stdout) in
+  Lwt.return Grpc.Status.(v OK)
 
-(* $MDX part-end *)
-(* $MDX part-begin=server-grpc *)
-let route_guide_service clock =
+let route_guide_service =
   Server.Service.(
     v ()
     |> add_rpc ~name:"GetFeature" ~rpc:(Unary get_feature)
     |> add_rpc ~name:"ListFeatures" ~rpc:(Server_streaming list_features)
-    |> add_rpc ~name:"RecordRoute" ~rpc:(Client_streaming (record_route clock))
+    |> add_rpc ~name:"RecordRoute" ~rpc:(Client_streaming record_route)
     |> add_rpc ~name:"RouteChat" ~rpc:(Bidirectional_streaming route_chat)
     |> handle_request)
 
-let server clock =
+let server =
   Server.(
     v ()
-    |> add_service ~name:"routeguide.RouteGuide"
-         ~service:(route_guide_service clock))
-
-(* $MDX part-end *)
-let connection_handler server sw =
-  let error_handler client_address ?request:_ _error start_response =
-    Eio.traceln "Error in request from:%a" Eio.Net.Sockaddr.pp client_address;
-    let response_body = start_response H2.Headers.empty in
-    H2.Body.Writer.write_string response_body
-      "There was an error handling your request.\n";
-    H2.Body.Writer.close response_body
-  in
-  let request_handler _client_address request_descriptor =
-    Eio.Fiber.fork ~sw (fun () ->
-        Grpc_eio.Server.handle_request server request_descriptor)
-  in
-  fun socket addr ->
-    H2_eio.Server.create_connection_handler ?config:None ~request_handler
-      ~error_handler addr socket
-
-(* $MDX part-begin=server-main *)
-let serve server env =
-  let port = 8080 in
-  let net = Eio.Stdenv.net env in
-  let clock = Eio.Stdenv.clock env in
-  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
-  Eio.Switch.run @@ fun sw ->
-  let handler = connection_handler (server clock) sw in
-  let server_socket =
-    Eio.Net.listen net ~sw ~reuse_addr:true ~backlog:10 addr
-  in
-  let rec listen () =
-    Eio.Net.accept_fork ~sw server_socket
-      ~on_error:(fun exn -> Eio.traceln "%s" (Printexc.to_string exn))
-      handler;
-    listen ()
-  in
-  Eio.traceln "Listening on port %i for grpc requests\n" port;
-  listen ()
+    |> add_service ~name:"routeguide.RouteGuide" ~service:route_guide_service)
 
 let () =
+  let port = 8080 in
+  let listen_address = Unix.(ADDR_INET (inet_addr_any, port)) in
   let path =
     if Array.length Sys.argv > 1 then Sys.argv.(1)
     else failwith "Path to datafile required."
@@ -266,5 +234,18 @@ let () =
   (* Load features. *)
   features := load path;
 
-  Eio_main.run (serve server)
-(* $MDX part-end *)
+  Lwt.async (fun () ->
+      let server =
+        H2_lwt_unix.Server.create_connection_handler ?config:None
+          ~request_handler:(fun _ reqd -> Server.handle_request server reqd)
+          ~error_handler:(fun _ ?request:_ _ _ ->
+            print_endline "an error occurred")
+      in
+      let* _server =
+        Lwt_io.establish_server_with_client_socket listen_address server
+      in
+      let* () = Lwt_io.printf "Listening on port %i for grpc requests\n" port in
+      Lwt_io.(flush stdout));
+
+  let forever, _ = Lwt.wait () in
+  Lwt_main.run forever

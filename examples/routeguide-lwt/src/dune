@@ -1,13 +1,16 @@
 (executables
  (names server client)
  (package grpc-examples)
- (public_names routeguide-server routeguide-client)
+ (public_names routeguide-server-lwt routeguide-client-lwt)
  (libraries
-  grpc-eio
-  eio_main
-  h2-eio
+  grpc
+  grpc-lwt
   ocaml-protoc-plugin
+  lwt
+  lwt.unix
   routeguide
+  h2
+  h2-lwt-unix
   yojson
   ppx_deriving_yojson.runtime)
  (preprocess

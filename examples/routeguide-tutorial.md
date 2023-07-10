@@ -64,10 +64,10 @@ For this tutorial, we will start by creating a new OCaml project with Dune:
 ```shell
 $ dune init project routeguide
 $ cd routeguide
-$ opam switch create . 4.14.1 --deps-only --with-test -y
+$ opam switch create . 5.0.0 --deps-only --with-test -y
 ```
 
-`ocaml-grpc` works on OCaml `4.11` and above, the latest `4.14` version will give the best results. This tutorial uses LWT, a concurrent programming library for OCaml, other options exist like Async or EIO example code for both exists in [examples]().
+`ocaml-grpc` works on OCaml `4.11` and above, the latest `5.0.0` version will give the best results. This tutorial uses EIO, a concurrent programming library for OCaml, other options exist like Async or LWT, example code for both exists in [examples]().
 
 Our first step is to define the gRPC service and the method *request* and *response* types using [protocol buffers](). We will keep our `.proto` files in a directory in our project's root. There is no requirement where the `.proto` definitions live, [Dune]() will build them regardless.
 
@@ -187,24 +187,25 @@ You can find our example `RouteGuide` server in [examples/routeguide/src/server.
 
 ### Implementing RouteGuide
 
-As you can see, our server uses the `Service` module from `Grpc_lwt` to build up a service implementation.
+As you can see, our server uses the `Service` module from `Grpc_eio` to build up a service implementation.
 The individual service functions from our proto definition are implemented using `add_rpc` with matching names and rpc types, which must match the `route_guide.proto` definitions.
 
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-grpc -->
 ```ocaml
-let route_guide_service =
+let route_guide_service clock =
   Server.Service.(
     v ()
     |> add_rpc ~name:"GetFeature" ~rpc:(Unary get_feature)
     |> add_rpc ~name:"ListFeatures" ~rpc:(Server_streaming list_features)
-    |> add_rpc ~name:"RecordRoute" ~rpc:(Client_streaming record_route)
+    |> add_rpc ~name:"RecordRoute" ~rpc:(Client_streaming (record_route clock))
     |> add_rpc ~name:"RouteChat" ~rpc:(Bidirectional_streaming route_chat)
     |> handle_request)
 
-let server =
+let server clock =
   Server.(
     v ()
-    |> add_service ~name:"routeguide.RouteGuide" ~service:route_guide_service)
+    |> add_service ~name:"routeguide.RouteGuide"
+         ~service:(route_guide_service clock))
 ```
 
 ### Simple RPC
@@ -213,7 +214,7 @@ Let's look at the simplest type first, `GetFeature` which just gets a `Point` fr
 
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-get-feature -->
 ```ocaml
-let get_feature buffer =
+let get_feature (buffer : string) =
   let decode, encode = Service.make_service_functions RouteGuide.getFeature in
   (* Decode the request. *)
   let point =
@@ -223,7 +224,7 @@ let get_feature buffer =
         failwith
           (Printf.sprintf "Could not decode request: %s" (Result.show_error e))
   in
-  let* () = Lwt_io.printlf "GetFeature = {:%s}" (Point.show point) in
+  Eio.traceln "GetFeature = {:%s}" (Point.show point);
 
   (* Lookup the feature and if found return it. *)
   let feature =
@@ -234,12 +235,8 @@ let get_feature buffer =
         | _, _ -> false)
       !features
   in
-  let* () =
-    Lwt_io.printlf "Found feature %s"
-      (feature |> Option.map Feature.show |> Option.value ~default:"Missing")
-  in
-  Lwt.return
-  @@
+  Eio.traceln "Found feature %s"
+    (feature |> Option.map Feature.show |> Option.value ~default:"Missing");
   match feature with
   | Some feature ->
       (Grpc.Status.(v OK), Some (feature |> encode |> Writer.contents))
@@ -257,7 +254,7 @@ Now let's look at one of our streaming RPCs. `list_features` is a server-side st
 
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-list-features -->
 ```ocaml
-let list_features (buffer : string) (f : string -> unit) : Grpc.Status.t Lwt.t =
+let list_features (buffer : string) (f : string -> unit) =
   (* Decode request. *)
   let decode, encode = Service.make_service_functions RouteGuide.listFeatures in
   let rectangle =
@@ -277,28 +274,27 @@ let list_features (buffer : string) (f : string -> unit) : Grpc.Status.t Lwt.t =
         else ())
       !features
   in
-  Lwt.return Grpc.Status.(v OK)
+  Grpc.Status.(v OK)
 ```
 
 Like `get_feature` `list_feature`'s input is a single message. A `Rectangle` that is decoded from a string buffer. The `f: (string -> unit)` function is for writing the encoded responses back to the client. In the function we decode the request, lookup any matching features and stream them back to the client as we find them using `f`. Once we've looked at all the `features` we respond with an `OK` indicating the streaming has finished successfully.
 
 ### Client-side streaming RPC
 
-Now let's look at something a little more complicated: the client-side streaming function `RecordRoute`, where we get a stream of `Point`s from the client and return a single `RouteSummary` with information about their trip. As you can see, this time the method gets a `string Lwt_stream.t` representing the stream of points from the client. It decodes the stream of points, performs some calculations while accumulating the result, and finally responds with a route summary.
+Now let's look at something a little more complicated: the client-side streaming function `RecordRoute`, where we get a stream of `Point`s from the client and return a single `RouteSummary` with information about their trip. As you can see, this time the method gets a `string Seq.t` representing the stream of points from the client. It decodes the stream of points, performs some calculations while accumulating the result, and finally responds with a route summary.
 
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-record-route -->
 ```ocaml
-let record_route (stream : string Lwt_stream.t) =
-  let* () = Lwt_io.printf "RecordRoute\n" in
-  let* () = Lwt_io.(flush stdout) in
+let record_route (clock : #Eio.Time.clock) (stream : string Seq.t) =
+  Eio.traceln "RecordRoute";
 
   let last_point = ref None in
-  let start = Unix.gettimeofday () in
+  let start = Eio.Time.now clock in
   let decode, encode = Service.make_service_functions RouteGuide.recordRoute in
 
-  let* point_count, feature_count, distance =
-    Lwt_stream.fold_s
-      (fun i (point_count, feature_count, distance) ->
+  let point_count, feature_count, distance =
+    Seq.fold_left
+      (fun (point_count, feature_count, distance) i ->
         let point =
           Reader.create i |> decode |> function
           | Ok v -> v
@@ -307,7 +303,7 @@ let record_route (stream : string Lwt_stream.t) =
                 (Printf.sprintf "Could not decode request: %s"
                    (Result.show_error e))
         in
-        let* () = Lwt_io.printf "  ==> Point = {%s}\n" (Point.show point) in
+        Eio.traceln "  ==> Point = {%s}" (Point.show point);
 
         (* Increment the point count *)
         let point_count = point_count + 1 in
@@ -327,19 +323,17 @@ let record_route (stream : string Lwt_stream.t) =
           | Some last_point -> calc_distance last_point point
           | None -> distance
         in
-
         last_point := Some point;
-        Lwt.return (point_count, feature_count, distance))
-      stream (0, 0, 0)
+        (point_count, feature_count, distance))
+      (0, 0, 0) stream
   in
-  let stop = Unix.gettimeofday () in
+  let stop = Eio.Time.now clock in
   let elapsed_time = int_of_float (stop -. start) in
   let summary =
     RouteSummary.make ~point_count ~feature_count ~distance ~elapsed_time ()
   in
-  let* () = Lwt_io.printf "RecordRoute exit\n" in
-  let* () = Lwt_io.(flush stdout) in
-  Lwt.return (Grpc.Status.(v OK), Some (encode summary |> Writer.contents))
+  Eio.traceln "RecordRoute exit\n";
+  (Grpc.Status.(v OK), Some (encode summary |> Writer.contents))
 ```
 
 ### Bidirectional streaming RPCs
@@ -348,34 +342,29 @@ Finally, let's look at our bidirectional streaming RPC `route_chat`, which recei
 
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-route-chat -->
 ```ocaml
-let route_chat (stream : string Lwt_stream.t) (f : string -> unit) =
-  let* () = Lwt_io.printf "RouteChat\n" in
-  let* () = Lwt_io.(flush stdout) in
+let route_chat (stream : string Seq.t) (f : string -> unit) =
+  Printf.printf "RouteChat\n";
 
   let decode, encode = Service.make_service_functions RouteGuide.routeChat in
-  let* () =
-    Lwt_stream.iter_s
-      (fun i ->
-        let note =
-          Reader.create i |> decode |> function
-          | Ok v -> v
-          | Error e ->
-              failwith
-                (Printf.sprintf "Could not decode request: %s"
-                   (Result.show_error e))
-        in
-        let* () = Lwt_io.printf "  ==> Note = {%s}\n" (RouteNote.show note) in
-        let* () = Lwt_io.(flush stdout) in
-        Lwt.return (encode note |> Writer.contents |> f))
-      stream
-  in
+  Seq.iter
+    (fun i ->
+      let note =
+        Reader.create i |> decode |> function
+        | Ok v -> v
+        | Error e ->
+            failwith
+              (Printf.sprintf "Could not decode request: %s"
+                 (Result.show_error e))
+      in
+      Printf.printf "  ==> Note = {%s}\n" (RouteNote.show note);
+      encode note |> Writer.contents |> f)
+    stream;
 
-  let* () = Lwt_io.printf "RouteChat exit\n" in
-  let* () = Lwt_io.(flush stdout) in
-  Lwt.return Grpc.Status.(v OK)
+  Printf.printf "RouteChat exit\n";
+  Grpc.Status.(v OK)
 ```
 
-`route_chat` receives a `string Lwt_stream.t` of requests which it decodes, logs to stdout to show it has received the note, and then encodes again to send back to the client. Finally it responds with an `OK` indicating it has finished. The logic is we receive one `RouteNote` and respond directly with the same `RouteNote` using the `f` function supplied.
+`route_chat` receives a `string Seq.t` of requests which it decodes, logs to stdout to show it has received the note, and then encodes again to send back to the client. Finally it responds with an `OK` indicating it has finished. The logic is we receive one `RouteNote` and respond directly with the same `RouteNote` using the `f` function supplied.
 
 ### Starting the server
 
@@ -383,9 +372,26 @@ Once we've implemented all our functions, we also need to startup a gRPC server 
 
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-main -->
 ```ocaml
-let () =
+let serve server env =
   let port = 8080 in
-  let listen_address = Unix.(ADDR_INET (inet_addr_any, port)) in
+  let net = Eio.Stdenv.net env in
+  let clock = Eio.Stdenv.clock env in
+  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
+  Eio.Switch.run @@ fun sw ->
+  let handler = connection_handler (server clock) sw in
+  let server_socket =
+    Eio.Net.listen net ~sw ~reuse_addr:true ~backlog:10 addr
+  in
+  let rec listen () =
+    Eio.Net.accept_fork ~sw server_socket
+      ~on_error:(fun exn -> Eio.traceln "%s" (Printexc.to_string exn))
+      handler;
+    listen ()
+  in
+  Eio.traceln "Listening on port %i for grpc requests\n" port;
+  listen ()
+
+let () =
   let path =
     if Array.length Sys.argv > 1 then Sys.argv.(1)
     else failwith "Path to datafile required."
@@ -394,21 +400,7 @@ let () =
   (* Load features. *)
   features := load path;
 
-  Lwt.async (fun () ->
-      let server =
-        H2_lwt_unix.Server.create_connection_handler ?config:None
-          ~request_handler:(fun _ reqd -> Server.handle_request server reqd)
-          ~error_handler:(fun _ ?request:_ _ _ ->
-            print_endline "an error occurred")
-      in
-      let* _server =
-        Lwt_io.establish_server_with_client_socket listen_address server
-      in
-      let* () = Lwt_io.printf "Listening on port %i for grpc requests\n" port in
-      Lwt_io.(flush stdout));
-
-  let forever, _ = Lwt.wait () in
-  Lwt_main.run forever
+  Eio_main.run (serve server)
 ```
 
 To handle requests we use `h2-lwt-unix`, an implementation of the HTTP/2 specification entirely in OCaml. What that means is we can swap in other h2 implementations like MirageOS to run in a Unikernel or Async to use JaneStreet's alternatve async implementation. Furthermore we can add TLS or SSL encryptionon to our HTTP/2 stack. 
@@ -421,15 +413,20 @@ To call service methods, we first need to create a H2 connection to communicate 
 
 <!-- $MDX include,file=routeguide/src/client.ml,part=client-h2 -->
 ```ocaml
-let client address port : H2_lwt_unix.Client.t Lwt.t =
-  let* addresses =
-    Lwt_unix.getaddrinfo address (string_of_int port)
-      [ Unix.(AI_FAMILY PF_INET) ]
+let client ~sw host port network =
+  let inet, port =
+    Eio_unix.run_in_systhread (fun () ->
+        Unix.getaddrinfo host port [ Unix.(AI_FAMILY PF_INET) ])
+    |> List.filter_map (fun (addr : Unix.addr_info) ->
+           match addr.ai_addr with
+           | Unix.ADDR_UNIX _ -> None
+           | ADDR_INET (addr, port) -> Some (addr, port))
+    |> List.hd
   in
-  let socket = Lwt_unix.socket Unix.PF_INET Unix.SOCK_STREAM 0 in
-  let* () = Lwt_unix.connect socket (List.hd addresses).Unix.ai_addr in
-  let error_handler _ = print_endline "error" in
-  H2_lwt_unix.Client.create_connection ~error_handler socket
+  let addr = `Tcp (Eio_unix.Net.Ipaddr.of_unix inet, port) in
+  let socket = Eio.Net.connect ~sw network addr in
+  H2_eio.Client.create_connection ~sw ~error_handler:ignore
+    (socket :> Eio.Flow.two_way)
 ```
 
 To call service methods, we take the H2 connection and build up a gRPC call for the service method using `Client.call` from the Client module.
@@ -442,14 +439,13 @@ Calling the simple RPC `get_feature` requires building up a `Client.call` repres
 ```ocaml
 let call_get_feature connection point =
   let encode, decode = Service.make_client_functions RouteGuide.getFeature in
-  let* response =
+  let response =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"GetFeature"
-      ~do_request:(H2_lwt_unix.Client.request connection ~error_handler:ignore)
+      ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Rpc.unary
            (encode point |> Writer.contents)
            ~f:(fun response ->
-             let+ response = response in
              match response with
              | Some response -> (
                  Reader.create response |> decode |> function
@@ -462,8 +458,8 @@ let call_get_feature connection point =
       ()
   in
   match response with
-  | Ok (res, _ok) -> Lwt_io.printlf "RESPONSE = {%s}" (Feature.show res)
-  | Error _ -> Lwt_io.printl "an error occurred"
+  | Ok (res, _ok) -> Printf.printf "RESPONSE = {%s}" (Feature.show res)
+  | Error _ -> Printf.printf "an error occurred"
 ```
 
 ### Server-side streaming RPC
@@ -480,15 +476,15 @@ let print_features connection =
   in
 
   let encode, decode = Service.make_client_functions RouteGuide.listFeatures in
-  let* stream =
+  let stream =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"ListFeatures"
-      ~do_request:(H2_lwt_unix.Client.request connection ~error_handler:ignore)
+      ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Rpc.server_streaming
            (encode rectangle |> Writer.contents)
            ~f:(fun responses ->
              let stream =
-               Lwt_stream.map
+               Seq.map
                  (fun str ->
                    Reader.create str |> decode |> function
                    | Ok feature -> feature
@@ -498,18 +494,19 @@ let print_features connection =
                             (Result.show_error e)))
                  responses
              in
-             Lwt_stream.to_list stream))
+             stream))
       ()
   in
   match stream with
   | Ok (results, _ok) ->
-      Lwt_list.iter_s
-        (fun f -> Lwt_io.printlf "RESPONSE = {%s}" (Feature.show f))
+      Seq.iter
+        (fun f -> Printf.printf "RESPONSE = {%s}" (Feature.show f))
         results
-  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
+  | Error e ->
+      failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
 ```
 
-As in the simple RPC we pass a single request value. However, instead of getting back a single value we get a stream of `Feature`s. We use `Lwt_stream.map` to iterate over the stream and decode each into a `Feature.t` and then print out the features when they are all decoded. Equally we could have printed the features as they are being decoded inside the `Lwt_stream.map` rather than gathering them all into a List and printing them at the end. Notice that the type signature for `Client.RPC.server_streaming` is similar to `unary` in that we provide an encoded request and provide a handler function to consume the response.
+As in the simple RPC we pass a single request value. However, instead of getting back a single value we get a stream of `Feature`s. We use `Seq.map` to iterate over the stream and decode each into a `Feature.t` and then print out the features when they are all decoded. Equally we could have printed the features as they are being decoded inside the `Seq.map` rather than gathering them all into a List and printing them at the end. Notice that the type signature for `Client.RPC.server_streaming` is similar to `unary` in that we provide an encoded request and provide a handler function to consume the response.
 
 ### Client-side streaming RPCs
 
@@ -528,43 +525,40 @@ let run_record_route connection =
   let points =
     Random.int 100
     |> Seq.unfold (function 0 -> None | x -> Some (random_point (), x - 1))
-    |> List.of_seq
   in
 
   let encode, decode = Service.make_client_functions RouteGuide.recordRoute in
-  let* response =
+  let response =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"RecordRoute"
-      ~do_request:(H2_lwt_unix.Client.request connection ~error_handler:ignore)
+      ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Rpc.client_streaming ~f:(fun f response ->
              (* Stream points to server. *)
-             let* () =
-               Lwt_list.iter_s
-                 (fun point ->
-                   Lwt.return
-                     (encode point |> Writer.contents |> fun x -> f (Some x)))
-                 points
-             in
+             Seq.iter
+               (fun point ->
+                 encode point |> Writer.contents |> fun x -> Seq.write f x)
+               points;
+
              (* Signal we have finished sending points. *)
-             f None;
+             Seq.close_writer f;
 
              (* Decode RouteSummary responses. *)
-             response
-             |> Lwt.map @@ function
-                | Some str -> (
-                    Reader.create str |> decode |> function
-                    | Ok feature -> feature
-                    | Error err ->
-                        failwith
-                          (Printf.sprintf "Could not decode request: %s"
-                             (Result.show_error err)))
-                | None -> failwith (Printf.sprintf "No RouteSummary received.")))
+             Eio.Promise.await response |> function
+             | Some str -> (
+                 Reader.create str |> decode |> function
+                 | Ok feature -> feature
+                 | Error err ->
+                     failwith
+                       (Printf.sprintf "Could not decode request: %s"
+                          (Result.show_error err)))
+             | None -> failwith (Printf.sprintf "No RouteSummary received.")))
       ()
   in
   match response with
   | Ok (result, _ok) ->
-      Lwt_io.printlf "SUMMARY = {%s}" (RouteSummary.show result)
-  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
+      Printf.printf "SUMMARY = {%s}" (RouteSummary.show result)
+  | Error e ->
+      failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
 ```
 
 With this stream of points we setup another handler using `Client.Rpc.client_streaming`. The type of the callback arguments is important to understand, `f` is the function for sending data down the gRPC stream to the server. Calling it with `f (Some value)` will send the value to the server, while calling it with `f None` signals that we have finished streaming.  Here you can see we iterate over all the points and call `f` with Some value, and when we have sent everything we call `f None` to signal we are finished. Then we decode the `response` provided and print it out.
@@ -574,10 +568,10 @@ With this stream of points we setup another handler using `Client.Rpc.client_str
 Finally, let's look at our bidirectional streaming RPC. THe `route_chat` method takes a stream of `RouteNotes` and returns either another stream of `RouteNotes` or an error.
 <!-- $MDX include,file=routeguide/src/client.ml,part=client-route-chat-1 -->
 ```ocaml
-let run_route_chat connection =
+let run_route_chat clock connection =
   (* Generate locations. *)
   let location_count = 5 in
-  let* () = Lwt_io.printf "Generating %i locations\n" location_count in
+  Printf.printf "Generating %i locations\n" location_count;
   let route_notes =
     location_count
     |> Seq.unfold (function
@@ -588,7 +582,6 @@ let run_route_chat connection =
                    ~message:(Printf.sprintf "Random Message %i" x)
                    (),
                  x - 1 ))
-    |> List.of_seq
   in
 ```
 
@@ -596,44 +589,46 @@ We start by generating a short sequence of locations, similar to how we did for 
 <!-- $MDX include,file=routeguide/src/client.ml,part=client-route-chat-2 -->
 ```ocaml
   let encode, decode = Service.make_client_functions RouteGuide.routeChat in
-  let rec go f stream notes =
-    match notes with
-    | [] ->
-        f None;
-        (* Signal no more notes from the client. *)
-        Lwt.return ()
-    | route_note :: xs ->
-        let () = encode route_note |> Writer.contents |> fun x -> f (Some x) in
+  let rec go writer reader notes =
+    match Seq.uncons notes with
+    | None -> Seq.close_writer writer (* Signal no more notes from the client. *)
+    | Some (route_note, xs) -> (
+        encode route_note |> Writer.contents |> fun x ->
+        Seq.write writer x;
 
         (* Yield and sleep, waiting for server reply. *)
-        let* () = Lwt_unix.sleep 1.0 in
+        Eio.Time.sleep clock 1.0;
+        Eio.Fiber.yield ();
 
-        let* response = Lwt_stream.next stream in
-        let route_note =
-          Reader.create response |> decode |> function
-          | Ok route_note -> route_note
-          | Error e ->
-              failwith
-                (Printf.sprintf "Could not decode request: %s"
-                   (Result.show_error e))
-        in
-        let* () = Lwt_io.printf "NOTE = {%s}\n" (RouteNote.show route_note) in
-        go f stream xs
+        match Seq.uncons reader with
+        | None -> failwith "Expecting response"
+        | Some (response, reader') ->
+            let route_note =
+              Reader.create response |> decode |> function
+              | Ok route_note -> route_note
+              | Error e ->
+                  failwith
+                    (Printf.sprintf "Could not decode request: %s"
+                       (Result.show_error e))
+            in
+            Printf.printf "NOTE = {%s}\n" (RouteNote.show route_note);
+            go writer reader' xs)
   in
-  let* result =
+  let result =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"RouteChat"
-      ~do_request:(H2_lwt_unix.Client.request connection ~error_handler:ignore)
+      ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
-        (Client.Rpc.bidirectional_streaming ~f:(fun f stream ->
-             go f stream route_notes))
+        (Client.Rpc.bidirectional_streaming ~f:(fun writer reader ->
+             go writer reader route_notes))
       ()
   in
   match result with
-  | Ok ((), _ok) -> Lwt.return ()
-  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
+  | Ok ((), _ok) -> ()
+  | Error e ->
+      failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
 ```
 
-Then we again use the `Client.Rpc` module to setup a `bidirectional_streaming` function with an interesting type signature `val bidirectional_streaming f:((string option -> unit) -> string Lwt_stream.t -> 'a Lwt.t) -> 'a Grpc_lwt.Client.Rpc.handler`. Somewhat intimidating but hopefully understandable in context. The function `f` represents the writer function for sending notes to the server, with the same semantics as before. Calling it with `Some value` represents sending a value to the stream and `f None` means there is no more data to write. The `string Lwt_stream.t` is the stream of `record_note` responses coming back from the server, which we need to decode and print out. We define a recursive function `go` to fold over the list, sending `route_notes`, sleeping to wait for a server response, and printing out that response. When we run out of `route_notes` to send we call `f None` to tell the server we are done and it can stop listening.
+Then we again use the `Client.Rpc` module to setup a `bidirectional_streaming` function with an interesting type signature `val bidirectional_streaming f:(string Seq.writer -> string Seq.t -> 'a) -> 'a handler`. Somewhat intimidating but hopefully understandable in context. The function `f` represents the writer function for sending notes to the server, with the same semantics as before. Calling it with `Some value` represents sending a value to the stream and `f None` means there is no more data to write. The `string Seq.t` is the stream of `record_note` responses coming back from the server, which we need to decode and print out. We define a recursive function `go` to fold over the list, sending `route_notes`, sleeping to wait for a server response, and printing out that response. When we run out of `route_notes` to send we call `Seq.close_writer f` to tell the server we are done and it can stop listening.
 Other combinations of sending and receiving are possible, the reader is encouraged to try them out.
 
 ## Try it out!
