@@ -86,7 +86,7 @@
   tls-async
   lwt_ssl
   (mdx (and (>= "2.2.1") :with-test))
-  eio_main
+  (eio_main (>= 0.10))
   stringext))
 
 (package
