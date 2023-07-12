@@ -30,7 +30,7 @@ depends: [
   "tls-async"
   "lwt_ssl"
   "mdx" {>= "2.2.1" & with-test}
-  "eio_main"
+  "eio_main" {>= "0.10"}
   "stringext"
   "odoc" {with-doc}
 ]
