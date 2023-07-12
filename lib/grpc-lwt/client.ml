@@ -88,8 +88,8 @@ module Rpc = struct
 
   let unary ~f enc write_body read_body =
     let payload = Grpc.Message.make enc in
-    H2.Body.write_string write_body payload;
-    H2.Body.close_writer write_body;
+    H2.Body.Writer.write_string write_body payload;
+    H2.Body.Writer.close write_body;
     let* read_body = read_body in
     let request_buffer = Grpc.Buffer.v () in
     let message, message_notify = Lwt.task () in
@@ -100,8 +100,8 @@ module Rpc = struct
     let rec on_read buffer ~off ~len =
       Grpc.Buffer.copy_from_bigstringaf ~src_off:off ~src:buffer
         ~dst:request_buffer ~length:len;
-      H2.Body.schedule_read read_body ~on_read ~on_eof
+      H2.Body.Reader.schedule_read read_body ~on_read ~on_eof
     in
-    H2.Body.schedule_read read_body ~on_read ~on_eof;
+    H2.Body.Reader.schedule_read read_body ~on_read ~on_eof;
     f message
 end
