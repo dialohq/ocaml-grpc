@@ -74,19 +74,18 @@
  (description "Various grpc examples.")
  (tags (network rpc serialisation))
  (depends
-  (ocaml
-   (>= 4.13))
-  (grpc-lwt (= :version))
-  (grpc-async (= :version))
-  ocaml-protoc-plugin
+  grpc-lwt
+  grpc-async
+  grpc-eio
+  (ocaml-protoc-plugin (>= 4.5))
   ppx_deriving_yojson
   h2-lwt-unix
   conduit-lwt-unix
   cohttp-lwt-unix
   tls-async
-  lwt_ssl
-  (mdx (and (>= "2.2.1") :with-test))
-  (eio_main (>= 0.10))
+  (lwt_ssl (>= 1.2.0))
+  (mdx (and (>= 2.2.1) :with-test))
+  (eio_main (= 0.10))
   stringext))
 
 (package
@@ -95,10 +94,11 @@
  (description "grpc benchmarking.")
  (tags (network rpc serialisation benchmark))
  (depends
+  grpc
   (bechamel(>= 0.4.0))
+  notty
   (bechamel-notty (>= 0.4.0))
-  (bigstringaf (>= 0.9.1))
-  (grpc (= :version))))
+  (bigstringaf (>= 0.9.1))))
 
 (package
  (name grpc-eio)

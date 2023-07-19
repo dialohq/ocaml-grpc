@@ -19,18 +19,18 @@ doc: "https://dialohq.github.io/ocaml-grpc"
 bug-reports: "https://github.com/dialohq/ocaml-grpc/issues"
 depends: [
   "dune" {>= "3.7"}
-  "ocaml" {>= "4.13"}
-  "grpc-lwt" {= version}
-  "grpc-async" {= version}
-  "ocaml-protoc-plugin"
+  "grpc-lwt"
+  "grpc-async"
+  "grpc-eio"
+  "ocaml-protoc-plugin" {>= "4.5"}
   "ppx_deriving_yojson"
   "h2-lwt-unix"
   "conduit-lwt-unix"
   "cohttp-lwt-unix"
   "tls-async"
-  "lwt_ssl"
+  "lwt_ssl" {>= "1.2.0"}
   "mdx" {>= "2.2.1" & with-test}
-  "eio_main" {>= "0.10"}
+  "eio_main" {= "0.10"}
   "stringext"
   "odoc" {with-doc}
 ]
