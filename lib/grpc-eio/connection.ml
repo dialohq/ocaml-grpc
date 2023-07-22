@@ -34,8 +34,8 @@ let grpc_send_streaming request =
             | None -> []
             | Some message -> [ ("grpc-message", message) ]))
      with
-     | Failure "h2.Reqd.schedule_trailers: stream already closed"
-     (* https://github.com/anmonteiro/ocaml-h2/issues/175 *)
+     | ((Failure "h2.Reqd.schedule_trailers: stream already closed")
+     [@warning "-52"] (* https://github.com/anmonteiro/ocaml-h2/issues/175 *))
      ->
        ());
     H2.Body.Writer.close body
