@@ -87,12 +87,17 @@ module Rpc = struct
       write_body read_body
 
   let unary ~handler ~encoded_request write_body read_body =
-    bidirectional_streaming
-      ~handler:(fun encoder_w decoder_r ->
-        Async.Pipe.write_without_pushback encoder_w encoded_request;
-        Async.Pipe.close encoder_w;
-        match%bind Async.Pipe.read decoder_r with
-        | `Eof -> handler None
-        | `Ok a -> handler (Some a))
-      write_body read_body
+    let payload = Grpc.Message.make encoded_request in
+    H2.Body.Writer.write_string write_body payload;
+    H2.Body.Writer.close write_body;
+    let%bind read_body = read_body in
+    let request_buffer = Grpc.Buffer.v () in
+    let on_eof () = () in
+    let rec on_read buffer ~off ~len =
+      Grpc.Buffer.copy_from_bigstringaf ~src_off:off ~src:buffer
+        ~dst:request_buffer ~length:len;
+      H2.Body.Reader.schedule_read read_body ~on_read ~on_eof
+    in
+    H2.Body.Reader.schedule_read read_body ~on_read ~on_eof;
+    handler (Grpc.Message.extract request_buffer)
 end
