@@ -47,3 +47,13 @@ let get_message_and_shift buf =
       Some message
 
 let extract buf = get_message_and_shift buf
+
+let extract_all f buf =
+  let rec loop () =
+    match extract buf with
+    | None -> ()
+    | Some message ->
+        f message;
+        loop ()
+  in
+  loop ()
