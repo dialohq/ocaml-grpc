@@ -36,7 +36,7 @@ let call_server address port req =
   (* code generation *)
   let open Ocaml_protoc_plugin in
   let open Greeter.Mypackage in
-  let decode, encode = Service.make_service_functions Greeter.sayHello in
+  let encode, decode = Service.make_client_functions Greeter.sayHello in
   let enc = encode req |> Writer.contents in
 
   Grpc_async.Client.call ~service:"mypackage.Greeter" ~rpc:"SayHello"

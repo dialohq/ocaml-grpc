@@ -1,0 +1,17 @@
+(executables
+ (names server client)
+ (package grpc-examples)
+ (public_names routeguide-server-async routeguide-client-async)
+ (libraries
+  grpc
+  grpc-async
+  ocaml-protoc-plugin
+  async
+  core
+  core_unix.command_unix
+  routeguide_proto_async
+  h2-lwt-unix
+  yojson
+  ppx_deriving_yojson.runtime)
+ (preprocess
+  (pps ppx_jane ppx_deriving_yojson ppx_deriving.eq)))

@@ -75,7 +75,11 @@ module Rpc = struct
 
   let client_streaming ~handler write_body read_body =
     bidirectional_streaming
-      ~handler:(fun encoder_w _decoder_r -> handler encoder_w)
+      ~handler:(fun encoder_w decoder_r ->
+        handler encoder_w
+          (match%map Async.Pipe.read decoder_r with
+          | `Eof -> None
+          | `Ok a -> Some a))
       write_body read_body
 
   let server_streaming ~handler ~encoded_request write_body read_body =

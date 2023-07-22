@@ -5,8 +5,7 @@ module Rpc : sig
     H2.Body.Writer.t -> H2.Body.Reader.t Deferred.t -> 'a Deferred.t
 
   val bidirectional_streaming :
-    handler:
-      (string Pipe.Writer.t -> string Async.Pipe.Reader.t -> 'a Deferred.t) ->
+    handler:(string Pipe.Writer.t -> string Pipe.Reader.t -> 'a Deferred.t) ->
     'a handler
   (** [bidirectional_streaming ~handler write read] sets up the sending and receiving
     logic using [write] and [read], then calls [handler] with a writer pipe and
@@ -15,7 +14,8 @@ module Rpc : sig
     The stream is closed when the deferred returned by the handler becomes determined. *)
 
   val client_streaming :
-    handler:(string Pipe.Writer.t -> 'a Deferred.t) -> 'a handler
+    handler:(string Pipe.Writer.t -> string option Deferred.t -> 'a Deferred.t) ->
+    'a handler
   (** [client_streaming ~handler write read] sets up the sending and receiving
     logic using [write] and [read], then calls [handler] with a writer pipe to send
     payloads to the server.
@@ -23,7 +23,7 @@ module Rpc : sig
     The stream is closed when the deferred returned by the handler becomes determined. *)
 
   val server_streaming :
-    handler:(string Async.Pipe.Reader.t -> 'a Deferred.t) ->
+    handler:(string Pipe.Reader.t -> 'a Deferred.t) ->
     encoded_request:string ->
     'a handler
   (** [server_streaming ~handler encoded_request write read] sets up the sending and

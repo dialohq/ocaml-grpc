@@ -33,6 +33,7 @@ let grpc_send_streaming request encoder_stream status_mvar =
          `OK)
   in
   let* () =
+    (* bind *)
     Lwt_stream.iter
       (fun input ->
         let payload = Grpc.Message.make input in
@@ -41,6 +42,7 @@ let grpc_send_streaming request encoder_stream status_mvar =
       encoder_stream
   in
   let+ status = Lwt_mvar.take status_mvar in
+  (* map *)
   H2.Reqd.schedule_trailers request
     (H2.Headers.of_list
        ([
