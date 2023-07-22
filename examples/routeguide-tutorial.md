@@ -591,7 +591,8 @@ We start by generating a short sequence of locations, similar to how we did for 
   let encode, decode = Service.make_client_functions RouteGuide.routeChat in
   let rec go writer reader notes =
     match Seq.uncons notes with
-    | None -> Seq.close_writer writer (* Signal no more notes from the client. *)
+    | None ->
+        Seq.close_writer writer (* Signal no more notes from the client. *)
     | Some (route_note, xs) -> (
         encode route_note |> Writer.contents |> fun x ->
         Seq.write writer x;

@@ -19,10 +19,11 @@ doc: "https://dialohq.github.io/ocaml-grpc"
 bug-reports: "https://github.com/dialohq/ocaml-grpc/issues"
 depends: [
   "dune" {>= "3.7"}
+  "grpc"
   "bechamel" {>= "0.4.0"}
+  "notty"
   "bechamel-notty" {>= "0.4.0"}
   "bigstringaf" {>= "0.9.1"}
-  "grpc" {= version}
   "odoc" {with-doc}
 ]
 build: [
