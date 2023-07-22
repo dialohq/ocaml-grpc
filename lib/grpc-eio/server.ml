@@ -66,34 +66,23 @@ module Rpc = struct
   let client_streaming ~f reqd =
     bidirectional_streaming reqd ~f:(fun requests respond ->
         let status, response = f requests in
-        (match response with None -> () | Some response -> respond response);
+        Option.iter respond response;
         status)
 
   let server_streaming ~f reqd =
     bidirectional_streaming reqd ~f:(fun requests respond ->
-        let status_promise, status_resolver = Eio.Promise.create () in
-        Stream.schedule_read
-          ~on_msg:(fun request ->
-            Eio.Promise.resolve status_resolver (f request respond))
-          ~on_eof:(fun () ->
-            Eio.Promise.resolve status_resolver Grpc.Status.(v OK))
-          requests;
-        Eio.Promise.await status_promise)
+        match Stream.take requests |> Eio.Promise.await with
+        | Some request -> f request respond
+        | None -> Grpc.Status.(v OK))
 
   let unary ~f reqd =
     bidirectional_streaming reqd ~f:(fun requests respond ->
-        let status_promise, status_resolver = Eio.Promise.create () in
-        Stream.schedule_read
-          ~on_msg:(fun request ->
+        match Stream.take requests |> Eio.Promise.await with
+        | Some request ->
             let status, response = f request in
-            (match response with
-            | None -> ()
-            | Some response -> respond response);
-            Eio.Promise.resolve status_resolver status)
-          ~on_eof:(fun () ->
-            Eio.Promise.resolve status_resolver Grpc.Status.(v OK))
-          requests;
-        Eio.Promise.await status_promise)
+            Option.iter respond response;
+            status
+        | None -> Grpc.Status.(v OK))
 end
 
 module Service = struct

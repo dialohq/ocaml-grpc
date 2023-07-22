@@ -6,10 +6,7 @@ let grpc_recv_streaming body buffer_push =
   let rec on_read buffer ~off ~len =
     Grpc.Buffer.copy_from_bigstringaf ~src_off:off ~src:buffer
       ~dst:request_buffer ~length:len;
-    let message = Grpc.Message.extract request_buffer in
-    (match message with
-    | Some message -> buffer_push (Some message)
-    | None -> ());
+    Grpc.Message.extract_all (fun msg -> buffer_push (Some msg)) request_buffer;
     H2.Body.Reader.schedule_read body ~on_read ~on_eof
   in
   H2.Body.Reader.schedule_read body ~on_read ~on_eof
