@@ -15,9 +15,10 @@ let call_server ~host ~port req =
     let hnp = Host_and_port.create ~host ~port in
     Tcp.Where_to_connect.of_host_and_port hnp
   in
-  H2_async.Client.TLS.create_connection_with_default ~error_handler socket
-    where_to_connect
-  >>= fun tls_conn ->
+  let%bind tls_conn =
+    H2_async.Client.TLS.create_connection_with_default ~error_handler socket
+      where_to_connect
+  in
   (* code generation *)
   let open Ocaml_protoc_plugin in
   let open Greeter.Mypackage in
