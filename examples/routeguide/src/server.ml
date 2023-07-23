@@ -130,9 +130,8 @@ let list_features (buffer : string) (f : string -> unit) =
 
 (* $MDX part-end *)
 (* $MDX part-begin=server-record-route *)
-let record_route (clock : _ Eio.Time.clock) (stream : string Seq.t) =
+let record_route (clock : #Eio.Time.clock) stream =
   Eio.traceln "RecordRoute";
-
   let last_point = ref None in
   let start = Eio.Time.now clock in
   let decode, encode = Service.make_service_functions RouteGuide.recordRoute in
@@ -183,7 +182,7 @@ let record_route (clock : _ Eio.Time.clock) (stream : string Seq.t) =
 
 (* $MDX part-end *)
 (* $MDX part-begin=server-route-chat *)
-let route_chat (stream : string Seq.t) (f : string -> unit) =
+let route_chat stream (f : string -> unit) =
   Printf.printf "RouteChat\n";
 
   let decode, encode = Service.make_service_functions RouteGuide.routeChat in

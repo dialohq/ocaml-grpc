@@ -150,13 +150,12 @@ let run_route_chat clock connection =
   (* $MDX part-end *)
   (* $MDX part-begin=client-route-chat-2 *)
   let encode, decode = Service.make_client_functions RouteGuide.routeChat in
-  let rec go writer reader notes =
+  let rec go ~send ~close reader notes =
     match Seq.uncons notes with
-    | None ->
-        Seq.close_writer writer (* Signal no more notes from the client. *)
+    | None -> close () (* Signal no more notes from the client. *)
     | Some (route_note, xs) -> (
         encode route_note |> Writer.contents |> fun x ->
-        Seq.write writer x;
+        send x;
 
         (* Yield and sleep, waiting for server reply. *)
         Eio.Time.sleep clock 1.0;
@@ -174,14 +173,14 @@ let run_route_chat clock connection =
                        (Result.show_error e))
             in
             Printf.printf "NOTE = {%s}\n" (RouteNote.show route_note);
-            go writer reader' xs)
+            go ~send ~close reader' xs)
   in
   let result =
     Client.call ~service:"routeguide.RouteGuide" ~rpc:"RouteChat"
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
-        (Client.Rpc.bidirectional_streaming ~f:(fun writer reader ->
-             go writer reader route_notes))
+        (Client.Rpc.bidirectional_streaming ~f:(fun ~send ~close reader ->
+             go ~send ~close (Stream.to_seq reader) route_notes))
       ()
   in
   match result with
