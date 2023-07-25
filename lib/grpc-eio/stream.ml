@@ -13,13 +13,20 @@ let read_loop ~on_msg ~on_eof { body; buffer } =
   H2.Body.Reader.schedule_read body ~on_read ~on_eof
 
 let read_once ~on_msg ~on_eof { body; buffer } =
-  let rec on_read src ~off ~len =
-    Grpc.Buffer.copy_from_bigstringaf ~src_off:off ~src ~dst:buffer ~length:len;
+  let rec read () =
     match Grpc.Message.extract buffer with
     | Some message -> on_msg message
-    | None -> H2.Body.Reader.schedule_read body ~on_read ~on_eof
+    | None ->
+        let on_read src ~off ~len =
+          Grpc.Buffer.copy_from_bigstringaf ~src_off:off ~src ~dst:buffer
+            ~length:len;
+          read ()
+        in
+        H2.Body.Reader.schedule_read body ~on_read ~on_eof
   in
-  H2.Body.Reader.schedule_read body ~on_read ~on_eof
+  read ()
+
+let schedule_read = read_once
 
 let take stream =
   let promise, resolver = Eio.Promise.create () in
