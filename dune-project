@@ -63,18 +63,10 @@
    (>= 4.11))
   (grpc
    (= :version))
-  (h2
-   (>= 0.9.0))
-  (h2-async
-   (>= 0.9.0))
-  (async
-   (and (>= v0.15) (< v0.16)))
-  (ppx_jane
-   (and (>= v0.15) (< v0.16)))
+  (async (>= v0.16))
   stringext))
 
 (package
-
  (name grpc-examples)
  (synopsis "Various grpc examples")
  (description "Various grpc examples.")
@@ -84,12 +76,9 @@
   grpc-async
   grpc-eio
   (ocaml-protoc-plugin (>= 4.5))
-  (async
-   (and (>= v0.15) (< v0.16)))
-  (ppx_jane
-   (and (>= v0.15) (< v0.16)))
   ppx_deriving_yojson
   h2-lwt-unix
+  h2-async
   conduit-lwt-unix
   cohttp-lwt-unix
   tls-async

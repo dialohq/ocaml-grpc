@@ -171,7 +171,7 @@ let run_route_chat connection =
           (* Pause and wait for server reply. Not strictly necessary but it demonstrates that
              responses are streamed rather than arriving as one response.
           *)
-          let%bind () = Async.after (Time_unix.Span.of_string "1s") in
+          let%bind () = Async.after (Time_float_unix.Span.of_string "1s") in
 
           let%bind response = Pipe.read' reader in
           match response with
