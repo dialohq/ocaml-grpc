@@ -55,10 +55,16 @@ let print_features connection =
            (encode rectangle |> Writer.contents)
            ~f:(fun responses ->
              let stream =
-               Lwt_stream.map
+               Lwt_stream.map_s
                  (fun str ->
                    Reader.create str |> decode |> function
-                   | Ok feature -> feature
+                   | Ok feature ->
+                       let* () =
+                         Lwt_io.printf "RESPONSE = {%s}\n"
+                           (Feature.show feature)
+                       in
+                       let* () = Lwt_io.(flush stdout) in
+                       Lwt.return feature
                    | Error e ->
                        failwith
                          (Printf.sprintf "Could not decode request: %s"

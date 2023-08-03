@@ -120,12 +120,13 @@ let list_features (buffer : string) (f : string -> unit) : Grpc.Status.t Lwt.t =
   in
 
   (* Lookup and reply with features found. *)
-  let () =
-    List.iter
+  let* () =
+    Lwt_list.iter_s
       (fun (feature : Feature.t) ->
         if in_range (Option.get feature.location) rectangle then
           encode feature |> Writer.contents |> f
-        else ())
+        else ();
+        Lwt_unix.sleep 0.5)
       !features
   in
   Lwt.return Grpc.Status.(v OK)
