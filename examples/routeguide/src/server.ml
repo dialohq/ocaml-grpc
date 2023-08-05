@@ -235,7 +235,8 @@ let connection_handler server sw =
   in
   fun socket addr ->
     H2_eio.Server.create_connection_handler ?config:None ~request_handler
-      ~error_handler addr socket
+      ~error_handler addr
+      (socket :> Eio.Flow.two_way)
 
 (* $MDX part-begin=server-main *)
 let serve server env =

@@ -33,7 +33,8 @@ let connection_handler server sw =
   in
   fun socket addr ->
     H2_eio.Server.create_connection_handler ?config:None ~request_handler
-      ~error_handler addr socket
+      ~error_handler addr
+      (socket :> Eio.Flow.two_way)
 
 let serve server env =
   let port = 8080 in
@@ -55,7 +56,7 @@ let serve server env =
   print_endline "Try running:";
   print_endline "";
   print_endline
-    {| dune exec -- examples/greeter-client-lwt/greeter_client_lwt.exe <your_name> |};
+    {| dune exec -- examples/greeter-client-eio/greeter_client_eio.exe <your_name> |};
   listen ()
 
 let () =
