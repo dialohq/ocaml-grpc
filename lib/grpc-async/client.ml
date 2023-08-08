@@ -42,20 +42,15 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
   in
   let%bind handler_res = handler write_body (Ivar.read read_body_ivar) in
   let%bind response = Ivar.read out_ivar in
-  let out =
-    match response.status with
-    | `OK -> Ok (handler_res, response.headers)
-    | _ -> Error (Grpc.Status.extract_status response.headers)
-  in
-  match out with
-  | Error _ as e -> return e
-  | Ok (out, headers) ->
-      let%bind status =
+  match response.status with
+  | `OK ->
+      let%map status =
         match H2.Headers.get headers "grpc-status" with
         | Some _ -> return (Grpc.Status.extract_status headers)
         | None -> Ivar.read trailers_status_ivar
       in
-      return (Ok (out, status))
+      Ok (handler_res, status)
+  | status -> return (Error status)
 
 module Rpc = struct
   type 'a handler =

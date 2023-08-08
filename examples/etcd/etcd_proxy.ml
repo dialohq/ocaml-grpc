@@ -71,9 +71,7 @@ let server ~etcd_host ~etcd_port ~port =
     (match meth with
     | "GET" -> get ~host:etcd_host ~port:etcd_port ~key
     | "POST" -> post ~host:etcd_host ~port:etcd_port ~key ~value:body
-    | _ ->
-        let message = "Only GET and POST are implemented!" in
-        Lwt.return (Error (Grpc.Status.v ~message Unimplemented)))
+    | _ -> Lwt.return (Error `Method_not_allowed))
     >>= function
     | Ok (Ok ret, status) ->
         Format.printf "Success status: %a@." Grpc.Status.pp status;
@@ -88,9 +86,10 @@ let server ~etcd_host ~etcd_port ~port =
         let body = Format.asprintf "%s\n%a\n" error Grpc.Status.pp status in
         Server.respond_string ~status:`Internal_server_error ~body ()
     | Error status ->
-        Format.printf "Error status: %a@." Grpc.Status.pp status;
-        let body = Format.asprintf "%a\n" Grpc.Status.pp status in
-        Server.respond_string ~status:`Internal_server_error ~body ()
+        Format.printf "HTTP/2 error status: %a@." H2.Status.pp_hum status;
+        let body = Format.asprintf "%a\n" H2.Status.pp_hum status in
+        let status = H2.Status.to_code status |> Cohttp.Code.status_of_code in
+        Server.respond_string ~status ~body ()
   in
   Server.create ~mode:(`TCP (`Port port)) (Server.make ~callback ())
 

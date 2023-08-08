@@ -43,7 +43,7 @@ val call :
   do_request:do_request ->
   ?headers:H2.Headers.t ->
   unit ->
-  ('a * Grpc.Status.t, Grpc.Status.t) result Lwt.t
+  ('a * Grpc.Status.t, H2.Status.t) result Lwt.t
 (** [call ~service ~rpc ~handler ~do_request ()] calls the rpc endpoint given
       by [service] and [rpc] using the [do_request] function. The [handler] is
       called when this request is set up to send and receive data. *)

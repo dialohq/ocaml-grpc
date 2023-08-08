@@ -96,7 +96,8 @@ let print_features connection =
       ()
   in
   match stream with
-  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
+  | Error e ->
+      failwith (Printf.sprintf "HTTP2 error: %s" (H2.Status.to_string e))
   | Ok ((), _s) -> return ()
 
 let random_point () : Point.t =
@@ -142,7 +143,8 @@ let run_record_route connection =
   match response with
   | Ok (result, _ok) ->
       return (printf "SUMMARY = {%s}" (RouteSummary.show result))
-  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
+  | Error e ->
+      failwith (Printf.sprintf "HTTP2 error: %s" (H2.Status.to_string e))
 
 let run_route_chat connection =
   (* Generate locations. *)
@@ -207,7 +209,8 @@ let run_route_chat connection =
   in
   match result with
   | Ok ((), _ok) -> return ()
-  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
+  | Error e ->
+      failwith (Printf.sprintf "HTTP2 error: %s" (H2.Status.to_string e))
 
 let () =
   let port = 8080 in

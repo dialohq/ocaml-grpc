@@ -82,7 +82,7 @@ let print_features connection =
         (fun f -> Printf.printf "RESPONSE = {%s}" (Feature.show f))
         results
   | Error e ->
-      failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
+      failwith (Printf.sprintf "HTTP2 error: %s" (H2.Status.to_string e))
 
 (* $MDX part-end *)
 (* $MDX part-begin=client-random-point *)
@@ -130,7 +130,7 @@ let run_record_route connection =
   | Ok (result, _ok) ->
       Printf.printf "SUMMARY = {%s}" (RouteSummary.show result)
   | Error e ->
-      failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
+      failwith (Printf.sprintf "HTTP2 error: %s" (H2.Status.to_string e))
 
 (* $MDX part-end *)
 (* $MDX part-begin=client-route-chat-1 *)
@@ -189,7 +189,7 @@ let run_route_chat clock connection =
   match result with
   | Ok ((), _ok) -> ()
   | Error e ->
-      failwith (Printf.sprintf "GRPC error: %s" (H2.Status.to_string e))
+      failwith (Printf.sprintf "HTTP2 error: %s" (H2.Status.to_string e))
 
 (* $MDX part-end *)
 (* $MDX part-begin=client-main *)

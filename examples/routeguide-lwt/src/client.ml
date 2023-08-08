@@ -73,7 +73,8 @@ let print_features connection =
       Lwt_list.iter_s
         (fun f -> Lwt_io.printlf "RESPONSE = {%s}" (Feature.show f))
         results
-  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
+  | Error e ->
+      failwith (Printf.sprintf "HTTP2 error: %s" (H2.Status.to_string e))
 
 let random_point () : Point.t =
   let latitude = (Random.int 180 - 90) * 10000000 in
@@ -120,7 +121,8 @@ let run_record_route connection =
   match response with
   | Ok (result, _ok) ->
       Lwt_io.printlf "SUMMARY = {%s}" (RouteSummary.show result)
-  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
+  | Error e ->
+      failwith (Printf.sprintf "HTTP2 error: %s" (H2.Status.to_string e))
 
 let run_route_chat connection =
   let location_count = 5 in
@@ -172,7 +174,8 @@ let run_route_chat connection =
   in
   match result with
   | Ok ((), _ok) -> Lwt.return ()
-  | Error e -> failwith (Printf.sprintf "GRPC error: %s" (Grpc.Status.show e))
+  | Error e ->
+      failwith (Printf.sprintf "HTTP2 error: %s" (H2.Status.to_string e))
 
 let () =
   let port = 8080 in
