@@ -15,6 +15,7 @@ jobs:
           - windows-latest
         ocaml-compiler:
           - "ocaml.5.0.0,ocaml-option-mingw"
+          - "ocaml.5.1.0,ocaml-option-mingw"
 
     runs-on: ${{ matrix.os }}
 
