@@ -67,18 +67,30 @@
   stringext))
 
 (package
+ (name grpc-eio)
+ (synopsis "An Eio implementation of gRPC")
+ (description
+   "Functionality for building gRPC services and rpcs with `eio`.")
+ (depends
+  (grpc
+   (= :version))
+   eio
+   stringext))
+
+(package
  (name grpc-examples)
- (synopsis "Various grpc examples")
- (description "Various grpc examples.")
+ (synopsis "Various gRPC examples")
+ (description "Various gRPC examples.")
  (tags (network rpc serialisation))
  (depends
   grpc-lwt
+  h2-lwt-unix
   grpc-async
+  h2-async
   grpc-eio
+  h2-eio
   (ocaml-protoc-plugin (>= 4.5))
   ppx_deriving_yojson
-  h2-lwt-unix
-  h2-async
   conduit-lwt-unix
   cohttp-lwt-unix
   tls-async
@@ -89,8 +101,8 @@
 
 (package
  (name grpc-bench)
- (synopsis "grpc benchmarking")
- (description "grpc benchmarking.")
+ (synopsis "Benchmarking package for gRPC")
+ (description "Benchmarking package for gRPC.")
  (tags (network rpc serialisation benchmark))
  (depends
   grpc
@@ -99,14 +111,3 @@
   (bechamel-notty (>= 0.4.0))
   (bigstringaf (>= 0.9.1))
   (notty (>= 0.2.3))))
-
-(package
- (name grpc-eio)
- (synopsis "An Eio implementation of gRPC")
- (description
-  "Functionality for building gRPC services and rpcs with `eio`.")
- (depends
-  (grpc
-   (= :version))
-  h2-eio
-  stringext))
