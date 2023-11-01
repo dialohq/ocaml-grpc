@@ -10,7 +10,7 @@
   core
   core_unix.command_unix
   routeguide_proto_async
-  h2-lwt-unix
+  h2-async
   yojson
   ppx_deriving_yojson.runtime)
  (preprocess
