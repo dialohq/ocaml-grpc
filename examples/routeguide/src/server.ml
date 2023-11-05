@@ -130,7 +130,7 @@ let list_features (buffer : string) (f : string -> unit) =
 
 (* $MDX part-end *)
 (* $MDX part-begin=server-record-route *)
-let record_route (clock : #Eio.Time.clock) (stream : string Seq.t) =
+let record_route (clock : _ Eio.Time.clock)  (stream : string Seq.t) =
   Eio.traceln "RecordRoute";
 
   let last_point = ref None in
@@ -221,7 +221,7 @@ let server clock =
          ~service:(route_guide_service clock))
 
 (* $MDX part-end *)
-let connection_handler server sw =
+let connection_handler server ~sw =
   let error_handler client_address ?request:_ _error start_response =
     Eio.traceln "Error in request from:%a" Eio.Net.Sockaddr.pp client_address;
     let response_body = start_response H2.Headers.empty in
@@ -235,8 +235,7 @@ let connection_handler server sw =
   in
   fun socket addr ->
     H2_eio.Server.create_connection_handler ?config:None ~request_handler
-      ~error_handler addr
-      (socket :> Eio.Flow.two_way)
+      ~error_handler addr socket ~sw
 
 (* $MDX part-begin=server-main *)
 let serve server env =
@@ -245,7 +244,7 @@ let serve server env =
   let clock = Eio.Stdenv.clock env in
   let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
   Eio.Switch.run @@ fun sw ->
-  let handler = connection_handler (server clock) sw in
+  let handler = connection_handler ~sw (server clock) in
   let server_socket =
     Eio.Net.listen net ~sw ~reuse_addr:true ~backlog:10 addr
   in
