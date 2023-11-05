@@ -130,7 +130,7 @@ let list_features (buffer : string) (f : string -> unit) =
 
 (* $MDX part-end *)
 (* $MDX part-begin=server-record-route *)
-let record_route (clock : _ Eio.Time.clock)  (stream : string Seq.t) =
+let record_route (clock : _ Eio.Time.clock) (stream : string Seq.t) =
   Eio.traceln "RecordRoute";
 
   let last_point = ref None in
