@@ -74,7 +74,7 @@
  (depends
   (grpc
    (= :version))
-   eio
+  (eio (>= 0.12))
    stringext))
 
 (package
@@ -96,7 +96,7 @@
   tls-async
   (lwt_ssl (>= 1.2.0))
   (mdx (and (>= 2.2.1) :with-test))
-  (eio_main (>= 0.10))
+  (eio_main (>= 0.12))
   stringext))
 
 (package

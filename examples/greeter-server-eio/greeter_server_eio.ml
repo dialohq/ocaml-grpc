@@ -33,8 +33,7 @@ let connection_handler server sw =
   in
   fun socket addr ->
     H2_eio.Server.create_connection_handler ?config:None ~request_handler
-      ~error_handler addr
-      (socket :> Eio.Flow.two_way)
+      ~error_handler addr ~sw socket
 
 let serve server env =
   let port = 8080 in

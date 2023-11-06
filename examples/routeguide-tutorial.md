@@ -285,7 +285,7 @@ Now let's look at something a little more complicated: the client-side streaming
 
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-record-route -->
 ```ocaml
-let record_route (clock : #Eio.Time.clock) (stream : string Seq.t) =
+let record_route (clock : _ Eio.Time.clock) (stream : string Seq.t) =
   Eio.traceln "RecordRoute";
 
   let last_point = ref None in
@@ -378,7 +378,7 @@ let serve server env =
   let clock = Eio.Stdenv.clock env in
   let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
   Eio.Switch.run @@ fun sw ->
-  let handler = connection_handler (server clock) sw in
+  let handler = connection_handler ~sw (server clock) in
   let server_socket =
     Eio.Net.listen net ~sw ~reuse_addr:true ~backlog:10 addr
   in
@@ -425,8 +425,7 @@ let client ~sw host port network =
   in
   let addr = `Tcp (Eio_unix.Net.Ipaddr.of_unix inet, port) in
   let socket = Eio.Net.connect ~sw network addr in
-  H2_eio.Client.create_connection ~sw ~error_handler:ignore
-    (socket :> Eio.Flow.two_way)
+  H2_eio.Client.create_connection ~sw ~error_handler:ignore socket
 ```
 
 To call service methods, we take the H2 connection and build up a gRPC call for the service method using `Client.call` from the Client module.

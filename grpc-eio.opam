@@ -19,7 +19,7 @@ bug-reports: "https://github.com/dialohq/ocaml-grpc/issues"
 depends: [
   "dune" {>= "3.7"}
   "grpc" {= version}
-  "eio"
+  "eio" {>= "0.12"}
   "stringext"
   "odoc" {with-doc}
 ]

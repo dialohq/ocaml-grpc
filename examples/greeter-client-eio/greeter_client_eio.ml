@@ -16,8 +16,7 @@ let main env =
     let addr = `Tcp (Eio_unix.Net.Ipaddr.of_unix inet, port) in
     let socket = Eio.Net.connect ~sw network addr in
     let connection =
-      H2_eio.Client.create_connection ~sw ~error_handler:ignore
-        (socket :> Eio.Flow.two_way)
+      H2_eio.Client.create_connection ~sw ~error_handler:ignore socket
     in
 
     let open Ocaml_protoc_plugin in
