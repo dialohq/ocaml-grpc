@@ -1,22 +1,16 @@
 open Grpc_eio
 
-let say_hello buffer =
-  let open Ocaml_protoc_plugin in
-  let open Greeter.Mypackage in
-  let decode, encode = Service.make_service_functions Greeter.sayHello in
-  let request =
-    Reader.create buffer |> decode |> function
-    | Ok v -> v
-    | Error e ->
-        failwith
-          (Printf.sprintf "Could not decode request: %s" (Result.show_error e))
-  in
-  let message =
-    if request = "" then "You forgot your name!"
-    else Format.sprintf "Hello, %s!" request
-  in
-  let reply = Greeter.SayHello.Response.make ~message () in
-  (Grpc.Status.(v OK), Some (encode reply |> Writer.contents))
+let say_hello =
+  let module SayHello = Greeter.Mypackage.Greeter.SayHello in
+  Grpc_eio.Server.Typed_rpc.unary
+    (module SayHello)
+    ~f:(fun request ->
+      let message =
+        if request = "" then "You forgot your name!"
+        else Format.sprintf "Hello, %s!" request
+      in
+      let reply = SayHello.Response.make ~message () in
+      (Grpc.Status.(v OK), Some reply))
 
 let connection_handler server sw =
   let error_handler client_address ?request:_ _error start_response =
@@ -59,12 +53,5 @@ let serve server env =
   listen ()
 
 let () =
-  let greeter_service =
-    Server.Service.(
-      v () |> add_rpc ~name:"SayHello" ~rpc:(Unary say_hello) |> handle_request)
-  in
-  let server =
-    Server.(
-      v () |> add_service ~name:"mypackage.Greeter" ~service:greeter_service)
-  in
+  let server = Server.Typed_rpc.server [ say_hello ] in
   Eio_main.run (serve server)

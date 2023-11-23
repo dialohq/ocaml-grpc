@@ -192,20 +192,9 @@ The individual service functions from our proto definition are implemented using
 
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-grpc -->
 ```ocaml
-let route_guide_service clock =
-  Server.Service.(
-    v ()
-    |> add_rpc ~name:"GetFeature" ~rpc:(Unary get_feature)
-    |> add_rpc ~name:"ListFeatures" ~rpc:(Server_streaming list_features)
-    |> add_rpc ~name:"RecordRoute" ~rpc:(Client_streaming (record_route clock))
-    |> add_rpc ~name:"RouteChat" ~rpc:(Bidirectional_streaming route_chat)
-    |> handle_request)
-
-let server clock =
-  Server.(
-    v ()
-    |> add_service ~name:"routeguide.RouteGuide"
-         ~service:(route_guide_service clock))
+let server t clock =
+  Server.Typed_rpc.server
+    [ get_feature t; list_features t; record_route t clock; route_chat t ]
 ```
 
 ### Simple RPC
@@ -214,36 +203,28 @@ Let's look at the simplest type first, `GetFeature` which just gets a `Point` fr
 
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-get-feature -->
 ```ocaml
-let get_feature (buffer : string) =
-  let decode, encode = Service.make_service_functions RouteGuide.getFeature in
-  (* Decode the request. *)
-  let point =
-    Reader.create buffer |> decode |> function
-    | Ok v -> v
-    | Error e ->
-        failwith
-          (Printf.sprintf "Could not decode request: %s" (Result.show_error e))
-  in
-  Eio.traceln "GetFeature = {:%s}" (Point.show point);
+let get_feature (t : t) =
+  Grpc_eio.Server.Typed_rpc.unary
+    (module RouteGuide.GetFeature)
+    ~f:(fun point ->
+      Eio.traceln "GetFeature = {:%s}" (Point.show point);
 
-  (* Lookup the feature and if found return it. *)
-  let feature =
-    List.find_opt
-      (fun (f : Feature.t) ->
-        match (f.location, point) with
-        | Some p1, p2 -> Point.equal p1 p2
-        | _, _ -> false)
-      !features
-  in
-  Eio.traceln "Found feature %s"
-    (feature |> Option.map Feature.show |> Option.value ~default:"Missing");
-  match feature with
-  | Some feature ->
-      (Grpc.Status.(v OK), Some (feature |> encode |> Writer.contents))
-  | None ->
-      (* No feature was found, return an unnamed feature. *)
-      ( Grpc.Status.(v OK),
-        Some (Feature.make ~location:point () |> encode |> Writer.contents) )
+      (* Lookup the feature and if found return it. *)
+      let feature =
+        List.find_opt
+          (fun (f : Feature.t) ->
+            match (f.location, point) with
+            | Some p1, p2 -> Point.equal p1 p2
+            | _, _ -> false)
+          t.features
+      in
+      Eio.traceln "Found feature %s"
+        (feature |> Option.map Feature.show |> Option.value ~default:"Missing");
+      match feature with
+      | Some feature -> (Grpc.Status.(v OK), Some feature)
+      | None ->
+          (* No feature was found, return an unnamed feature. *)
+          (Grpc.Status.(v OK), Some (Feature.make ~location:point ())))
 ```
 
 The method is passed the client's `Point` protocol buffer request. It decodes the request into a `Point.t` and uses that to look up the feature. It returns a `Feature` protocol buffer object with the response information indicating the successful response, based on the feature found or an unnamed default feature.
@@ -254,27 +235,19 @@ Now let's look at one of our streaming RPCs. `list_features` is a server-side st
 
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-list-features -->
 ```ocaml
-let list_features (buffer : string) (f : string -> unit) =
-  (* Decode request. *)
-  let decode, encode = Service.make_service_functions RouteGuide.listFeatures in
-  let rectangle =
-    Reader.create buffer |> decode |> function
-    | Ok v -> v
-    | Error e ->
-        failwith
-          (Printf.sprintf "Could not decode request: %s" (Result.show_error e))
-  in
-
-  (* Lookup and reply with features found. *)
-  let () =
-    List.iter
-      (fun (feature : Feature.t) ->
-        if in_range (Option.get feature.location) rectangle then
-          encode feature |> Writer.contents |> f
-        else ())
-      !features
-  in
-  Grpc.Status.(v OK)
+let list_features (t : t) =
+  Grpc_eio.Server.Typed_rpc.server_streaming
+    (module RouteGuide.ListFeatures)
+    ~f:(fun rectangle f ->
+      (* Lookup and reply with features found. *)
+      let () =
+        List.iter
+          (fun (feature : Feature.t) ->
+            if in_range (Option.get feature.location) rectangle then f feature
+            else ())
+          t.features
+      in
+      Grpc.Status.(v OK))
 ```
 
 Like `get_feature` `list_feature`'s input is a single message. A `Rectangle` that is decoded from a string buffer. The `f: (string -> unit)` function is for writing the encoded responses back to the client. In the function we decode the request, lookup any matching features and stream them back to the client as we find them using `f`. Once we've looked at all the `features` we respond with an `OK` indicating the streaming has finished successfully.
@@ -285,55 +258,49 @@ Now let's look at something a little more complicated: the client-side streaming
 
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-record-route -->
 ```ocaml
-let record_route (clock : _ Eio.Time.clock) (stream : string Seq.t) =
-  Eio.traceln "RecordRoute";
+let record_route (t : t) (clock : _ Eio.Time.clock) =
+  Grpc_eio.Server.Typed_rpc.client_streaming
+    (module RouteGuide.RecordRoute)
+    ~f:(fun (stream : Point.t Seq.t) ->
+      Eio.traceln "RecordRoute";
 
-  let last_point = ref None in
-  let start = Eio.Time.now clock in
-  let decode, encode = Service.make_service_functions RouteGuide.recordRoute in
+      let last_point = ref None in
+      let start = Eio.Time.now clock in
 
-  let point_count, feature_count, distance =
-    Seq.fold_left
-      (fun (point_count, feature_count, distance) i ->
-        let point =
-          Reader.create i |> decode |> function
-          | Ok v -> v
-          | Error e ->
-              failwith
-                (Printf.sprintf "Could not decode request: %s"
-                   (Result.show_error e))
-        in
-        Eio.traceln "  ==> Point = {%s}" (Point.show point);
+      let point_count, feature_count, distance =
+        Seq.fold_left
+          (fun (point_count, feature_count, distance) point ->
+            Eio.traceln "  ==> Point = {%s}" (Point.show point);
 
-        (* Increment the point count *)
-        let point_count = point_count + 1 in
+            (* Increment the point count *)
+            let point_count = point_count + 1 in
 
-        (* Find features *)
-        let feature_count =
-          List.find_all
-            (fun (feature : Feature.t) ->
-              Point.equal (Option.get feature.location) point)
-            !features
-          |> fun x -> List.length x + feature_count
-        in
+            (* Find features *)
+            let feature_count =
+              List.find_all
+                (fun (feature : Feature.t) ->
+                  Point.equal (Option.get feature.location) point)
+                t.features
+              |> fun x -> List.length x + feature_count
+            in
 
-        (* Calculate the distance *)
-        let distance =
-          match !last_point with
-          | Some last_point -> calc_distance last_point point
-          | None -> distance
-        in
-        last_point := Some point;
-        (point_count, feature_count, distance))
-      (0, 0, 0) stream
-  in
-  let stop = Eio.Time.now clock in
-  let elapsed_time = int_of_float (stop -. start) in
-  let summary =
-    RouteSummary.make ~point_count ~feature_count ~distance ~elapsed_time ()
-  in
-  Eio.traceln "RecordRoute exit\n";
-  (Grpc.Status.(v OK), Some (encode summary |> Writer.contents))
+            (* Calculate the distance *)
+            let distance =
+              match !last_point with
+              | Some last_point -> calc_distance last_point point
+              | None -> distance
+            in
+            last_point := Some point;
+            (point_count, feature_count, distance))
+          (0, 0, 0) stream
+      in
+      let stop = Eio.Time.now clock in
+      let elapsed_time = int_of_float (stop -. start) in
+      let summary =
+        RouteSummary.make ~point_count ~feature_count ~distance ~elapsed_time ()
+      in
+      Eio.traceln "RecordRoute exit\n";
+      (Grpc.Status.(v OK), Some summary))
 ```
 
 ### Bidirectional streaming RPCs
@@ -342,26 +309,20 @@ Finally, let's look at our bidirectional streaming RPC `route_chat`, which recei
 
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-route-chat -->
 ```ocaml
-let route_chat (stream : string Seq.t) (f : string -> unit) =
-  Printf.printf "RouteChat\n";
+let route_chat (_ : t) =
+  Grpc_eio.Server.Typed_rpc.bidirectional_streaming
+    (module RouteGuide.RouteChat)
+    ~f:(fun (stream : RouteNote.t Seq.t) (f : RouteNote.t -> unit) ->
+      Printf.printf "RouteChat\n";
 
-  let decode, encode = Service.make_service_functions RouteGuide.routeChat in
-  Seq.iter
-    (fun i ->
-      let note =
-        Reader.create i |> decode |> function
-        | Ok v -> v
-        | Error e ->
-            failwith
-              (Printf.sprintf "Could not decode request: %s"
-                 (Result.show_error e))
-      in
-      Printf.printf "  ==> Note = {%s}\n" (RouteNote.show note);
-      encode note |> Writer.contents |> f)
-    stream;
+      Seq.iter
+        (fun note ->
+          Printf.printf "  ==> Note = {%s}\n" (RouteNote.show note);
+          f note)
+        stream;
 
-  Printf.printf "RouteChat exit\n";
-  Grpc.Status.(v OK)
+      Printf.printf "RouteChat exit\n";
+      Grpc.Status.(v OK))
 ```
 
 `route_chat` receives a `string Seq.t` of requests which it decodes, logs to stdout to show it has received the note, and then encodes again to send back to the client. Finally it responds with an `OK` indicating it has finished. The logic is we receive one `RouteNote` and respond directly with the same `RouteNote` using the `f` function supplied.
@@ -372,13 +333,13 @@ Once we've implemented all our functions, we also need to startup a gRPC server 
 
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-main -->
 ```ocaml
-let serve server env =
+let serve t env =
   let port = 8080 in
   let net = Eio.Stdenv.net env in
   let clock = Eio.Stdenv.clock env in
   let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
   Eio.Switch.run @@ fun sw ->
-  let handler = connection_handler ~sw (server clock) in
+  let handler = connection_handler ~sw (server t clock) in
   let server_socket =
     Eio.Net.listen net ~sw ~reuse_addr:true ~backlog:10 addr
   in
@@ -398,9 +359,9 @@ let () =
   in
 
   (* Load features. *)
-  features := load path;
+  let t = { features = load_features path } in
 
-  Eio_main.run (serve server)
+  Eio_main.run (serve t)
 ```
 
 To handle requests we use `h2-lwt-unix`, an implementation of the HTTP/2 specification entirely in OCaml. What that means is we can swap in other h2 implementations like MirageOS to run in a Unikernel or Async to use JaneStreet's alternatve async implementation. Furthermore we can add TLS or SSL encryptionon to our HTTP/2 stack. 
@@ -437,23 +398,14 @@ Calling the simple RPC `get_feature` requires building up a `Client.call` repres
 <!-- $MDX include,file=routeguide/src/client.ml,part=client-get-feature -->
 ```ocaml
 let call_get_feature connection point =
-  let encode, decode = Service.make_client_functions RouteGuide.getFeature in
   let response =
-    Client.call ~service:"routeguide.RouteGuide" ~rpc:"GetFeature"
+    Client.Typed_rpc.call
+      (module RouteGuide.GetFeature)
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
-        (Client.Rpc.unary
-           (encode point |> Writer.contents)
-           ~f:(fun response ->
-             match response with
-             | Some response -> (
-                 Reader.create response |> decode |> function
-                 | Ok feature -> feature
-                 | Error e ->
-                     failwith
-                       (Printf.sprintf "Could not decode request: %s"
-                          (Result.show_error e)))
-             | None -> Feature.make ()))
+        (Client.Typed_rpc.unary point ~f:(function
+          | Some feature -> feature
+          | None -> Feature.make ()))
       ()
   in
   match response with
@@ -474,26 +426,11 @@ let print_features connection =
       ()
   in
 
-  let encode, decode = Service.make_client_functions RouteGuide.listFeatures in
   let stream =
-    Client.call ~service:"routeguide.RouteGuide" ~rpc:"ListFeatures"
+    Client.Typed_rpc.call
+      (module RouteGuide.ListFeatures)
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
-      ~handler:
-        (Client.Rpc.server_streaming
-           (encode rectangle |> Writer.contents)
-           ~f:(fun responses ->
-             let stream =
-               Seq.map
-                 (fun str ->
-                   Reader.create str |> decode |> function
-                   | Ok feature -> feature
-                   | Error e ->
-                       failwith
-                         (Printf.sprintf "Could not decode request: %s"
-                            (Result.show_error e)))
-                 responses
-             in
-             stream))
+      ~handler:(Client.Typed_rpc.server_streaming rectangle ~f:Fun.id)
       ()
   in
   match stream with
@@ -526,30 +463,21 @@ let run_record_route connection =
     |> Seq.unfold (function 0 -> None | x -> Some (random_point (), x - 1))
   in
 
-  let encode, decode = Service.make_client_functions RouteGuide.recordRoute in
   let response =
-    Client.call ~service:"routeguide.RouteGuide" ~rpc:"RecordRoute"
+    Client.Typed_rpc.call
+      (module RouteGuide.RecordRoute)
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
-        (Client.Rpc.client_streaming ~f:(fun f response ->
+        (Client.Typed_rpc.client_streaming ~f:(fun f response ->
              (* Stream points to server. *)
-             Seq.iter
-               (fun point ->
-                 encode point |> Writer.contents |> fun x -> Seq.write f x)
-               points;
+             Seq.iter (fun point -> Seq.write f point) points;
 
              (* Signal we have finished sending points. *)
              Seq.close_writer f;
 
              (* Decode RouteSummary responses. *)
              Eio.Promise.await response |> function
-             | Some str -> (
-                 Reader.create str |> decode |> function
-                 | Ok feature -> feature
-                 | Error err ->
-                     failwith
-                       (Printf.sprintf "Could not decode request: %s"
-                          (Result.show_error err)))
+             | Some summary -> summary
              | None -> failwith (Printf.sprintf "No RouteSummary received.")))
       ()
   in
@@ -587,14 +515,12 @@ let run_route_chat clock connection =
 We start by generating a short sequence of locations, similar to how we did for `record_route`.
 <!-- $MDX include,file=routeguide/src/client.ml,part=client-route-chat-2 -->
 ```ocaml
-  let encode, decode = Service.make_client_functions RouteGuide.routeChat in
   let rec go writer reader notes =
     match Seq.uncons notes with
     | None ->
         Seq.close_writer writer (* Signal no more notes from the client. *)
     | Some (route_note, xs) -> (
-        encode route_note |> Writer.contents |> fun x ->
-        Seq.write writer x;
+        Seq.write writer route_note;
 
         (* Yield and sleep, waiting for server reply. *)
         Eio.Time.sleep clock 1.0;
@@ -602,23 +528,16 @@ We start by generating a short sequence of locations, similar to how we did for 
 
         match Seq.uncons reader with
         | None -> failwith "Expecting response"
-        | Some (response, reader') ->
-            let route_note =
-              Reader.create response |> decode |> function
-              | Ok route_note -> route_note
-              | Error e ->
-                  failwith
-                    (Printf.sprintf "Could not decode request: %s"
-                       (Result.show_error e))
-            in
+        | Some (route_note, reader') ->
             Printf.printf "NOTE = {%s}\n" (RouteNote.show route_note);
             go writer reader' xs)
   in
   let result =
-    Client.call ~service:"routeguide.RouteGuide" ~rpc:"RouteChat"
+    Client.Typed_rpc.call
+      (module RouteGuide.RouteChat)
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
-        (Client.Rpc.bidirectional_streaming ~f:(fun writer reader ->
+        (Client.Typed_rpc.bidirectional_streaming ~f:(fun writer reader ->
              go writer reader route_notes))
       ()
   in

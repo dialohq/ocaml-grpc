@@ -19,31 +19,23 @@ let main env =
       H2_eio.Client.create_connection ~sw ~error_handler:ignore socket
     in
 
-    let open Ocaml_protoc_plugin in
     let open Greeter.Mypackage in
-    let encode, decode = Service.make_client_functions Greeter.sayHello in
-    let encoded_request =
-      HelloRequest.make ~name () |> encode |> Writer.contents
-    in
+    let request = HelloRequest.make ~name () in
 
-    let f decoder =
-      match decoder with
-      | Some decoder -> (
-          Reader.create decoder |> decode |> function
-          | Ok v -> v
-          | Error e ->
-              failwith
-                (Printf.sprintf "Could not decode request: %s"
-                   (Result.show_error e)))
+    let f response =
+      match response with
+      | Some response -> response
       | None -> Greeter.SayHello.Response.make ()
     in
 
     let result =
-      Grpc_eio.Client.call ~service:"mypackage.Greeter" ~rpc:"SayHello"
+      Grpc_eio.Client.Typed_rpc.call
+        (module Greeter.SayHello)
         ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
-        ~handler:(Grpc_eio.Client.Rpc.unary encoded_request ~f)
+        ~handler:(Grpc_eio.Client.Typed_rpc.unary request ~f)
         ()
     in
+
     Eio.Promise.await (H2_eio.Client.shutdown connection);
     result
   in

@@ -1,6 +1,5 @@
 open Grpc_eio
 open Routeguide.Route_guide.Routeguide
-open Ocaml_protoc_plugin
 
 (* $MDX part-begin=client-h2 *)
 let client ~sw host port network =
@@ -20,23 +19,14 @@ let client ~sw host port network =
 (* $MDX part-end *)
 (* $MDX part-begin=client-get-feature *)
 let call_get_feature connection point =
-  let encode, decode = Service.make_client_functions RouteGuide.getFeature in
   let response =
-    Client.call ~service:"routeguide.RouteGuide" ~rpc:"GetFeature"
+    Client.Typed_rpc.call
+      (module RouteGuide.GetFeature)
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
-        (Client.Rpc.unary
-           (encode point |> Writer.contents)
-           ~f:(fun response ->
-             match response with
-             | Some response -> (
-                 Reader.create response |> decode |> function
-                 | Ok feature -> feature
-                 | Error e ->
-                     failwith
-                       (Printf.sprintf "Could not decode request: %s"
-                          (Result.show_error e)))
-             | None -> Feature.make ()))
+        (Client.Typed_rpc.unary point ~f:(function
+          | Some feature -> feature
+          | None -> Feature.make ()))
       ()
   in
   match response with
@@ -53,26 +43,11 @@ let print_features connection =
       ()
   in
 
-  let encode, decode = Service.make_client_functions RouteGuide.listFeatures in
   let stream =
-    Client.call ~service:"routeguide.RouteGuide" ~rpc:"ListFeatures"
+    Client.Typed_rpc.call
+      (module RouteGuide.ListFeatures)
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
-      ~handler:
-        (Client.Rpc.server_streaming
-           (encode rectangle |> Writer.contents)
-           ~f:(fun responses ->
-             let stream =
-               Seq.map
-                 (fun str ->
-                   Reader.create str |> decode |> function
-                   | Ok feature -> feature
-                   | Error e ->
-                       failwith
-                         (Printf.sprintf "Could not decode request: %s"
-                            (Result.show_error e)))
-                 responses
-             in
-             stream))
+      ~handler:(Client.Typed_rpc.server_streaming rectangle ~f:Fun.id)
       ()
   in
   match stream with
@@ -98,30 +73,21 @@ let run_record_route connection =
     |> Seq.unfold (function 0 -> None | x -> Some (random_point (), x - 1))
   in
 
-  let encode, decode = Service.make_client_functions RouteGuide.recordRoute in
   let response =
-    Client.call ~service:"routeguide.RouteGuide" ~rpc:"RecordRoute"
+    Client.Typed_rpc.call
+      (module RouteGuide.RecordRoute)
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
-        (Client.Rpc.client_streaming ~f:(fun f response ->
+        (Client.Typed_rpc.client_streaming ~f:(fun f response ->
              (* Stream points to server. *)
-             Seq.iter
-               (fun point ->
-                 encode point |> Writer.contents |> fun x -> Seq.write f x)
-               points;
+             Seq.iter (fun point -> Seq.write f point) points;
 
              (* Signal we have finished sending points. *)
              Seq.close_writer f;
 
              (* Decode RouteSummary responses. *)
              Eio.Promise.await response |> function
-             | Some str -> (
-                 Reader.create str |> decode |> function
-                 | Ok feature -> feature
-                 | Error err ->
-                     failwith
-                       (Printf.sprintf "Could not decode request: %s"
-                          (Result.show_error err)))
+             | Some summary -> summary
              | None -> failwith (Printf.sprintf "No RouteSummary received.")))
       ()
   in
@@ -150,14 +116,12 @@ let run_route_chat clock connection =
   in
   (* $MDX part-end *)
   (* $MDX part-begin=client-route-chat-2 *)
-  let encode, decode = Service.make_client_functions RouteGuide.routeChat in
   let rec go writer reader notes =
     match Seq.uncons notes with
     | None ->
         Seq.close_writer writer (* Signal no more notes from the client. *)
     | Some (route_note, xs) -> (
-        encode route_note |> Writer.contents |> fun x ->
-        Seq.write writer x;
+        Seq.write writer route_note;
 
         (* Yield and sleep, waiting for server reply. *)
         Eio.Time.sleep clock 1.0;
@@ -165,23 +129,16 @@ let run_route_chat clock connection =
 
         match Seq.uncons reader with
         | None -> failwith "Expecting response"
-        | Some (response, reader') ->
-            let route_note =
-              Reader.create response |> decode |> function
-              | Ok route_note -> route_note
-              | Error e ->
-                  failwith
-                    (Printf.sprintf "Could not decode request: %s"
-                       (Result.show_error e))
-            in
+        | Some (route_note, reader') ->
             Printf.printf "NOTE = {%s}\n" (RouteNote.show route_note);
             go writer reader' xs)
   in
   let result =
-    Client.call ~service:"routeguide.RouteGuide" ~rpc:"RouteChat"
+    Client.Typed_rpc.call
+      (module RouteGuide.RouteChat)
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
-        (Client.Rpc.bidirectional_streaming ~f:(fun writer reader ->
+        (Client.Typed_rpc.bidirectional_streaming ~f:(fun writer reader ->
              go writer reader route_notes))
       ()
   in

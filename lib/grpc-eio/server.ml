@@ -127,3 +127,117 @@ module Service = struct
       | None -> respond_with `Not_found
     else respond_with `Not_found
 end
+
+module Typed_rpc = struct
+  type server = t
+
+  type ('request, 'response) unary =
+    'request -> Grpc.Status.t * 'response option
+
+  type ('request, 'response) client_streaming =
+    'request Seq.t -> Grpc.Status.t * 'response option
+
+  type ('request, 'response) server_streaming =
+    'request -> ('response -> unit) -> Grpc.Status.t
+
+  type ('request, 'response) bidirectional_streaming =
+    'request Seq.t -> ('response -> unit) -> Grpc.Status.t
+
+  type t = { protoc_rpc : (module Protoc_rpc.S); rpc : Rpc.t }
+
+  let server ts : server =
+    List.fold_left
+      (fun map t ->
+        let module R = (val t.protoc_rpc) in
+        let service_name = Protoc_rpc.service_name (module R) in
+        let rpc =
+          ServiceMap.find_opt service_name map |> Option.value ~default:[]
+        in
+        ServiceMap.add service_name (t :: rpc) map)
+      ServiceMap.empty ts
+    |> ServiceMap.map (fun ts ->
+           let service =
+             List.fold_left
+               (fun acc t ->
+                 let module R = (val t.protoc_rpc) in
+                 Service.add_rpc
+                   ~name:(Protoc_rpc.rpc_name (module R))
+                   ~rpc:t.rpc acc)
+               (Service.v ()) ts
+           in
+           Service.handle_request service)
+
+  let encode (type a)
+      (module M : Ocaml_protoc_plugin.Runtime.Runtime'.Service.Message
+        with type t = a) (a : a) =
+    a |> M.to_proto |> Ocaml_protoc_plugin.Runtime.Runtime'.Writer.contents
+
+  let decode_exn (type a)
+      (module M : Ocaml_protoc_plugin.Runtime.Runtime'.Service.Message
+        with type t = a) buffer =
+    buffer |> Ocaml_protoc_plugin.Runtime.Runtime'.Reader.create |> M.from_proto
+    |> function
+    | Ok r -> r
+    | Error e ->
+        failwith
+          (Printf.sprintf "Could not decode request: %s"
+             (Ocaml_protoc_plugin.Result.show_error e))
+
+  let unary (type request response)
+      (module Protoc_rpc : Protoc_rpc.S
+        with type Request.t = request
+         and type Response.t = response) ~f:handler =
+    let handler buffer =
+      let status, response =
+        handler (decode_exn (module Protoc_rpc.Request) buffer)
+      in
+      ( status,
+        Option.map
+          (fun response -> encode (module Protoc_rpc.Response) response)
+          response )
+    in
+    { protoc_rpc = (module Protoc_rpc); rpc = Rpc.Unary handler }
+
+  let server_streaming (type request response)
+      (module Protoc_rpc : Protoc_rpc.S
+        with type Request.t = request
+         and type Response.t = response) ~f:handler =
+    let handler buffer f =
+      handler
+        (decode_exn (module Protoc_rpc.Request) buffer)
+        (fun response -> f (encode (module Protoc_rpc.Response) response))
+    in
+    { protoc_rpc = (module Protoc_rpc); rpc = Rpc.Server_streaming handler }
+
+  let client_streaming (type request response)
+      (module Protoc_rpc : Protoc_rpc.S
+        with type Request.t = request
+         and type Response.t = response) ~f:handler =
+    let handler requests =
+      let requests =
+        Seq.map (fun str -> decode_exn (module Protoc_rpc.Request) str) requests
+      in
+      let status, response = handler requests in
+      ( status,
+        Option.map
+          (fun response -> encode (module Protoc_rpc.Response) response)
+          response )
+    in
+    { protoc_rpc = (module Protoc_rpc); rpc = Rpc.Client_streaming handler }
+
+  let bidirectional_streaming (type request response)
+      (module Protoc_rpc : Protoc_rpc.S
+        with type Request.t = request
+         and type Response.t = response) ~f:handler =
+    let handler requests f =
+      let requests =
+        Seq.map (fun str -> decode_exn (module Protoc_rpc.Request) str) requests
+      in
+      handler requests (fun response ->
+          f (encode (module Protoc_rpc.Response) response))
+    in
+    {
+      protoc_rpc = (module Protoc_rpc);
+      rpc = Rpc.Bidirectional_streaming handler;
+    }
+end

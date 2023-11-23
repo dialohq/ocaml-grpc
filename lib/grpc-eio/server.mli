@@ -48,3 +48,70 @@ module Service : sig
   val handle_request : t -> H2.Reqd.t -> unit
   (** [handle_request t reqd] handles routing [reqd] to the correct rpc if available in [t]. *)
 end
+
+module Typed_rpc : sig
+  (** This is an experimental API to build RPCs on the server side. Compared to
+    {Rpc}, this interface will:
+
+  - handle the coding/decoding of messages for you under the hood;
+  - use the service and RPC names provided by the protoc specification to
+    register the services with their expected names.
+
+  If you need a more fine-grained control over the failures encountered by
+  encoding/decoding during the lifetime of a connection, you should use the
+  {Rpc} interface instead. *)
+
+  type server := t
+
+  type ('request, 'response) unary =
+    'request -> Grpc.Status.t * 'response option
+  (** [unary] is the type for a unary grpc rpc, one request, one response. *)
+
+  type ('request, 'response) client_streaming =
+    'request Seq.t -> Grpc.Status.t * 'response option
+  (** [client_streaming] is the type for an rpc where the client streams the
+      requests and the server responds once. *)
+
+  type ('request, 'response) server_streaming =
+    'request -> ('response -> unit) -> Grpc.Status.t
+  (** [server_streaming] is the type for an rpc where the client sends one
+    request and the server sends multiple responses. *)
+
+  type ('request, 'response) bidirectional_streaming =
+    'request Seq.t -> ('response -> unit) -> Grpc.Status.t
+  (** [bidirectional_streaming] is the type for an rpc where both the client and
+    server can send multiple messages. *)
+
+  type t
+  (** [t] represents an implementation for an RPC on the server side. *)
+
+  (** The next functions are meant to be used by the server to create RPC
+      implementations. The protoc rpc that the function implements must be
+      provided as it is used to handle coding/decoding of messages. It also
+      allows to refer to the service and RPC names specified in the [.proto]
+      file. *)
+
+  val unary :
+    ('request, 'response) Protoc_rpc.t -> f:('request, 'response) unary -> t
+
+  val client_streaming :
+    ('request, 'response) Protoc_rpc.t ->
+    f:('request, 'response) client_streaming ->
+    t
+
+  val server_streaming :
+    ('request, 'response) Protoc_rpc.t ->
+    f:('request, 'response) server_streaming ->
+    t
+
+  val bidirectional_streaming :
+    ('request, 'response) Protoc_rpc.t ->
+    f:('request, 'response) bidirectional_streaming ->
+    t
+
+  val server : t list -> server
+  (** Having built a list of RPCs you will use this function to package them up
+      into a server that is ready to be served over the network. This function
+      takes care of registering the services based on the names provided by the
+      protoc specification.  *)
+end
