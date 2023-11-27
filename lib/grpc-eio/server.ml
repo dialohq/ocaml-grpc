@@ -143,101 +143,80 @@ module Typed_rpc = struct
   type ('request, 'response) bidirectional_streaming =
     'request Seq.t -> ('response -> unit) -> Grpc.Status.t
 
-  type t = { protoc_rpc : (module Protoc_rpc.S); rpc : Rpc.t }
+  type t =
+    | T : { rpc_codec : ('request, 'response) Rpc_codec.t; rpc : Rpc.t } -> t
 
   let server ts : server =
     List.fold_left
-      (fun map t ->
-        let module R = (val t.protoc_rpc) in
-        let service_name = Protoc_rpc.service_name (module R) in
+      (fun map (T t as packed) ->
+        let service_name = Rpc_codec.service_name t.rpc_codec in
         let rpc =
           ServiceMap.find_opt service_name map |> Option.value ~default:[]
         in
-        ServiceMap.add service_name (t :: rpc) map)
+        ServiceMap.add service_name (packed :: rpc) map)
       ServiceMap.empty ts
     |> ServiceMap.map (fun ts ->
            let service =
              List.fold_left
-               (fun acc t ->
-                 let module R = (val t.protoc_rpc) in
+               (fun acc (T t) ->
                  Service.add_rpc
-                   ~name:(Protoc_rpc.rpc_name (module R))
+                   ~name:(Rpc_codec.rpc_name t.rpc_codec)
                    ~rpc:t.rpc acc)
                (Service.v ()) ts
            in
            Service.handle_request service)
 
-  let encode (type a)
-      (module M : Ocaml_protoc_plugin.Runtime.Runtime'.Service.Message
-        with type t = a) (a : a) =
-    a |> M.to_proto |> Ocaml_protoc_plugin.Runtime.Runtime'.Writer.contents
-
-  let decode_exn (type a)
-      (module M : Ocaml_protoc_plugin.Runtime.Runtime'.Service.Message
-        with type t = a) buffer =
-    buffer |> Ocaml_protoc_plugin.Runtime.Runtime'.Reader.create |> M.from_proto
-    |> function
-    | Ok r -> r
-    | Error e ->
-        failwith
-          (Printf.sprintf "Could not decode request: %s"
-             (Ocaml_protoc_plugin.Result.show_error e))
-
   let unary (type request response)
-      (module Protoc_rpc : Protoc_rpc.S
-        with type Request.t = request
-         and type Response.t = response) ~f:handler =
+      (rpc_codec : (request, response) Rpc_codec.t) ~f:handler =
     let handler buffer =
       let status, response =
-        handler (decode_exn (module Protoc_rpc.Request) buffer)
+        handler (Rpc_codec.decode (Rpc_codec.request rpc_codec) buffer)
       in
       ( status,
         Option.map
-          (fun response -> encode (module Protoc_rpc.Response) response)
+          (fun response ->
+            Rpc_codec.encode (Rpc_codec.response rpc_codec) response)
           response )
     in
-    { protoc_rpc = (module Protoc_rpc); rpc = Rpc.Unary handler }
+    T { rpc_codec; rpc = Rpc.Unary handler }
 
   let server_streaming (type request response)
-      (module Protoc_rpc : Protoc_rpc.S
-        with type Request.t = request
-         and type Response.t = response) ~f:handler =
+      (rpc_codec : (request, response) Rpc_codec.t) ~f:handler =
     let handler buffer f =
       handler
-        (decode_exn (module Protoc_rpc.Request) buffer)
-        (fun response -> f (encode (module Protoc_rpc.Response) response))
+        (Rpc_codec.decode (Rpc_codec.request rpc_codec) buffer)
+        (fun response ->
+          f (Rpc_codec.encode (Rpc_codec.response rpc_codec) response))
     in
-    { protoc_rpc = (module Protoc_rpc); rpc = Rpc.Server_streaming handler }
+    T { rpc_codec; rpc = Rpc.Server_streaming handler }
 
   let client_streaming (type request response)
-      (module Protoc_rpc : Protoc_rpc.S
-        with type Request.t = request
-         and type Response.t = response) ~f:handler =
+      (rpc_codec : (request, response) Rpc_codec.t) ~f:handler =
     let handler requests =
       let requests =
-        Seq.map (fun str -> decode_exn (module Protoc_rpc.Request) str) requests
+        Seq.map
+          (fun buffer -> Rpc_codec.decode (Rpc_codec.request rpc_codec) buffer)
+          requests
       in
       let status, response = handler requests in
       ( status,
         Option.map
-          (fun response -> encode (module Protoc_rpc.Response) response)
+          (fun response ->
+            Rpc_codec.encode (Rpc_codec.response rpc_codec) response)
           response )
     in
-    { protoc_rpc = (module Protoc_rpc); rpc = Rpc.Client_streaming handler }
+    T { rpc_codec; rpc = Rpc.Client_streaming handler }
 
   let bidirectional_streaming (type request response)
-      (module Protoc_rpc : Protoc_rpc.S
-        with type Request.t = request
-         and type Response.t = response) ~f:handler =
+      (rpc_codec : (request, response) Rpc_codec.t) ~f:handler =
     let handler requests f =
       let requests =
-        Seq.map (fun str -> decode_exn (module Protoc_rpc.Request) str) requests
+        Seq.map
+          (fun buffer -> Rpc_codec.decode (Rpc_codec.request rpc_codec) buffer)
+          requests
       in
       handler requests (fun response ->
-          f (encode (module Protoc_rpc.Response) response))
+          f (Rpc_codec.encode (Rpc_codec.response rpc_codec) response))
     in
-    {
-      protoc_rpc = (module Protoc_rpc);
-      rpc = Rpc.Bidirectional_streaming handler;
-    }
+    T { rpc_codec; rpc = Rpc.Bidirectional_streaming handler }
 end

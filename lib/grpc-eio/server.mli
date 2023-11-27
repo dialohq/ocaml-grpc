@@ -92,20 +92,20 @@ module Typed_rpc : sig
       file. *)
 
   val unary :
-    ('request, 'response) Protoc_rpc.t -> f:('request, 'response) unary -> t
+    ('request, 'response) Rpc_codec.t -> f:('request, 'response) unary -> t
 
   val client_streaming :
-    ('request, 'response) Protoc_rpc.t ->
+    ('request, 'response) Rpc_codec.t ->
     f:('request, 'response) client_streaming ->
     t
 
   val server_streaming :
-    ('request, 'response) Protoc_rpc.t ->
+    ('request, 'response) Rpc_codec.t ->
     f:('request, 'response) server_streaming ->
     t
 
   val bidirectional_streaming :
-    ('request, 'response) Protoc_rpc.t ->
+    ('request, 'response) Rpc_codec.t ->
     f:('request, 'response) bidirectional_streaming ->
     t
 

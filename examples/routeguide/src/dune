@@ -4,6 +4,7 @@
  (public_names routeguide-server routeguide-client)
  (libraries
   grpc-eio
+  grpc-protobuf-eio
   eio_main
   h2-eio
   ocaml-protoc-plugin

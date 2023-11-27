@@ -107,35 +107,31 @@ end
 
 module Typed_rpc = struct
   type ('request, 'response, 'a) handler =
-    ('request, 'response) Protoc_rpc.t ->
+    ('request, 'response) Rpc_codec.t ->
     H2.Body.Writer.t ->
     H2.Body.Reader.t ->
     'a
 
   let unary (type request response) ~f (request : request)
-      (module R : Protoc_rpc.S
-        with type Request.t = request
-         and type Response.t = response) =
-    let request = Protoc_rpc.encode (module R.Request) request in
+      (rpc_codec : (request, response) Rpc_codec.t) =
+    let request = Rpc_codec.encode (Rpc_codec.request rpc_codec) request in
     let f response =
       let response =
         response
         |> Option.map (fun response ->
-               response |> Protoc_rpc.decode_exn (module R.Response))
+               response |> Rpc_codec.decode (Rpc_codec.response rpc_codec))
       in
       f response
     in
     Rpc.unary ~f request
 
   let server_streaming (type request response) ~f (request : request)
-      (module R : Protoc_rpc.S
-        with type Request.t = request
-         and type Response.t = response) =
-    let request = Protoc_rpc.encode (module R.Request) request in
+      (rpc_codec : (request, response) Rpc_codec.t) =
+    let request = Rpc_codec.encode (Rpc_codec.request rpc_codec) request in
     let f responses =
       let responses =
         Seq.map
-          (fun str -> Protoc_rpc.decode_exn (module R.Response) str)
+          (fun str -> Rpc_codec.decode (Rpc_codec.response rpc_codec) str)
           responses
       in
       f responses
@@ -143,9 +139,7 @@ module Typed_rpc = struct
     Rpc.server_streaming ~f request
 
   let client_streaming (type request response) ~f
-      (module R : Protoc_rpc.S
-        with type Request.t = request
-         and type Response.t = response) =
+      (rpc_codec : (request, response) Rpc_codec.t) =
     let f requests response =
       let requests_reader, requests' = Seq.create_reader_writer () in
       let response', response_u = Eio.Promise.create () in
@@ -156,14 +150,14 @@ module Typed_rpc = struct
               let response =
                 Eio.Promise.await response
                 |> Option.map (fun response ->
-                       Protoc_rpc.decode_exn (module R.Response) response)
+                       Rpc_codec.decode (Rpc_codec.response rpc_codec) response)
               in
               Eio.Promise.resolve response_u response)
             (fun () ->
               Seq.iter
                 (fun request ->
                   Seq.write requests
-                    (Protoc_rpc.encode (module R.Request) request))
+                    (Rpc_codec.encode (Rpc_codec.request rpc_codec) request))
                 requests_reader;
               Seq.close_writer requests));
       f requests' response'
@@ -171,21 +165,20 @@ module Typed_rpc = struct
     Rpc.client_streaming ~f
 
   let bidirectional_streaming (type request response) ~f
-      (module R : Protoc_rpc.S
-        with type Request.t = request
-         and type Response.t = response) =
+      (rpc_codec : (request, response) Rpc_codec.t) =
     let f requests responses =
       let requests_reader, requests' = Seq.create_reader_writer () in
       let responses' =
         Seq.map
-          (fun str -> Protoc_rpc.decode_exn (module R.Response) str)
+          (fun str -> Rpc_codec.decode (Rpc_codec.response rpc_codec) str)
           responses
       in
       Eio.Switch.run @@ fun sw ->
       Eio.Fiber.fork ~sw (fun () ->
           Seq.iter
             (fun request ->
-              Seq.write requests (Protoc_rpc.encode (module R.Request) request))
+              Seq.write requests
+                (Rpc_codec.encode (Rpc_codec.request rpc_codec) request))
             requests_reader;
           Seq.close_writer requests);
       f requests' responses'
@@ -193,12 +186,10 @@ module Typed_rpc = struct
     Rpc.bidirectional_streaming ~f
 
   let call (type request response a)
-      ((module R : Protoc_rpc.S
-         with type Request.t = request
-          and type Response.t = response) as protoc_rpc) ?scheme
+      (rpc_codec : (request, response) Rpc_codec.t) ?scheme
       ~(handler : (request, response, a) handler) ~do_request ?headers () =
     call
-      ~service:(Protoc_rpc.service_name protoc_rpc)
-      ~rpc:(Protoc_rpc.rpc_name protoc_rpc)
-      ?scheme ~handler:(handler protoc_rpc) ~do_request ?headers ()
+      ~service:(Rpc_codec.service_name rpc_codec)
+      ~rpc:(Rpc_codec.rpc_name rpc_codec)
+      ?scheme ~handler:(handler rpc_codec) ~do_request ?headers ()
 end

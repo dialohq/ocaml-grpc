@@ -75,7 +75,7 @@ module Typed_rpc : sig
     f:('response option -> 'a) -> 'request -> ('request, 'response, 'a) handler
 
   val call :
-    ('request, 'response) Protoc_rpc.t ->
+    ('request, 'response) Rpc_codec.t ->
     ?scheme:string ->
     handler:('request, 'response, 'a) handler ->
     do_request:do_request ->
