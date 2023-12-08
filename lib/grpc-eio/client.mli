@@ -52,8 +52,8 @@ module Typed_rpc : sig
       {Rpc}, this interface will:
 
       - handle the coding/decoding of messages for you under the hood;
-      - use the service and RPC names provided by the protoc specification to
-        register the services with their expected names. *)
+      - use the service and RPC names provided by the rpc specification to
+        call the services with their expected names. *)
 
   type ('request, 'response, 'a) handler
 
@@ -75,14 +75,14 @@ module Typed_rpc : sig
     f:('response option -> 'a) -> 'request -> ('request, 'response, 'a) handler
 
   val call :
-    ('request, 'response) Rpc_codec.t ->
+    ('request, 'response) Grpc.Rpc.t ->
     ?scheme:string ->
     handler:('request, 'response, 'a) handler ->
     do_request:do_request ->
     ?headers:H2.Headers.t ->
     unit ->
     ('a * Grpc.Status.t, H2.Status.t) result
-  (** The protoc rpc must be provided as it is used to handle coding/decoding of
-      messages as well as allows referring to the service and RPC names
-      specified in the [.proto] file. *)
+  (** The rpc specification must be provided as it is used to handle
+      coding/decoding of messages as well as allows referring to the service
+      and RPC names specified in the [.proto] file. *)
 end

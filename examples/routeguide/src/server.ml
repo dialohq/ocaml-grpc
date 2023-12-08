@@ -75,7 +75,7 @@ let calc_distance (p1 : Point.t) (p2 : Point.t) : int =
 (* $MDX part-begin=server-get-feature *)
 let get_feature (t : t) =
   Grpc_eio.Server.Typed_rpc.unary
-    (Grpc_protobuf_eio.Protoc_codec.make (module RouteGuide.GetFeature))
+    (Grpc_protobuf.rpc (module RouteGuide.GetFeature))
     ~f:(fun point ->
       Eio.traceln "GetFeature = {:%s}" (Point.show point);
 
@@ -100,7 +100,7 @@ let get_feature (t : t) =
 (* $MDX part-begin=server-list-features *)
 let list_features (t : t) =
   Grpc_eio.Server.Typed_rpc.server_streaming
-    (Grpc_protobuf_eio.Protoc_codec.make (module RouteGuide.ListFeatures))
+    (Grpc_protobuf.rpc (module RouteGuide.ListFeatures))
     ~f:(fun rectangle f ->
       (* Lookup and reply with features found. *)
       let () =
@@ -116,7 +116,7 @@ let list_features (t : t) =
 (* $MDX part-begin=server-record-route *)
 let record_route (t : t) (clock : _ Eio.Time.clock) =
   Grpc_eio.Server.Typed_rpc.client_streaming
-    (Grpc_protobuf_eio.Protoc_codec.make (module RouteGuide.RecordRoute))
+    (Grpc_protobuf.rpc (module RouteGuide.RecordRoute))
     ~f:(fun (stream : Point.t Seq.t) ->
       Eio.traceln "RecordRoute";
 
@@ -162,7 +162,7 @@ let record_route (t : t) (clock : _ Eio.Time.clock) =
 (* $MDX part-begin=server-route-chat *)
 let route_chat (_ : t) =
   Grpc_eio.Server.Typed_rpc.bidirectional_streaming
-    (Grpc_protobuf_eio.Protoc_codec.make (module RouteGuide.RouteChat))
+    (Grpc_protobuf.rpc (module RouteGuide.RouteChat))
     ~f:(fun (stream : RouteNote.t Seq.t) (f : RouteNote.t -> unit) ->
       Printf.printf "RouteChat\n";
 

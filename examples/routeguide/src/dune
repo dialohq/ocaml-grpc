@@ -4,10 +4,9 @@
  (public_names routeguide-server routeguide-client)
  (libraries
   grpc-eio
-  grpc-protobuf-eio
+  grpc-protobuf
   eio_main
   h2-eio
-  ocaml-protoc-plugin
   routeguide
   yojson
   ppx_deriving_yojson.runtime)

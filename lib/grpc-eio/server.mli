@@ -54,12 +54,8 @@ module Typed_rpc : sig
     {Rpc}, this interface will:
 
   - handle the coding/decoding of messages for you under the hood;
-  - use the service and RPC names provided by the protoc specification to
-    register the services with their expected names.
-
-  If you need a more fine-grained control over the failures encountered by
-  encoding/decoding during the lifetime of a connection, you should use the
-  {Rpc} interface instead. *)
+  - use the service and RPC names provided by the rpc specification to
+    register the services with their expected names. *)
 
   type server := t
 
@@ -86,26 +82,26 @@ module Typed_rpc : sig
   (** [t] represents an implementation for an RPC on the server side. *)
 
   (** The next functions are meant to be used by the server to create RPC
-      implementations. The protoc rpc that the function implements must be
-      provided as it is used to handle coding/decoding of messages. It also
+      implementations. The rpc specification that the function implements must
+      be provided as it is used to handle coding/decoding of messages. It also
       allows to refer to the service and RPC names specified in the [.proto]
       file. *)
 
   val unary :
-    ('request, 'response) Rpc_codec.t -> f:('request, 'response) unary -> t
+    ('request, 'response) Grpc.Rpc.t -> f:('request, 'response) unary -> t
 
   val client_streaming :
-    ('request, 'response) Rpc_codec.t ->
+    ('request, 'response) Grpc.Rpc.t ->
     f:('request, 'response) client_streaming ->
     t
 
   val server_streaming :
-    ('request, 'response) Rpc_codec.t ->
+    ('request, 'response) Grpc.Rpc.t ->
     f:('request, 'response) server_streaming ->
     t
 
   val bidirectional_streaming :
-    ('request, 'response) Rpc_codec.t ->
+    ('request, 'response) Grpc.Rpc.t ->
     f:('request, 'response) bidirectional_streaming ->
     t
 

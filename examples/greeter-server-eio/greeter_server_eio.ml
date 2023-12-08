@@ -3,7 +3,7 @@ open Grpc_eio
 let say_hello =
   let module SayHello = Greeter.Mypackage.Greeter.SayHello in
   Grpc_eio.Server.Typed_rpc.unary
-    (Grpc_protobuf_eio.Protoc_codec.make (module SayHello))
+    (Grpc_protobuf.rpc (module SayHello))
     ~f:(fun request ->
       let message =
         if request = "" then "You forgot your name!"

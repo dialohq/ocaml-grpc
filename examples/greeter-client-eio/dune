@@ -1,11 +1,3 @@
 (executable
  (name greeter_client_eio)
- (libraries
-  grpc
-  grpc-eio
-  grpc-protobuf-eio
-  ocaml-protoc-plugin
-  eio_main
-  greeter
-  h2
-  h2-eio))
+ (libraries grpc grpc-eio grpc-protobuf eio_main greeter h2 h2-eio))

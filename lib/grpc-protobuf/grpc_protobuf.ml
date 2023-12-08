@@ -16,7 +16,7 @@ let decode (type a)
         (Printf.sprintf "Could not decode request: %s"
            (Ocaml_protoc_plugin.Result.show_error e))
 
-let make (type request response)
+let rpc (type request response)
     (module R : S with type Request.t = request and type Response.t = response)
     =
   (module struct
@@ -37,6 +37,6 @@ let make (type request response)
     let package_name = R.package_name
     let service_name = R.service_name
     let method_name = R.method_name
-  end : Grpc_eio.Rpc_codec.S
+  end : Grpc.Rpc.S
     with type Request.t = request
      and type Response.t = response)

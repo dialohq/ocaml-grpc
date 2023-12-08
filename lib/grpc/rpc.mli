@@ -1,5 +1,29 @@
-module type Codec = Rpc_codec_interface.Codec
-module type S = Rpc_codec_interface.S
+type buffer = string
+
+module type Codec = sig
+  type t
+
+  val encode : t -> buffer
+  val decode : buffer -> t
+end
+
+module type S = sig
+  module Request : sig
+    type t
+
+    include Codec with type t := t
+  end
+
+  module Response : sig
+    type t
+
+    include Codec with type t := t
+  end
+
+  val package_name : string option
+  val service_name : string
+  val method_name : string
+end
 
 type ('request, 'response) t =
   (module S with type Request.t = 'request and type Response.t = 'response)

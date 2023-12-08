@@ -78,20 +78,15 @@
    stringext))
 
 (package
- (name grpc-protobuf-eio)
- (synopsis "An Eio implementation of gRPC with protobuf serialization")
+ (name grpc-protobuf)
+ (synopsis "An implementation of gRPC with protobuf serialization")
  (description
-  "Functionality for building gRPC services and rpcs with `eio` and `ocaml-protoc-plugin`")
+  "Functionality for building gRPC services and rpcs with `ocaml-protoc-plugin`")
  (depends
   (grpc
    (= :version))
-  (grpc-eio
-   (= :version))
-  (eio
-   (>= 0.12))
   (ocaml-protoc-plugin
-   (>= 4.5))
-  stringext))
+   (>= 4.5))))
 
 (package
  (name grpc-examples)

@@ -116,10 +116,10 @@ module Service = struct
     let parts = String.split_on_char '/' request.target in
     if List.length parts > 1 then
       let rpc_name = List.nth parts (List.length parts - 1) in
-      let rpc = RpcMap.find_opt rpc_name t in
-      match rpc with
-      | Some rpc -> (
-          match rpc with
+      let rpc_impl = RpcMap.find_opt rpc_name t in
+      match rpc_impl with
+      | Some rpc_impl -> (
+          match rpc_impl with
           | Unary f -> Rpc.unary ~f reqd
           | Client_streaming f -> Rpc.client_streaming ~f reqd
           | Server_streaming f -> Rpc.server_streaming ~f reqd
@@ -144,79 +144,79 @@ module Typed_rpc = struct
     'request Seq.t -> ('response -> unit) -> Grpc.Status.t
 
   type t =
-    | T : { rpc_codec : ('request, 'response) Rpc_codec.t; rpc : Rpc.t } -> t
+    | T : { rpc_spec : ('request, 'response) Grpc.Rpc.t; rpc_impl : Rpc.t } -> t
 
   let server ts : server =
     List.fold_left
       (fun map (T t as packed) ->
-        let service_name = Rpc_codec.service_name t.rpc_codec in
-        let rpc =
+        let service_name = Grpc.Rpc.service_name t.rpc_spec in
+        let rpc_impl =
           ServiceMap.find_opt service_name map |> Option.value ~default:[]
         in
-        ServiceMap.add service_name (packed :: rpc) map)
+        ServiceMap.add service_name (packed :: rpc_impl) map)
       ServiceMap.empty ts
     |> ServiceMap.map (fun ts ->
            let service =
              List.fold_left
                (fun acc (T t) ->
                  Service.add_rpc
-                   ~name:(Rpc_codec.rpc_name t.rpc_codec)
-                   ~rpc:t.rpc acc)
+                   ~name:(Grpc.Rpc.rpc_name t.rpc_spec)
+                   ~rpc:t.rpc_impl acc)
                (Service.v ()) ts
            in
            Service.handle_request service)
 
-  let unary (type request response)
-      (rpc_codec : (request, response) Rpc_codec.t) ~f:handler =
+  let unary (type request response) (rpc_spec : (request, response) Grpc.Rpc.t)
+      ~f:handler =
     let handler buffer =
       let status, response =
-        handler (Rpc_codec.decode (Rpc_codec.request rpc_codec) buffer)
+        handler (Grpc.Rpc.decode (Grpc.Rpc.request rpc_spec) buffer)
       in
       ( status,
         Option.map
           (fun response ->
-            Rpc_codec.encode (Rpc_codec.response rpc_codec) response)
+            Grpc.Rpc.encode (Grpc.Rpc.response rpc_spec) response)
           response )
     in
-    T { rpc_codec; rpc = Rpc.Unary handler }
+    T { rpc_spec; rpc_impl = Rpc.Unary handler }
 
   let server_streaming (type request response)
-      (rpc_codec : (request, response) Rpc_codec.t) ~f:handler =
+      (rpc_spec : (request, response) Grpc.Rpc.t) ~f:handler =
     let handler buffer f =
       handler
-        (Rpc_codec.decode (Rpc_codec.request rpc_codec) buffer)
+        (Grpc.Rpc.decode (Grpc.Rpc.request rpc_spec) buffer)
         (fun response ->
-          f (Rpc_codec.encode (Rpc_codec.response rpc_codec) response))
+          f (Grpc.Rpc.encode (Grpc.Rpc.response rpc_spec) response))
     in
-    T { rpc_codec; rpc = Rpc.Server_streaming handler }
+    T { rpc_spec; rpc_impl = Rpc.Server_streaming handler }
 
   let client_streaming (type request response)
-      (rpc_codec : (request, response) Rpc_codec.t) ~f:handler =
+      (rpc_spec : (request, response) Grpc.Rpc.t) ~f:handler =
     let handler requests =
       let requests =
         Seq.map
-          (fun buffer -> Rpc_codec.decode (Rpc_codec.request rpc_codec) buffer)
+          (fun buffer -> Grpc.Rpc.decode (Grpc.Rpc.request rpc_spec) buffer)
           requests
       in
       let status, response = handler requests in
       ( status,
         Option.map
           (fun response ->
-            Rpc_codec.encode (Rpc_codec.response rpc_codec) response)
+            Grpc.Rpc.encode (Grpc.Rpc.response rpc_spec) response)
           response )
     in
-    T { rpc_codec; rpc = Rpc.Client_streaming handler }
+    T { rpc_spec; rpc_impl = Rpc.Client_streaming handler }
 
   let bidirectional_streaming (type request response)
-      (rpc_codec : (request, response) Rpc_codec.t) ~f:handler =
+      (rpc_spec : (request, response) Grpc.Rpc.t) ~f:handler =
     let handler requests f =
       let requests =
         Seq.map
-          (fun buffer -> Rpc_codec.decode (Rpc_codec.request rpc_codec) buffer)
+          (fun buffer -> Grpc.Rpc.decode (Grpc.Rpc.request rpc_spec) buffer)
           requests
       in
       handler requests (fun response ->
-          f (Rpc_codec.encode (Rpc_codec.response rpc_codec) response))
+          f (Grpc.Rpc.encode (Grpc.Rpc.response rpc_spec) response))
     in
-    T { rpc_codec; rpc = Rpc.Bidirectional_streaming handler }
+    T { rpc_spec; rpc_impl = Rpc.Bidirectional_streaming handler }
 end

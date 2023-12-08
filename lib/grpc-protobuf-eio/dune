@@ -1,4 +1,0 @@
-(library
- (name grpc_protobuf_eio)
- (public_name grpc-protobuf-eio)
- (libraries grpc h2 eio grpc-eio ocaml-protoc-plugin))
