@@ -1,0 +1,11 @@
+(library
+ (name greeter_protoc)
+ (public_name grpc-examples.greeter-protoc)
+ (libraries ocaml-protoc pbrt pbrt_services))
+
+(rule
+ (targets greeter.ml greeter.mli)
+ (deps
+  (:proto greeter.proto))
+ (action
+  (run ocaml-protoc %{proto} --binary --pp --services --ml_out .)))

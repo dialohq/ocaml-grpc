@@ -1,0 +1,3 @@
+(executable
+ (name greeter_server_eio)
+ (libraries grpc grpc-eio grpc-protoc eio_main greeter_protoc h2 h2-eio))
