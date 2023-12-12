@@ -29,7 +29,8 @@
  (synopsis "A modular gRPC library")
  (description
   "This library builds some of the signatures and implementations of gRPC functionality. This is used in the more specialised package `grpc-lwt` which has more machinery, however this library can also be used to do some bits yourself.")
- (tags (network rpc serialisation))
+ (tags
+  (network rpc serialisation))
  (depends
   (ocaml
    (>= 4.08))
@@ -44,7 +45,8 @@
  (synopsis "An Lwt implementation of gRPC")
  (description
   "Functionality for building gRPC services and rpcs with `lwt`.")
- (tags (network rpc serialisation))
+ (tags
+  (network rpc serialisation))
  (depends
   (grpc
    (= :version))
@@ -57,28 +59,31 @@
  (synopsis "An Async implementation of gRPC")
  (description
   "Functionality for building gRPC services and rpcs with `async`.")
- (tags (network rpc serialisation))
+ (tags
+  (network rpc serialisation))
  (depends
   (ocaml
    (>= 4.11))
   (grpc
    (= :version))
-  (async (>= v0.16))
+  (async
+   (>= v0.16))
   stringext))
 
 (package
  (name grpc-eio)
  (synopsis "An Eio implementation of gRPC")
  (description
-   "Functionality for building gRPC services and rpcs with `eio`.")
+  "Functionality for building gRPC services and rpcs with `eio`.")
  (depends
   (grpc
    (= :version))
-  (eio (>= 0.12))
-   stringext))
+  (eio
+   (>= 0.12))
+  stringext))
 
 (package
- (name grpc-protobuf)
+ (name grpc-protoc-plugin)
  (synopsis "An implementation of gRPC with protobuf serialization")
  (description
   "Functionality for building gRPC services and rpcs with `ocaml-protoc-plugin`")
@@ -92,7 +97,8 @@
  (name grpc-examples)
  (synopsis "Various gRPC examples")
  (description "Various gRPC examples.")
- (tags (network rpc serialisation))
+ (tags
+  (network rpc serialisation))
  (depends
   grpc-lwt
   h2-lwt-unix
@@ -100,25 +106,36 @@
   h2-async
   grpc-eio
   h2-eio
-  (ocaml-protoc-plugin (>= 4.5))
+  (ocaml-protoc-plugin
+   (>= 4.5))
   ppx_deriving_yojson
   conduit-lwt-unix
   cohttp-lwt-unix
   tls-async
-  (lwt_ssl (>= 1.2.0))
-  (mdx (and (>= 2.2.1) :with-test))
-  (eio_main (>= 0.12))
+  (lwt_ssl
+   (>= 1.2.0))
+  (mdx
+   (and
+    (>= 2.2.1)
+    :with-test))
+  (eio_main
+   (>= 0.12))
   stringext))
 
 (package
  (name grpc-bench)
  (synopsis "Benchmarking package for gRPC")
  (description "Benchmarking package for gRPC.")
- (tags (network rpc serialisation benchmark))
+ (tags
+  (network rpc serialisation benchmark))
  (depends
   grpc
-  (bechamel(>= 0.4.0))
+  (bechamel
+   (>= 0.4.0))
   notty
-  (bechamel-notty (>= 0.4.0))
-  (bigstringaf (>= 0.9.1))
-  (notty (>= 0.2.3))))
+  (bechamel-notty
+   (>= 0.4.0))
+  (bigstringaf
+   (>= 0.9.1))
+  (notty
+   (>= 0.2.3))))

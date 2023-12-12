@@ -1,4 +1,0 @@
-(library
- (name grpc_protobuf)
- (public_name grpc-protobuf)
- (libraries grpc ocaml-protoc-plugin))
