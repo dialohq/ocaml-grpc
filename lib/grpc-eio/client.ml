@@ -107,39 +107,31 @@ end
 
 module Typed_rpc = struct
   type ('request, 'response, 'a) handler =
-    ('request, 'response) Grpc.Rpc.t ->
+    ('request, 'response) Grpc.Rpc.Client_rpc.t ->
     H2.Body.Writer.t ->
     H2.Body.Reader.t ->
     'a
 
   let unary (type request response) ~f (request : request)
-      (rpc : (request, response) Grpc.Rpc.t) =
-    let request = Grpc.Rpc.encode (Grpc.Rpc.request rpc) request in
+      (rpc : (request, response) Grpc.Rpc.Client_rpc.t) =
+    let request = rpc.encode_request request in
     let f response =
-      let response =
-        response
-        |> Option.map (fun response ->
-               response |> Grpc.Rpc.decode (Grpc.Rpc.response rpc))
-      in
+      let response = response |> Option.map rpc.decode_response in
       f response
     in
     Rpc.unary ~f request
 
   let server_streaming (type request response) ~f (request : request)
-      (rpc : (request, response) Grpc.Rpc.t) =
-    let request = Grpc.Rpc.encode (Grpc.Rpc.request rpc) request in
+      (rpc : (request, response) Grpc.Rpc.Client_rpc.t) =
+    let request = rpc.encode_request request in
     let f responses =
-      let responses =
-        Seq.map
-          (fun str -> Grpc.Rpc.decode (Grpc.Rpc.response rpc) str)
-          responses
-      in
+      let responses = Seq.map rpc.decode_response responses in
       f responses
     in
     Rpc.server_streaming ~f request
 
   let client_streaming (type request response) ~f
-      (rpc : (request, response) Grpc.Rpc.t) =
+      (rpc : (request, response) Grpc.Rpc.Client_rpc.t) =
     let f requests response =
       let requests_reader, requests' = Seq.create_reader_writer () in
       let response', response_u = Eio.Promise.create () in
@@ -148,16 +140,12 @@ module Typed_rpc = struct
           Eio.Fiber.both
             (fun () ->
               let response =
-                Eio.Promise.await response
-                |> Option.map (fun response ->
-                       Grpc.Rpc.decode (Grpc.Rpc.response rpc) response)
+                Eio.Promise.await response |> Option.map rpc.decode_response
               in
               Eio.Promise.resolve response_u response)
             (fun () ->
               Seq.iter
-                (fun request ->
-                  Seq.write requests
-                    (Grpc.Rpc.encode (Grpc.Rpc.request rpc) request))
+                (fun request -> Seq.write requests (rpc.encode_request request))
                 requests_reader;
               Seq.close_writer requests));
       f requests' response'
@@ -165,31 +153,24 @@ module Typed_rpc = struct
     Rpc.client_streaming ~f
 
   let bidirectional_streaming (type request response) ~f
-      (rpc : (request, response) Grpc.Rpc.t) =
+      (rpc : (request, response) Grpc.Rpc.Client_rpc.t) =
     let f requests responses =
       let requests_reader, requests' = Seq.create_reader_writer () in
-      let responses' =
-        Seq.map
-          (fun str -> Grpc.Rpc.decode (Grpc.Rpc.response rpc) str)
-          responses
-      in
+      let responses' = Seq.map rpc.decode_response responses in
       Eio.Switch.run @@ fun sw ->
       Eio.Fiber.fork ~sw (fun () ->
           Seq.iter
-            (fun request ->
-              Seq.write requests
-                (Grpc.Rpc.encode (Grpc.Rpc.request rpc) request))
+            (fun request -> Seq.write requests (rpc.encode_request request))
             requests_reader;
           Seq.close_writer requests);
       f requests' responses'
     in
     Rpc.bidirectional_streaming ~f
 
-  let call (type request response a) (rpc : (request, response) Grpc.Rpc.t)
-      ?scheme ~(handler : (request, response, a) handler) ~do_request ?headers
-      () =
+  let call (type request response a)
+      (rpc : (request, response) Grpc.Rpc.Client_rpc.t) ?scheme
+      ~(handler : (request, response, a) handler) ~do_request ?headers () =
     call
-      ~service:(Grpc.Rpc.service_name rpc)
-      ~rpc:(Grpc.Rpc.rpc_name rpc) ?scheme ~handler:(handler rpc) ~do_request
-      ?headers ()
+      ~service:(Grpc.Rpc.Client_rpc.packaged_service_name rpc)
+      ~rpc:rpc.rpc_name ?scheme ~handler:(handler rpc) ~do_request ?headers ()
 end

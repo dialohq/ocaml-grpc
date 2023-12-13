@@ -75,7 +75,7 @@ module Typed_rpc : sig
     f:('response option -> 'a) -> 'request -> ('request, 'response, 'a) handler
 
   val call :
-    ('request, 'response) Grpc.Rpc.t ->
+    ('request, 'response) Grpc.Rpc.Client_rpc.t ->
     ?scheme:string ->
     handler:('request, 'response, 'a) handler ->
     do_request:do_request ->

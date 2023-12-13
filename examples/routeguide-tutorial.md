@@ -194,7 +194,8 @@ The individual service functions from our proto definition are implemented using
 ```ocaml
 let server t clock =
   Server.Typed_rpc.server
-    [ get_feature t; list_features t; record_route t clock; route_chat t ]
+    (Handlers
+       [ get_feature t; list_features t; record_route t clock; route_chat t ])
 ```
 
 ### Simple RPC
@@ -205,7 +206,7 @@ Let's look at the simplest type first, `GetFeature` which just gets a `Point` fr
 ```ocaml
 let get_feature (t : t) =
   Grpc_eio.Server.Typed_rpc.unary
-    (Grpc_protoc_plugin.rpc (module RouteGuide.GetFeature))
+    (Grpc_protoc_plugin.server_rpc (module RouteGuide.GetFeature))
     ~f:(fun point ->
       Eio.traceln "GetFeature = {:%s}" (Point.show point);
 
@@ -237,7 +238,7 @@ Now let's look at one of our streaming RPCs. `list_features` is a server-side st
 ```ocaml
 let list_features (t : t) =
   Grpc_eio.Server.Typed_rpc.server_streaming
-    (Grpc_protoc_plugin.rpc (module RouteGuide.ListFeatures))
+    (Grpc_protoc_plugin.server_rpc (module RouteGuide.ListFeatures))
     ~f:(fun rectangle f ->
       (* Lookup and reply with features found. *)
       let () =
@@ -260,7 +261,7 @@ Now let's look at something a little more complicated: the client-side streaming
 ```ocaml
 let record_route (t : t) (clock : _ Eio.Time.clock) =
   Grpc_eio.Server.Typed_rpc.client_streaming
-    (Grpc_protoc_plugin.rpc (module RouteGuide.RecordRoute))
+    (Grpc_protoc_plugin.server_rpc (module RouteGuide.RecordRoute))
     ~f:(fun (stream : Point.t Seq.t) ->
       Eio.traceln "RecordRoute";
 
@@ -311,7 +312,7 @@ Finally, let's look at our bidirectional streaming RPC `route_chat`, which recei
 ```ocaml
 let route_chat (_ : t) =
   Grpc_eio.Server.Typed_rpc.bidirectional_streaming
-    (Grpc_protoc_plugin.rpc (module RouteGuide.RouteChat))
+    (Grpc_protoc_plugin.server_rpc (module RouteGuide.RouteChat))
     ~f:(fun (stream : RouteNote.t Seq.t) (f : RouteNote.t -> unit) ->
       Printf.printf "RouteChat\n";
 
@@ -400,7 +401,7 @@ Calling the simple RPC `get_feature` requires building up a `Client.call` repres
 let call_get_feature connection point =
   let response =
     Client.Typed_rpc.call
-      (Grpc_protoc_plugin.rpc (module RouteGuide.GetFeature))
+      (Grpc_protoc_plugin.client_rpc (module RouteGuide.GetFeature))
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Typed_rpc.unary point ~f:(function
@@ -428,7 +429,7 @@ let print_features connection =
 
   let stream =
     Client.Typed_rpc.call
-      (Grpc_protoc_plugin.rpc (module RouteGuide.ListFeatures))
+      (Grpc_protoc_plugin.client_rpc (module RouteGuide.ListFeatures))
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:(Client.Typed_rpc.server_streaming rectangle ~f:Fun.id)
       ()
@@ -465,7 +466,7 @@ let run_record_route connection =
 
   let response =
     Client.Typed_rpc.call
-      (Grpc_protoc_plugin.rpc (module RouteGuide.RecordRoute))
+      (Grpc_protoc_plugin.client_rpc (module RouteGuide.RecordRoute))
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Typed_rpc.client_streaming ~f:(fun f response ->
@@ -534,7 +535,7 @@ We start by generating a short sequence of locations, similar to how we did for 
   in
   let result =
     Client.Typed_rpc.call
-      (Grpc_protoc_plugin.rpc (module RouteGuide.RouteChat))
+      (Grpc_protoc_plugin.client_rpc (module RouteGuide.RouteChat))
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Typed_rpc.bidirectional_streaming ~f:(fun writer reader ->

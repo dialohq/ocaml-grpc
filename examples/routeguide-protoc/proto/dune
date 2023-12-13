@@ -1,0 +1,24 @@
+(library
+ (name routeguide_protoc)
+ (package grpc-examples)
+ (preprocess
+  (pps ppx_deriving.show ppx_deriving.eq))
+ (libraries ocaml-protoc pbrt pbrt_services))
+
+(rule
+ (copy ../../routeguide/proto/route_guide.proto route_guide.proto))
+
+(rule
+ (targets route_guide.ml route_guide.mli)
+ (deps
+  (:proto route_guide.proto))
+ (action
+  (run
+   ocaml-protoc
+   %{proto}
+   --binary
+   --ocaml_all_types_ppx
+   "deriving show { with_path = false }, eq"
+   --services
+   --ml_out
+   .)))

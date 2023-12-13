@@ -1,60 +1,34 @@
 type buffer = string
 
-module type Codec = sig
-  type t
+module Service_spec = struct
+  type t = { package : string list; service_name : string }
 
-  val encode : t -> buffer
-  val decode : buffer -> t
+  let packaged_service_name t =
+    (match t.package with _ :: _ as p -> String.concat "." p | [] -> "")
+    ^ t.service_name
 end
 
-module type S = sig
-  module Request : sig
-    type t
+module Client_rpc = struct
+  type ('request, 'response) t = {
+    service_spec : Service_spec.t;
+    rpc_name : string;
+    encode_request : 'request -> buffer;
+    decode_response : buffer -> 'response;
+  }
 
-    include Codec with type t := t
+  let packaged_service_name t =
+    Service_spec.packaged_service_name t.service_spec
+end
+
+module Server_rpc = struct
+  module Service_spec = struct
+    type 'a t = None : unit t | Some : Service_spec.t -> Service_spec.t t
   end
 
-  module Response : sig
-    type t
-
-    include Codec with type t := t
-  end
-
-  val package_name : string option
-  val service_name : string
-  val method_name : string
+  type ('request, 'response, 'service_spec) t = {
+    service_spec : 'service_spec Service_spec.t;
+    rpc_name : string;
+    decode_request : buffer -> 'request;
+    encode_response : 'response -> buffer;
+  }
 end
-
-type ('request, 'response) t =
-  (module S with type Request.t = 'request and type Response.t = 'response)
-
-let service_name (type request response)
-    (module R : S with type Request.t = request and type Response.t = response)
-    =
-  (match R.package_name with Some p -> p ^ "." | None -> "") ^ R.service_name
-
-let rpc_name (type request response)
-    (module R : S with type Request.t = request and type Response.t = response)
-    =
-  R.method_name
-
-module Codec = struct
-  type 'a t = (module Codec with type t = 'a)
-end
-
-let request (type request response)
-    (module Rpc_spec : S
-      with type Request.t = request
-       and type Response.t = response) =
-  (module Rpc_spec.Request : Codec with type t = request)
-
-let response (type request response)
-    (module Rpc_spec : S
-      with type Request.t = request
-       and type Response.t = response) =
-  (module Rpc_spec.Response : Codec with type t = response)
-
-let encode (type a) (module M : Codec with type t = a) (a : a) = a |> M.encode
-
-let decode (type a) (module M : Codec with type t = a) buffer : a =
-  buffer |> M.decode

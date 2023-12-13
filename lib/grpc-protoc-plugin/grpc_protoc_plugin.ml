@@ -16,27 +16,30 @@ let decode (type a)
         (Printf.sprintf "Could not decode request: %s"
            (Ocaml_protoc_plugin.Result.show_error e))
 
-let rpc (type request response)
+let service_spec (type request response)
     (module R : S with type Request.t = request and type Response.t = response)
     =
-  (module struct
-    module Request = struct
-      type t = request
+  {
+    Grpc.Rpc.Service_spec.package = R.package_name |> Option.to_list;
+    service_name = R.service_name;
+  }
 
-      let encode t = encode (module R.Request) t
-      let decode buffer = decode (module R.Request) buffer
-    end
+let client_rpc (type request response)
+    (module R : S with type Request.t = request and type Response.t = response)
+    =
+  {
+    Grpc.Rpc.Client_rpc.service_spec = service_spec (module R);
+    rpc_name = R.method_name;
+    encode_request = encode (module R.Request);
+    decode_response = decode (module R.Response);
+  }
 
-    module Response = struct
-      type t = response
-
-      let encode t = encode (module R.Response) t
-      let decode buffer = decode (module R.Response) buffer
-    end
-
-    let package_name = R.package_name
-    let service_name = R.service_name
-    let method_name = R.method_name
-  end : Grpc.Rpc.S
-    with type Request.t = request
-     and type Response.t = response)
+let server_rpc (type request response)
+    (module R : S with type Request.t = request and type Response.t = response)
+    =
+  {
+    Grpc.Rpc.Server_rpc.service_spec = Some (service_spec (module R));
+    rpc_name = R.method_name;
+    decode_request = decode (module R.Request);
+    encode_response = encode (module R.Response);
+  }

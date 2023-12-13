@@ -143,13 +143,53 @@ module Typed_rpc = struct
   type ('request, 'response) bidirectional_streaming =
     'request Seq.t -> ('response -> unit) -> Grpc.Status.t
 
-  type t =
-    | T : { rpc_spec : ('request, 'response) Grpc.Rpc.t; rpc_impl : Rpc.t } -> t
+  type 'service_spec t =
+    | T : {
+        rpc_spec : ('request, 'response, 'service_spec) Grpc.Rpc.Server_rpc.t;
+        rpc_impl : Rpc.t;
+      }
+        -> 'service_spec t
 
-  let server ts : server =
+  module Handlers = struct
+    type 'service_spec rpc = 'service_spec t
+
+    type t =
+      | Handlers : Grpc.Rpc.Service_spec.t rpc list -> t
+      | With_service_spec : {
+          package : string list;
+          service_name : string;
+          handlers : unit rpc list;
+        }
+          -> t
+  end
+
+  let server handlers : server =
+    let ts =
+      match (handlers : Handlers.t) with
+      | Handlers ts -> ts
+      | With_service_spec { package; service_name; handlers = ts } ->
+          List.map
+            (fun (T t) ->
+              T
+                {
+                  t with
+                  rpc_spec =
+                    {
+                      t.rpc_spec with
+                      service_spec = Some { package; service_name };
+                    };
+                })
+            ts
+    in
+
     List.fold_left
       (fun map (T t as packed) ->
-        let service_name = Grpc.Rpc.service_name t.rpc_spec in
+        let service_name =
+          match t.rpc_spec.service_spec with
+          | Some service_spec ->
+              Grpc.Rpc.Service_spec.packaged_service_name service_spec
+        in
+
         let rpc_impl =
           ServiceMap.find_opt service_name map |> Option.value ~default:[]
         in
@@ -159,64 +199,41 @@ module Typed_rpc = struct
            let service =
              List.fold_left
                (fun acc (T t) ->
-                 Service.add_rpc
-                   ~name:(Grpc.Rpc.rpc_name t.rpc_spec)
-                   ~rpc:t.rpc_impl acc)
+                 Service.add_rpc ~name:t.rpc_spec.rpc_name ~rpc:t.rpc_impl acc)
                (Service.v ()) ts
            in
            Service.handle_request service)
 
-  let unary (type request response) (rpc_spec : (request, response) Grpc.Rpc.t)
-      ~f:handler =
+  let unary (type request response)
+      (rpc_spec : (request, response, _) Grpc.Rpc.Server_rpc.t) ~f:handler =
     let handler buffer =
-      let status, response =
-        handler (Grpc.Rpc.decode (Grpc.Rpc.request rpc_spec) buffer)
-      in
-      ( status,
-        Option.map
-          (fun response ->
-            Grpc.Rpc.encode (Grpc.Rpc.response rpc_spec) response)
-          response )
+      let status, response = handler (rpc_spec.decode_request buffer) in
+      (status, Option.map rpc_spec.encode_response response)
     in
     T { rpc_spec; rpc_impl = Rpc.Unary handler }
 
   let server_streaming (type request response)
-      (rpc_spec : (request, response) Grpc.Rpc.t) ~f:handler =
+      (rpc_spec : (request, response, _) Grpc.Rpc.Server_rpc.t) ~f:handler =
     let handler buffer f =
-      handler
-        (Grpc.Rpc.decode (Grpc.Rpc.request rpc_spec) buffer)
-        (fun response ->
-          f (Grpc.Rpc.encode (Grpc.Rpc.response rpc_spec) response))
+      handler (rpc_spec.decode_request buffer) (fun response ->
+          f (rpc_spec.encode_response response))
     in
     T { rpc_spec; rpc_impl = Rpc.Server_streaming handler }
 
   let client_streaming (type request response)
-      (rpc_spec : (request, response) Grpc.Rpc.t) ~f:handler =
+      (rpc_spec : (request, response, _) Grpc.Rpc.Server_rpc.t) ~f:handler =
     let handler requests =
-      let requests =
-        Seq.map
-          (fun buffer -> Grpc.Rpc.decode (Grpc.Rpc.request rpc_spec) buffer)
-          requests
-      in
+      let requests = Seq.map rpc_spec.decode_request requests in
       let status, response = handler requests in
-      ( status,
-        Option.map
-          (fun response ->
-            Grpc.Rpc.encode (Grpc.Rpc.response rpc_spec) response)
-          response )
+      (status, Option.map rpc_spec.encode_response response)
     in
     T { rpc_spec; rpc_impl = Rpc.Client_streaming handler }
 
   let bidirectional_streaming (type request response)
-      (rpc_spec : (request, response) Grpc.Rpc.t) ~f:handler =
+      (rpc_spec : (request, response, _) Grpc.Rpc.Server_rpc.t) ~f:handler =
     let handler requests f =
-      let requests =
-        Seq.map
-          (fun buffer -> Grpc.Rpc.decode (Grpc.Rpc.request rpc_spec) buffer)
-          requests
-      in
-      handler requests (fun response ->
-          f (Grpc.Rpc.encode (Grpc.Rpc.response rpc_spec) response))
+      let requests = Seq.map rpc_spec.decode_request requests in
+      handler requests (fun response -> f (rpc_spec.encode_response response))
     in
     T { rpc_spec; rpc_impl = Rpc.Bidirectional_streaming handler }
 end

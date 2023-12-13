@@ -1,41 +1,33 @@
 type buffer = string
 
-module type Codec = sig
-  type t
+(** Exploring a separate client/server api that works better with [ocaml-protoc]. *)
 
-  val encode : t -> buffer
-  val decode : buffer -> t
+module Service_spec : sig
+  type t = { package : string list; service_name : string }
+
+  val packaged_service_name : t -> string
 end
 
-module type S = sig
-  module Request : sig
-    type t
+module Client_rpc : sig
+  type ('request, 'response) t = {
+    service_spec : Service_spec.t;
+    rpc_name : string;
+    encode_request : 'request -> buffer;
+    decode_response : buffer -> 'response;
+  }
 
-    include Codec with type t := t
+  val packaged_service_name : _ t -> string
+end
+
+module Server_rpc : sig
+  module Service_spec : sig
+    type 'a t = None : unit t | Some : Service_spec.t -> Service_spec.t t
   end
 
-  module Response : sig
-    type t
-
-    include Codec with type t := t
-  end
-
-  val package_name : string option
-  val service_name : string
-  val method_name : string
+  type ('request, 'response, 'service_spec) t = {
+    service_spec : 'service_spec Service_spec.t;
+    rpc_name : string;
+    decode_request : buffer -> 'request;
+    encode_response : 'response -> buffer;
+  }
 end
-
-type ('request, 'response) t =
-  (module S with type Request.t = 'request and type Response.t = 'response)
-
-val service_name : _ t -> string
-val rpc_name : _ t -> string
-
-module Codec : sig
-  type 'a t = (module Codec with type t = 'a)
-end
-
-val request : ('request, _) t -> 'request Codec.t
-val response : (_, 'response) t -> 'response Codec.t
-val encode : 'a Codec.t -> 'a -> string
-val decode : 'a Codec.t -> string -> 'a

@@ -1,8 +1,7 @@
-val rpc :
-  client:('request, _, 'response, _) Pbrt_services.Client.rpc ->
-  server:
-    ((('request, 'c, 'response, 'd) Pbrt_services.Server.rpc ->
-     ('request, 'c, 'response, 'd) Pbrt_services.Server.rpc) ->
-    ('request, 'c, 'response, 'd) Pbrt_services.Server.rpc
-    Pbrt_services.Server.t) ->
-  ('request, 'response) Grpc.Rpc.t
+val client_rpc :
+  ('request, _, 'response, _) Pbrt_services.Client.rpc ->
+  ('request, 'response) Grpc.Rpc.Client_rpc.t
+
+val server_rpc :
+  ('request, _, 'response, _) Pbrt_services.Server.rpc ->
+  ('request, 'response, unit) Grpc.Rpc.Server_rpc.t
