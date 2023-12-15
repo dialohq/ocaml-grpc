@@ -28,11 +28,9 @@ let main env =
     in
 
     let result =
-      Grpc_eio.Client.Typed_rpc.call
-        (Grpc_protoc.client_rpc Greeter_protoc.Greeter.Greeter.Client.sayHello)
+      Grpc_protoc_eio.Call.unary Greeter_protoc.Greeter.Greeter.Client.sayHello
         ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
-        ~handler:(Grpc_eio.Client.Typed_rpc.unary request ~f)
-        ()
+        request ~f
     in
 
     Eio.Promise.await (H2_eio.Client.shutdown connection);

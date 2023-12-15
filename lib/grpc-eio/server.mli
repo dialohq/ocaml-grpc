@@ -111,13 +111,11 @@ module Typed_rpc : sig
     type 'service_spec rpc := 'service_spec t
 
     type t =
-      | Handlers : Grpc.Rpc.Service_spec.t rpc list -> t
-      | With_service_spec : {
-          package : string list;
-          service_name : string;
+      | Handlers of { handlers : Grpc.Rpc.Service_spec.t rpc list }
+      | Handlers_and_service_spec of {
+          service_spec : Grpc.Rpc.Service_spec.t;
           handlers : unit rpc list;
         }
-          -> t
   end
 
   val server : Handlers.t -> server

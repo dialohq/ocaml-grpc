@@ -193,9 +193,8 @@ The individual service functions from our proto definition are implemented using
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-grpc -->
 ```ocaml
 let server t clock =
-  Server.Typed_rpc.server
-    (Handlers
-       [ get_feature t; list_features t; record_route t clock; route_chat t ])
+  Grpc_protoc_plugin_eio.Implement.server
+    [ get_feature t; list_features t; record_route t clock; route_chat t ]
 ```
 
 ### Simple RPC
@@ -205,8 +204,8 @@ Let's look at the simplest type first, `GetFeature` which just gets a `Point` fr
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-get-feature -->
 ```ocaml
 let get_feature (t : t) =
-  Grpc_eio.Server.Typed_rpc.unary
-    (Grpc_protoc_plugin.server_rpc (module RouteGuide.GetFeature))
+  Grpc_protoc_plugin_eio.Implement.unary
+    (module RouteGuide.GetFeature)
     ~f:(fun point ->
       Eio.traceln "GetFeature = {:%s}" (Point.show point);
 
@@ -237,8 +236,8 @@ Now let's look at one of our streaming RPCs. `list_features` is a server-side st
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-list-features -->
 ```ocaml
 let list_features (t : t) =
-  Grpc_eio.Server.Typed_rpc.server_streaming
-    (Grpc_protoc_plugin.server_rpc (module RouteGuide.ListFeatures))
+  Grpc_protoc_plugin_eio.Implement.server_streaming
+    (module RouteGuide.ListFeatures)
     ~f:(fun rectangle f ->
       (* Lookup and reply with features found. *)
       let () =
@@ -260,8 +259,8 @@ Now let's look at something a little more complicated: the client-side streaming
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-record-route -->
 ```ocaml
 let record_route (t : t) (clock : _ Eio.Time.clock) =
-  Grpc_eio.Server.Typed_rpc.client_streaming
-    (Grpc_protoc_plugin.server_rpc (module RouteGuide.RecordRoute))
+  Grpc_protoc_plugin_eio.Implement.client_streaming
+    (module RouteGuide.RecordRoute)
     ~f:(fun (stream : Point.t Seq.t) ->
       Eio.traceln "RecordRoute";
 
@@ -311,8 +310,8 @@ Finally, let's look at our bidirectional streaming RPC `route_chat`, which recei
 <!-- $MDX include,file=routeguide/src/server.ml,part=server-route-chat -->
 ```ocaml
 let route_chat (_ : t) =
-  Grpc_eio.Server.Typed_rpc.bidirectional_streaming
-    (Grpc_protoc_plugin.server_rpc (module RouteGuide.RouteChat))
+  Grpc_protoc_plugin_eio.Implement.bidirectional_streaming
+    (module RouteGuide.RouteChat)
     ~f:(fun (stream : RouteNote.t Seq.t) (f : RouteNote.t -> unit) ->
       Printf.printf "RouteChat\n";
 
@@ -400,15 +399,13 @@ Calling the simple RPC `get_feature` requires building up a `Client.call` repres
 ```ocaml
 let call_get_feature connection point =
   let response =
-    Client.Typed_rpc.call
-      (Grpc_protoc_plugin.client_rpc (module RouteGuide.GetFeature))
+    Grpc_protoc_plugin_eio.Call.unary
+      (module RouteGuide.GetFeature)
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
-      ~handler:
-        (Client.Typed_rpc.unary point ~f:(function
-          | Some feature -> feature
-          | None -> Feature.make ()))
-      ()
+      point
+      ~f:(function Some feature -> feature | None -> Feature.make ())
   in
+
   match response with
   | Ok (res, _ok) -> Printf.printf "RESPONSE = {%s}" (Feature.show res)
   | Error _ -> Printf.printf "an error occurred"
@@ -428,12 +425,12 @@ let print_features connection =
   in
 
   let stream =
-    Client.Typed_rpc.call
-      (Grpc_protoc_plugin.client_rpc (module RouteGuide.ListFeatures))
+    Grpc_protoc_plugin_eio.Call.server_streaming
+      (module RouteGuide.ListFeatures)
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
-      ~handler:(Client.Typed_rpc.server_streaming rectangle ~f:Fun.id)
-      ()
+      rectangle ~f:Fun.id
   in
+
   match stream with
   | Ok (results, _ok) ->
       Seq.iter
@@ -465,22 +462,20 @@ let run_record_route connection =
   in
 
   let response =
-    Client.Typed_rpc.call
-      (Grpc_protoc_plugin.client_rpc (module RouteGuide.RecordRoute))
+    Grpc_protoc_plugin_eio.Call.client_streaming
+      (module RouteGuide.RecordRoute)
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
-      ~handler:
-        (Client.Typed_rpc.client_streaming ~f:(fun f response ->
-             (* Stream points to server. *)
-             Seq.iter (fun point -> Seq.write f point) points;
+      ~f:(fun f response ->
+        (* Stream points to server. *)
+        Seq.iter (fun point -> Grpc_eio.Seq.write f point) points;
 
-             (* Signal we have finished sending points. *)
-             Seq.close_writer f;
+        (* Signal we have finished sending points. *)
+        Grpc_eio.Seq.close_writer f;
 
-             (* Decode RouteSummary responses. *)
-             Eio.Promise.await response |> function
-             | Some summary -> summary
-             | None -> failwith (Printf.sprintf "No RouteSummary received.")))
-      ()
+        (* Decode RouteSummary responses. *)
+        Eio.Promise.await response |> function
+        | Some summary -> summary
+        | None -> failwith (Printf.sprintf "No RouteSummary received."))
   in
   match response with
   | Ok (result, _ok) ->
@@ -519,9 +514,10 @@ We start by generating a short sequence of locations, similar to how we did for 
   let rec go writer reader notes =
     match Seq.uncons notes with
     | None ->
-        Seq.close_writer writer (* Signal no more notes from the client. *)
+        Grpc_eio.Seq.close_writer
+          writer (* Signal no more notes from the client. *)
     | Some (route_note, xs) -> (
-        Seq.write writer route_note;
+        Grpc_eio.Seq.write writer route_note;
 
         (* Yield and sleep, waiting for server reply. *)
         Eio.Time.sleep clock 1.0;
@@ -534,14 +530,12 @@ We start by generating a short sequence of locations, similar to how we did for 
             go writer reader' xs)
   in
   let result =
-    Client.Typed_rpc.call
-      (Grpc_protoc_plugin.client_rpc (module RouteGuide.RouteChat))
+    Grpc_protoc_plugin_eio.Call.bidirectional_streaming
+      (module RouteGuide.RouteChat)
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
-      ~handler:
-        (Client.Typed_rpc.bidirectional_streaming ~f:(fun writer reader ->
-             go writer reader route_notes))
-      ()
+      ~f:(fun writer reader -> go writer reader route_notes)
   in
+
   match result with
   | Ok ((), _ok) -> ()
   | Error e ->

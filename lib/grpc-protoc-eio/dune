@@ -1,0 +1,4 @@
+(library
+ (name grpc_protoc_eio)
+ (public_name grpc-protoc-eio)
+ (libraries grpc grpc_eio grpc_protoc h2-eio ocaml-protoc pbrt pbrt_services))

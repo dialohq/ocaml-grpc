@@ -1,7 +1,5 @@
-open Grpc_eio
-
 let sayHello rpc =
-  Grpc_eio.Server.Typed_rpc.unary (Grpc_protoc.server_rpc rpc)
+  Grpc_protoc_eio.Implement.unary rpc
     ~f:(fun (request : Greeter_protoc.Greeter.hello_request) ->
       let message =
         if request.name = "" then "You forgot your name!"
@@ -52,11 +50,8 @@ let serve server env =
 
 let () =
   let server =
-    let { Pbrt_services.Server.package; service_name; handlers } =
-      Greeter_protoc.Greeter.Greeter.Server.make ~sayHello ()
-    in
-    Server.Typed_rpc.server
-      (With_service_spec { package; service_name; handlers })
+    Greeter_protoc.Greeter.Greeter.Server.make ~sayHello ()
+    |> Grpc_protoc_eio.Implement.server
   in
 
   Eio_main.run (serve server)
