@@ -21,7 +21,7 @@ let client ~sw host port network =
 let call_get_feature connection point =
   let response =
     Client.Typed_rpc.call
-      (Grpc_protoc.client_rpc Route_guide.RouteGuide.Client.getFeature)
+      (Grpc_protoc.Client_rpc.unary Route_guide.RouteGuide.Client.getFeature)
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Typed_rpc.unary point ~f:(function
@@ -52,7 +52,8 @@ let print_features connection =
 
   let stream =
     Client.Typed_rpc.call
-      (Grpc_protoc.client_rpc Route_guide.RouteGuide.Client.listFeatures)
+      (Grpc_protoc.Client_rpc.server_streaming
+         Route_guide.RouteGuide.Client.listFeatures)
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:(Client.Typed_rpc.server_streaming rectangle ~f:Fun.id)
       ()
@@ -82,7 +83,8 @@ let run_record_route connection =
 
   let response =
     Client.Typed_rpc.call
-      (Grpc_protoc.client_rpc Route_guide.RouteGuide.Client.recordRoute)
+      (Grpc_protoc.Client_rpc.client_streaming
+         Route_guide.RouteGuide.Client.recordRoute)
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Typed_rpc.client_streaming ~f:(fun f response ->
@@ -144,7 +146,8 @@ let run_route_chat clock connection =
   in
   let result =
     Client.Typed_rpc.call
-      (Grpc_protoc.client_rpc Route_guide.RouteGuide.Client.routeChat)
+      (Grpc_protoc.Client_rpc.bidirectional_streaming
+         Route_guide.RouteGuide.Client.routeChat)
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Typed_rpc.bidirectional_streaming ~f:(fun writer reader ->

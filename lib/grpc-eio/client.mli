@@ -55,29 +55,53 @@ module Typed_rpc : sig
       - use the service and RPC names provided by the rpc specification to
         call the services with their expected names. *)
 
-  type ('request, 'response, 'a) handler
+  type ('request, 'request_mode, 'response, 'response_mode, 'a) handler
 
   (** The next functions are meant to be used by the client to handle
      call to RPCs. *)
 
   val bidirectional_streaming :
     f:('request Seq.writer -> 'response Seq.t -> 'a) ->
-    ('request, 'response, 'a) handler
+    ( 'request,
+      Grpc.Rpc.Value_mode.stream,
+      'response,
+      Grpc.Rpc.Value_mode.stream,
+      'a )
+    handler
 
   val client_streaming :
     f:('request Seq.writer -> 'response option Eio.Promise.t -> 'a) ->
-    ('request, 'response, 'a) handler
+    ( 'request,
+      Grpc.Rpc.Value_mode.stream,
+      'response,
+      Grpc.Rpc.Value_mode.unary,
+      'a )
+    handler
 
   val server_streaming :
-    f:('response Seq.t -> 'a) -> 'request -> ('request, 'response, 'a) handler
+    f:('response Seq.t -> 'a) ->
+    'request ->
+    ( 'request,
+      Grpc.Rpc.Value_mode.unary,
+      'response,
+      Grpc.Rpc.Value_mode.stream,
+      'a )
+    handler
 
   val unary :
-    f:('response option -> 'a) -> 'request -> ('request, 'response, 'a) handler
+    f:('response option -> 'a) ->
+    'request ->
+    ( 'request,
+      Grpc.Rpc.Value_mode.unary,
+      'response,
+      Grpc.Rpc.Value_mode.unary,
+      'a )
+    handler
 
   val call :
-    ('request, 'response) Grpc.Rpc.Client_rpc.t ->
+    ('request, 'request_mode, 'response, 'response_mode) Grpc.Rpc.Client_rpc.t ->
     ?scheme:string ->
-    handler:('request, 'response, 'a) handler ->
+    handler:('request, 'request_mode, 'response, 'response_mode, 'a) handler ->
     do_request:do_request ->
     ?headers:H2.Headers.t ->
     unit ->

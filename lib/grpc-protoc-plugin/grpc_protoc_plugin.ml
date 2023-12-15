@@ -24,22 +24,46 @@ let service_spec (type request response)
     service_name = R.service_name;
   }
 
-let client_rpc (type request response)
-    (module R : S with type Request.t = request and type Response.t = response)
-    =
-  {
-    Grpc.Rpc.Client_rpc.service_spec = service_spec (module R);
-    rpc_name = R.method_name;
-    encode_request = encode (module R.Request);
-    decode_response = decode (module R.Response);
-  }
+module Client_rpc = struct
+  let make (type request response)
+      (module R : S with type Request.t = request and type Response.t = response)
+      ~request_mode ~response_mode =
+    {
+      Grpc.Rpc.Client_rpc.service_spec = service_spec (module R);
+      rpc_name = R.method_name;
+      encode_request = encode (module R.Request);
+      decode_response = decode (module R.Response);
+      request_mode;
+      response_mode;
+    }
 
-let server_rpc (type request response)
-    (module R : S with type Request.t = request and type Response.t = response)
-    =
-  {
-    Grpc.Rpc.Server_rpc.service_spec = Some (service_spec (module R));
-    rpc_name = R.method_name;
-    decode_request = decode (module R.Request);
-    encode_response = encode (module R.Response);
-  }
+  let unary rpc = make rpc ~request_mode:Unary ~response_mode:Unary
+  let client_streaming rpc = make rpc ~request_mode:Stream ~response_mode:Unary
+  let server_streaming rpc = make rpc ~request_mode:Unary ~response_mode:Stream
+
+  let bidirectional_streaming rpc =
+    make rpc ~request_mode:Stream ~response_mode:Stream
+end
+
+module Server_rpc = struct
+  let make (type request response)
+      (module R : S with type Request.t = request and type Response.t = response)
+      ~request_mode ~response_mode =
+    {
+      Grpc.Rpc.Server_rpc.service_spec = Some (service_spec (module R));
+      rpc_name = R.method_name;
+      decode_request = decode (module R.Request);
+      encode_response = encode (module R.Response);
+      request_mode;
+      response_mode;
+    }
+
+  let unary rpc = make rpc ~request_mode:Unary ~response_mode:Unary
+  let client_streaming rpc = make rpc ~request_mode:Stream ~response_mode:Unary
+  let server_streaming rpc = make rpc ~request_mode:Unary ~response_mode:Stream
+
+  let bidirectional_streaming rpc =
+    make rpc ~request_mode:Stream ~response_mode:Stream
+end
+
+let handlers handlers = Grpc.Rpc.Handlers.Handlers { handlers }

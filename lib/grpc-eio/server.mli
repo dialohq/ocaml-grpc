@@ -88,39 +88,46 @@ module Typed_rpc : sig
       file. *)
 
   val unary :
-    ('request, 'response, 'service_spec) Grpc.Rpc.Server_rpc.t ->
+    ( 'request,
+      Grpc.Rpc.Value_mode.unary,
+      'response,
+      Grpc.Rpc.Value_mode.unary,
+      'service_spec )
+    Grpc.Rpc.Server_rpc.t ->
     f:('request, 'response) unary ->
     'service_spec t
 
   val client_streaming :
-    ('request, 'response, 'service_spec) Grpc.Rpc.Server_rpc.t ->
+    ( 'request,
+      Grpc.Rpc.Value_mode.stream,
+      'response,
+      Grpc.Rpc.Value_mode.unary,
+      'service_spec )
+    Grpc.Rpc.Server_rpc.t ->
     f:('request, 'response) client_streaming ->
     'service_spec t
 
   val server_streaming :
-    ('request, 'response, 'service_spec) Grpc.Rpc.Server_rpc.t ->
+    ( 'request,
+      Grpc.Rpc.Value_mode.unary,
+      'response,
+      Grpc.Rpc.Value_mode.stream,
+      'service_spec )
+    Grpc.Rpc.Server_rpc.t ->
     f:('request, 'response) server_streaming ->
     'service_spec t
 
   val bidirectional_streaming :
-    ('request, 'response, 'service_spec) Grpc.Rpc.Server_rpc.t ->
+    ( 'request,
+      Grpc.Rpc.Value_mode.stream,
+      'response,
+      Grpc.Rpc.Value_mode.stream,
+      'service_spec )
+    Grpc.Rpc.Server_rpc.t ->
     f:('request, 'response) bidirectional_streaming ->
     'service_spec t
 
-  module Handlers : sig
-    type 'service_spec rpc := 'service_spec t
-
-    type t =
-      | Handlers : Grpc.Rpc.Service_spec.t rpc list -> t
-      | With_service_spec : {
-          package : string list;
-          service_name : string;
-          handlers : unit rpc list;
-        }
-          -> t
-  end
-
-  val server : Handlers.t -> server
+  val server : (Grpc.Rpc.Service_spec.t t, unit t) Grpc.Rpc.Handlers.t -> server
   (** Having built a list of RPCs you will use this function to package them up
       into a server that is ready to be served over the network. This function
       takes care of registering the services based on the names provided by the

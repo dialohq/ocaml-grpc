@@ -106,14 +106,19 @@ module Rpc = struct
 end
 
 module Typed_rpc = struct
-  type ('request, 'response, 'a) handler =
-    ('request, 'response) Grpc.Rpc.Client_rpc.t ->
+  type ('request, 'request_mode, 'response, 'response_mode, 'a) handler =
+    ('request, 'request_mode, 'response, 'response_mode) Grpc.Rpc.Client_rpc.t ->
     H2.Body.Writer.t ->
     H2.Body.Reader.t ->
     'a
 
   let unary (type request response) ~f (request : request)
-      (rpc : (request, response) Grpc.Rpc.Client_rpc.t) =
+      (rpc :
+        ( request,
+          Grpc.Rpc.Value_mode.unary,
+          response,
+          Grpc.Rpc.Value_mode.unary )
+        Grpc.Rpc.Client_rpc.t) =
     let request = rpc.encode_request request in
     let f response =
       let response = response |> Option.map rpc.decode_response in
@@ -122,7 +127,12 @@ module Typed_rpc = struct
     Rpc.unary ~f request
 
   let server_streaming (type request response) ~f (request : request)
-      (rpc : (request, response) Grpc.Rpc.Client_rpc.t) =
+      (rpc :
+        ( request,
+          Grpc.Rpc.Value_mode.unary,
+          response,
+          Grpc.Rpc.Value_mode.stream )
+        Grpc.Rpc.Client_rpc.t) =
     let request = rpc.encode_request request in
     let f responses =
       let responses = Seq.map rpc.decode_response responses in
@@ -131,7 +141,12 @@ module Typed_rpc = struct
     Rpc.server_streaming ~f request
 
   let client_streaming (type request response) ~f
-      (rpc : (request, response) Grpc.Rpc.Client_rpc.t) =
+      (rpc :
+        ( request,
+          Grpc.Rpc.Value_mode.stream,
+          response,
+          Grpc.Rpc.Value_mode.unary )
+        Grpc.Rpc.Client_rpc.t) =
     let f requests response =
       let requests_reader, requests' = Seq.create_reader_writer () in
       let response', response_u = Eio.Promise.create () in
@@ -153,7 +168,12 @@ module Typed_rpc = struct
     Rpc.client_streaming ~f
 
   let bidirectional_streaming (type request response) ~f
-      (rpc : (request, response) Grpc.Rpc.Client_rpc.t) =
+      (rpc :
+        ( request,
+          Grpc.Rpc.Value_mode.stream,
+          response,
+          Grpc.Rpc.Value_mode.stream )
+        Grpc.Rpc.Client_rpc.t) =
     let f requests responses =
       let requests_reader, requests' = Seq.create_reader_writer () in
       let responses' = Seq.map rpc.decode_response responses in
@@ -167,9 +187,12 @@ module Typed_rpc = struct
     in
     Rpc.bidirectional_streaming ~f
 
-  let call (type request response a)
-      (rpc : (request, response) Grpc.Rpc.Client_rpc.t) ?scheme
-      ~(handler : (request, response, a) handler) ~do_request ?headers () =
+  let call (type request request_mode response response_mode a)
+      (rpc :
+        (request, request_mode, response, response_mode) Grpc.Rpc.Client_rpc.t)
+      ?scheme
+      ~(handler : (request, request_mode, response, response_mode, a) handler)
+      ~do_request ?headers () =
     call
       ~service:(Grpc.Rpc.Client_rpc.packaged_service_name rpc)
       ~rpc:rpc.rpc_name ?scheme ~handler:(handler rpc) ~do_request ?headers ()

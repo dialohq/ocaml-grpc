@@ -145,39 +145,29 @@ module Typed_rpc = struct
 
   type 'service_spec t =
     | T : {
-        rpc_spec : ('request, 'response, 'service_spec) Grpc.Rpc.Server_rpc.t;
+        rpc_spec :
+          ( 'request,
+            'request_mode,
+            'response,
+            'response_mode,
+            'service_spec )
+          Grpc.Rpc.Server_rpc.t;
         rpc_impl : Rpc.t;
       }
         -> 'service_spec t
 
-  module Handlers = struct
-    type 'service_spec rpc = 'service_spec t
-
-    type t =
-      | Handlers : Grpc.Rpc.Service_spec.t rpc list -> t
-      | With_service_spec : {
-          package : string list;
-          service_name : string;
-          handlers : unit rpc list;
-        }
-          -> t
-  end
-
   let server handlers : server =
     let ts =
-      match (handlers : Handlers.t) with
-      | Handlers ts -> ts
-      | With_service_spec { package; service_name; handlers = ts } ->
+      match (handlers : _ Grpc.Rpc.Handlers.t) with
+      | Handlers { handlers = ts } -> ts
+      | With_service_spec { service_spec; handlers = ts } ->
           List.map
             (fun (T t) ->
               T
                 {
                   t with
                   rpc_spec =
-                    {
-                      t.rpc_spec with
-                      service_spec = Some { package; service_name };
-                    };
+                    { t.rpc_spec with service_spec = Some service_spec };
                 })
             ts
     in
@@ -205,7 +195,13 @@ module Typed_rpc = struct
            Service.handle_request service)
 
   let unary (type request response)
-      (rpc_spec : (request, response, _) Grpc.Rpc.Server_rpc.t) ~f:handler =
+      (rpc_spec :
+        ( request,
+          Grpc.Rpc.Value_mode.unary,
+          response,
+          Grpc.Rpc.Value_mode.unary,
+          _ )
+        Grpc.Rpc.Server_rpc.t) ~f:handler =
     let handler buffer =
       let status, response = handler (rpc_spec.decode_request buffer) in
       (status, Option.map rpc_spec.encode_response response)
@@ -213,7 +209,13 @@ module Typed_rpc = struct
     T { rpc_spec; rpc_impl = Rpc.Unary handler }
 
   let server_streaming (type request response)
-      (rpc_spec : (request, response, _) Grpc.Rpc.Server_rpc.t) ~f:handler =
+      (rpc_spec :
+        ( request,
+          Grpc.Rpc.Value_mode.unary,
+          response,
+          Grpc.Rpc.Value_mode.stream,
+          _ )
+        Grpc.Rpc.Server_rpc.t) ~f:handler =
     let handler buffer f =
       handler (rpc_spec.decode_request buffer) (fun response ->
           f (rpc_spec.encode_response response))
@@ -221,7 +223,13 @@ module Typed_rpc = struct
     T { rpc_spec; rpc_impl = Rpc.Server_streaming handler }
 
   let client_streaming (type request response)
-      (rpc_spec : (request, response, _) Grpc.Rpc.Server_rpc.t) ~f:handler =
+      (rpc_spec :
+        ( request,
+          Grpc.Rpc.Value_mode.stream,
+          response,
+          Grpc.Rpc.Value_mode.unary,
+          _ )
+        Grpc.Rpc.Server_rpc.t) ~f:handler =
     let handler requests =
       let requests = Seq.map rpc_spec.decode_request requests in
       let status, response = handler requests in
@@ -230,7 +238,13 @@ module Typed_rpc = struct
     T { rpc_spec; rpc_impl = Rpc.Client_streaming handler }
 
   let bidirectional_streaming (type request response)
-      (rpc_spec : (request, response, _) Grpc.Rpc.Server_rpc.t) ~f:handler =
+      (rpc_spec :
+        ( request,
+          Grpc.Rpc.Value_mode.stream,
+          response,
+          Grpc.Rpc.Value_mode.stream,
+          _ )
+        Grpc.Rpc.Server_rpc.t) ~f:handler =
     let handler requests f =
       let requests = Seq.map rpc_spec.decode_request requests in
       handler requests (fun response -> f (rpc_spec.encode_response response))

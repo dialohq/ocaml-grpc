@@ -77,7 +77,8 @@ let calc_distance (p1 : Route_guide.point) (p2 : Route_guide.point) : int =
 
 (* $MDX part-begin=server-get-feature *)
 let get_feature (t : t) rpc =
-  Grpc_eio.Server.Typed_rpc.unary (Grpc_protoc.server_rpc rpc) ~f:(fun point ->
+  Grpc_eio.Server.Typed_rpc.unary (Grpc_protoc.Server_rpc.unary rpc)
+    ~f:(fun point ->
       Eio.traceln "GetFeature = {:%a}" Route_guide.pp_point point;
 
       (* Lookup the feature and if found return it. *)
@@ -103,8 +104,8 @@ let get_feature (t : t) rpc =
 (* $MDX part-end *)
 (* $MDX part-begin=server-list-features *)
 let list_features (t : t) rpc =
-  Grpc_eio.Server.Typed_rpc.server_streaming (Grpc_protoc.server_rpc rpc)
-    ~f:(fun rectangle f ->
+  Grpc_eio.Server.Typed_rpc.server_streaming
+    (Grpc_protoc.Server_rpc.server_streaming rpc) ~f:(fun rectangle f ->
       (* Lookup and reply with features found. *)
       let () =
         List.iter
@@ -118,7 +119,8 @@ let list_features (t : t) rpc =
 (* $MDX part-end *)
 (* $MDX part-begin=server-record-route *)
 let record_route (t : t) (clock : _ Eio.Time.clock) rpc =
-  Grpc_eio.Server.Typed_rpc.client_streaming (Grpc_protoc.server_rpc rpc)
+  Grpc_eio.Server.Typed_rpc.client_streaming
+    (Grpc_protoc.Server_rpc.client_streaming rpc)
     ~f:(fun (stream : Route_guide.point Seq.t) ->
       Eio.traceln "RecordRoute";
 
@@ -168,7 +170,8 @@ let record_route (t : t) (clock : _ Eio.Time.clock) rpc =
 (* $MDX part-end *)
 (* $MDX part-begin=server-route-chat *)
 let route_chat (_ : t) rpc =
-  Grpc_eio.Server.Typed_rpc.bidirectional_streaming (Grpc_protoc.server_rpc rpc)
+  Grpc_eio.Server.Typed_rpc.bidirectional_streaming
+    (Grpc_protoc.Server_rpc.bidirectional_streaming rpc)
     ~f:(fun
          (stream : Route_guide.route_note Seq.t)
          (f : Route_guide.route_note -> unit)
@@ -187,13 +190,10 @@ let route_chat (_ : t) rpc =
 (* $MDX part-end *)
 (* $MDX part-begin=server-grpc *)
 let server t clock =
-  let { Pbrt_services.Server.package; service_name; handlers } =
-    Route_guide.RouteGuide.Server.make ~getFeature:(get_feature t)
-      ~listFeatures:(list_features t) ~recordRoute:(record_route t clock)
-      ~routeChat:(route_chat t) ()
-  in
-  Server.Typed_rpc.server
-    (With_service_spec { package; service_name; handlers })
+  Route_guide.RouteGuide.Server.make ~getFeature:(get_feature t)
+    ~listFeatures:(list_features t) ~recordRoute:(record_route t clock)
+    ~routeChat:(route_chat t) ()
+  |> Grpc_protoc.handlers |> Server.Typed_rpc.server
 
 (* $MDX part-end *)
 let connection_handler server ~sw =

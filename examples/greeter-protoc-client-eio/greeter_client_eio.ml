@@ -29,7 +29,8 @@ let main env =
 
     let result =
       Grpc_eio.Client.Typed_rpc.call
-        (Grpc_protoc.client_rpc Greeter_protoc.Greeter.Greeter.Client.sayHello)
+        (Grpc_protoc.Client_rpc.unary
+           Greeter_protoc.Greeter.Greeter.Client.sayHello)
         ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
         ~handler:(Grpc_eio.Client.Typed_rpc.unary request ~f)
         ()
