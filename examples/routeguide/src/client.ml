@@ -1,3 +1,4 @@
+open Grpc_eio
 open Routeguide.Route_guide.Routeguide
 
 (* $MDX part-begin=client-h2 *)
@@ -19,13 +20,15 @@ let client ~sw host port network =
 (* $MDX part-begin=client-get-feature *)
 let call_get_feature connection point =
   let response =
-    Grpc_protoc_plugin_eio.Call.unary
-      (module RouteGuide.GetFeature)
+    Client.Typed_rpc.call
+      (Grpc_protoc_plugin.client_rpc (module RouteGuide.GetFeature))
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
-      point
-      ~f:(function Some feature -> feature | None -> Feature.make ())
+      ~handler:
+        (Client.Typed_rpc.unary point ~f:(function
+          | Some feature -> feature
+          | None -> Feature.make ()))
+      ()
   in
-
   match response with
   | Ok (res, _ok) -> Printf.printf "RESPONSE = {%s}" (Feature.show res)
   | Error _ -> Printf.printf "an error occurred"
@@ -41,12 +44,12 @@ let print_features connection =
   in
 
   let stream =
-    Grpc_protoc_plugin_eio.Call.server_streaming
-      (module RouteGuide.ListFeatures)
+    Client.Typed_rpc.call
+      (Grpc_protoc_plugin.client_rpc (module RouteGuide.ListFeatures))
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
-      rectangle ~f:Fun.id
+      ~handler:(Client.Typed_rpc.server_streaming rectangle ~f:Fun.id)
+      ()
   in
-
   match stream with
   | Ok (results, _ok) ->
       Seq.iter
@@ -71,20 +74,22 @@ let run_record_route connection =
   in
 
   let response =
-    Grpc_protoc_plugin_eio.Call.client_streaming
-      (module RouteGuide.RecordRoute)
+    Client.Typed_rpc.call
+      (Grpc_protoc_plugin.client_rpc (module RouteGuide.RecordRoute))
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
-      ~f:(fun f response ->
-        (* Stream points to server. *)
-        Seq.iter (fun point -> Grpc_eio.Seq.write f point) points;
+      ~handler:
+        (Client.Typed_rpc.client_streaming ~f:(fun f response ->
+             (* Stream points to server. *)
+             Seq.iter (fun point -> Seq.write f point) points;
 
-        (* Signal we have finished sending points. *)
-        Grpc_eio.Seq.close_writer f;
+             (* Signal we have finished sending points. *)
+             Seq.close_writer f;
 
-        (* Decode RouteSummary responses. *)
-        Eio.Promise.await response |> function
-        | Some summary -> summary
-        | None -> failwith (Printf.sprintf "No RouteSummary received."))
+             (* Decode RouteSummary responses. *)
+             Eio.Promise.await response |> function
+             | Some summary -> summary
+             | None -> failwith (Printf.sprintf "No RouteSummary received.")))
+      ()
   in
   match response with
   | Ok (result, _ok) ->
@@ -114,10 +119,9 @@ let run_route_chat clock connection =
   let rec go writer reader notes =
     match Seq.uncons notes with
     | None ->
-        Grpc_eio.Seq.close_writer
-          writer (* Signal no more notes from the client. *)
+        Seq.close_writer writer (* Signal no more notes from the client. *)
     | Some (route_note, xs) -> (
-        Grpc_eio.Seq.write writer route_note;
+        Seq.write writer route_note;
 
         (* Yield and sleep, waiting for server reply. *)
         Eio.Time.sleep clock 1.0;
@@ -130,12 +134,14 @@ let run_route_chat clock connection =
             go writer reader' xs)
   in
   let result =
-    Grpc_protoc_plugin_eio.Call.bidirectional_streaming
-      (module RouteGuide.RouteChat)
+    Client.Typed_rpc.call
+      (Grpc_protoc_plugin.client_rpc (module RouteGuide.RouteChat))
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
-      ~f:(fun writer reader -> go writer reader route_notes)
+      ~handler:
+        (Client.Typed_rpc.bidirectional_streaming ~f:(fun writer reader ->
+             go writer reader route_notes))
+      ()
   in
-
   match result with
   | Ok ((), _ok) -> ()
   | Error e ->

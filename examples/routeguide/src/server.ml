@@ -74,8 +74,8 @@ let calc_distance (p1 : Point.t) (p2 : Point.t) : int =
 
 (* $MDX part-begin=server-get-feature *)
 let get_feature (t : t) =
-  Grpc_protoc_plugin_eio.Implement.unary
-    (module RouteGuide.GetFeature)
+  Grpc_eio.Server.Typed_rpc.unary
+    (Grpc_protoc_plugin.server_rpc (module RouteGuide.GetFeature))
     ~f:(fun point ->
       Eio.traceln "GetFeature = {:%s}" (Point.show point);
 
@@ -99,8 +99,8 @@ let get_feature (t : t) =
 (* $MDX part-end *)
 (* $MDX part-begin=server-list-features *)
 let list_features (t : t) =
-  Grpc_protoc_plugin_eio.Implement.server_streaming
-    (module RouteGuide.ListFeatures)
+  Grpc_eio.Server.Typed_rpc.server_streaming
+    (Grpc_protoc_plugin.server_rpc (module RouteGuide.ListFeatures))
     ~f:(fun rectangle f ->
       (* Lookup and reply with features found. *)
       let () =
@@ -115,8 +115,8 @@ let list_features (t : t) =
 (* $MDX part-end *)
 (* $MDX part-begin=server-record-route *)
 let record_route (t : t) (clock : _ Eio.Time.clock) =
-  Grpc_protoc_plugin_eio.Implement.client_streaming
-    (module RouteGuide.RecordRoute)
+  Grpc_eio.Server.Typed_rpc.client_streaming
+    (Grpc_protoc_plugin.server_rpc (module RouteGuide.RecordRoute))
     ~f:(fun (stream : Point.t Seq.t) ->
       Eio.traceln "RecordRoute";
 
@@ -161,8 +161,8 @@ let record_route (t : t) (clock : _ Eio.Time.clock) =
 (* $MDX part-end *)
 (* $MDX part-begin=server-route-chat *)
 let route_chat (_ : t) =
-  Grpc_protoc_plugin_eio.Implement.bidirectional_streaming
-    (module RouteGuide.RouteChat)
+  Grpc_eio.Server.Typed_rpc.bidirectional_streaming
+    (Grpc_protoc_plugin.server_rpc (module RouteGuide.RouteChat))
     ~f:(fun (stream : RouteNote.t Seq.t) (f : RouteNote.t -> unit) ->
       Printf.printf "RouteChat\n";
 
@@ -178,8 +178,9 @@ let route_chat (_ : t) =
 (* $MDX part-end *)
 (* $MDX part-begin=server-grpc *)
 let server t clock =
-  Grpc_protoc_plugin_eio.Implement.server
-    [ get_feature t; list_features t; record_route t clock; route_chat t ]
+  Server.Typed_rpc.server
+    (Handlers
+       [ get_feature t; list_features t; record_route t clock; route_chat t ])
 
 (* $MDX part-end *)
 let connection_handler server ~sw =

@@ -1,4 +1,0 @@
-(library
- (name grpc_protoc_plugin_eio)
- (public_name grpc-protoc-plugin-eio)
- (libraries grpc grpc_eio grpc_protoc_plugin h2-eio ocaml-protoc-plugin))
