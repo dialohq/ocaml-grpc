@@ -156,22 +156,22 @@ module Typed_rpc = struct
       }
         -> 'service_spec t
 
-  let server handlers : server =
-    let ts =
-      match (handlers : _ Grpc.Rpc.Handlers.t) with
-      | Handlers { handlers = ts } -> ts
-      | With_service_spec { service_spec; handlers = ts } ->
-          List.map
-            (fun (T t) ->
-              T
-                {
-                  t with
-                  rpc_spec =
-                    { t.rpc_spec with service_spec = Some service_spec };
-                })
-            ts
-    in
+  let rec make_handlers handlers =
+    match (handlers : _ Grpc.Rpc.Handlers.t) with
+    | a :: tl -> List.concat (make_handlers a :: List.map make_handlers tl)
+    | Handlers { handlers = ts } -> ts
+    | With_service_spec { service_spec; handlers = ts } ->
+        List.map
+          (fun (T t) ->
+            T
+              {
+                t with
+                rpc_spec = { t.rpc_spec with service_spec = Some service_spec };
+              })
+          ts
 
+  let server handlers : server =
+    let handlers = make_handlers handlers in
     List.fold_left
       (fun map (T t as packed) ->
         let service_name =
@@ -179,12 +179,11 @@ module Typed_rpc = struct
           | Some service_spec ->
               Grpc.Rpc.Service_spec.packaged_service_name service_spec
         in
-
         let rpc_impl =
           ServiceMap.find_opt service_name map |> Option.value ~default:[]
         in
         ServiceMap.add service_name (packed :: rpc_impl) map)
-      ServiceMap.empty ts
+      ServiceMap.empty handlers
     |> ServiceMap.map (fun ts ->
            let service =
              List.fold_left

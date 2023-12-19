@@ -18,6 +18,7 @@ module Handlers = struct
   type ('a, 'b) t =
     | Handlers of { handlers : 'a list }
     | With_service_spec of { handlers : 'b list; service_spec : Service_spec.t }
+    | ( :: ) of ('a, 'b) t * ('a, 'b) t list
 end
 
 module Client_rpc = struct
