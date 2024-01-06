@@ -114,3 +114,14 @@ module Rpc : sig
         by [service] and [rpc] using the [do_request] function. The [handler] is
         called when this request is set up to send and receive data. *)
 end
+
+val call :
+  service:string ->
+  rpc:string ->
+  ?scheme:string ->
+  handler:'a Rpc.handler ->
+  do_request:do_request ->
+  ?headers:H2.Headers.t ->
+  unit ->
+  ('a * Grpc.Status.t, H2.Status.t) result
+(** [@@deprecated "This function was renamed [Grpc_eio.Client.Rpc.call]."] *)
