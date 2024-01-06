@@ -34,6 +34,8 @@
  (depends
   (ocaml
    (>= 4.08))
+  (bigstringaf
+   (>= 0.9.1))
   (h2
    (>= 0.9.0))
   ppx_deriving
@@ -50,6 +52,8 @@
  (depends
   (grpc
    (= :version))
+  (h2
+   (>= 0.9.0))
   (lwt
    (>= 5.3.0))
   stringext))
@@ -68,6 +72,10 @@
    (>= v0.16))
   (grpc
    (= :version))
+  (h2
+   (>= 0.9.0))
+  (ppx_jane
+   (>= v0.16.0))
   stringext))
 
 (package
@@ -80,6 +88,8 @@
    (>= 0.12))
   (grpc
    (= :version))
+  (h2
+   (>= 0.9.0))
   stringext))
 
 (package
@@ -89,16 +99,28 @@
  (tags
   (network rpc serialisation))
  (depends
+  (async
+   (>= v0.16.0))
+  cohttp
+  cohttp-lwt
   cohttp-lwt-unix
   conduit-lwt-unix
+  (core
+   (>= v0.16.2))
+  (core_unix
+   (>= v0.16.0))
   (eio_main
    (>= 0.12))
   grpc-async
   grpc-eio
   grpc-lwt
+  (h2
+   (>= 0.9.0))
   h2-async
   h2-eio
   h2-lwt-unix
+  (lwt
+   (>= 5.3.0))
   (lwt_ssl
    (>= 1.2.0))
   (mdx
@@ -107,9 +129,14 @@
     :with-test))
   (ocaml-protoc-plugin
    (>= 4.5))
+  ppx_deriving
   ppx_deriving_yojson
+  (ppx_jane
+   (>= v0.16.0))
   stringext
-  tls-async))
+  tls-async
+  (uri
+   (>= 4.0.0))))
 
 (package
  (name grpc-bench)
