@@ -46,3 +46,67 @@ val call :
 (** [call ~service ~rpc ~handler ~do_request ()] calls the rpc endpoint given
         by [service] and [rpc] using the [do_request] function. The [handler] is
         called when this request is set up to send and receive data. *)
+
+module Typed_rpc : sig
+  (** This is an experimental API to call RPC from the client side. Compared to
+      {Rpc}, this interface will:
+
+      - handle the coding/decoding of messages for you under the hood;
+      - use the service and RPC names provided by the rpc specification to
+        call the services with their expected names. *)
+
+  type ('request, 'request_mode, 'response, 'response_mode, 'a) handler
+
+  (** The next functions are meant to be used by the client to handle
+     call to RPCs. *)
+
+  val bidirectional_streaming :
+    f:('request Seq.writer -> 'response Seq.t -> 'a) ->
+    ( 'request,
+      Grpc.Rpc.Value_mode.stream,
+      'response,
+      Grpc.Rpc.Value_mode.stream,
+      'a )
+    handler
+
+  val client_streaming :
+    f:('request Seq.writer -> 'response option Eio.Promise.t -> 'a) ->
+    ( 'request,
+      Grpc.Rpc.Value_mode.stream,
+      'response,
+      Grpc.Rpc.Value_mode.unary,
+      'a )
+    handler
+
+  val server_streaming :
+    f:('response Seq.t -> 'a) ->
+    'request ->
+    ( 'request,
+      Grpc.Rpc.Value_mode.unary,
+      'response,
+      Grpc.Rpc.Value_mode.stream,
+      'a )
+    handler
+
+  val unary :
+    f:('response option -> 'a) ->
+    'request ->
+    ( 'request,
+      Grpc.Rpc.Value_mode.unary,
+      'response,
+      Grpc.Rpc.Value_mode.unary,
+      'a )
+    handler
+
+  val call :
+    ('request, 'request_mode, 'response, 'response_mode) Grpc.Rpc.Client_rpc.t ->
+    ?scheme:string ->
+    handler:('request, 'request_mode, 'response, 'response_mode, 'a) handler ->
+    do_request:do_request ->
+    ?headers:H2.Headers.t ->
+    unit ->
+    ('a * Grpc.Status.t, H2.Status.t) result
+  (** The rpc specification must be provided as it is used to handle
+      coding/decoding of messages as well as allows referring to the service
+      and RPC names specified in the [.proto] file. *)
+end

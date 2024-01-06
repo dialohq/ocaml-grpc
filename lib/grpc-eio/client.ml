@@ -104,3 +104,96 @@ module Rpc = struct
         let response = Seq.read_and_exhaust responses in
         f response)
 end
+
+module Typed_rpc = struct
+  type ('request, 'request_mode, 'response, 'response_mode, 'a) handler =
+    ('request, 'request_mode, 'response, 'response_mode) Grpc.Rpc.Client_rpc.t ->
+    H2.Body.Writer.t ->
+    H2.Body.Reader.t ->
+    'a
+
+  let unary (type request response) ~f (request : request)
+      (rpc :
+        ( request,
+          Grpc.Rpc.Value_mode.unary,
+          response,
+          Grpc.Rpc.Value_mode.unary )
+        Grpc.Rpc.Client_rpc.t) =
+    let request = rpc.encode_request request in
+    let f response =
+      let response = response |> Option.map rpc.decode_response in
+      f response
+    in
+    Rpc.unary ~f request
+
+  let server_streaming (type request response) ~f (request : request)
+      (rpc :
+        ( request,
+          Grpc.Rpc.Value_mode.unary,
+          response,
+          Grpc.Rpc.Value_mode.stream )
+        Grpc.Rpc.Client_rpc.t) =
+    let request = rpc.encode_request request in
+    let f responses =
+      let responses = Seq.map rpc.decode_response responses in
+      f responses
+    in
+    Rpc.server_streaming ~f request
+
+  let client_streaming (type request response) ~f
+      (rpc :
+        ( request,
+          Grpc.Rpc.Value_mode.stream,
+          response,
+          Grpc.Rpc.Value_mode.unary )
+        Grpc.Rpc.Client_rpc.t) =
+    let f requests response =
+      let requests_reader, requests' = Seq.create_reader_writer () in
+      let response', response_u = Eio.Promise.create () in
+      Eio.Switch.run @@ fun sw ->
+      Eio.Fiber.fork ~sw (fun () ->
+          Eio.Fiber.both
+            (fun () ->
+              let response =
+                Eio.Promise.await response |> Option.map rpc.decode_response
+              in
+              Eio.Promise.resolve response_u response)
+            (fun () ->
+              Seq.iter
+                (fun request -> Seq.write requests (rpc.encode_request request))
+                requests_reader;
+              Seq.close_writer requests));
+      f requests' response'
+    in
+    Rpc.client_streaming ~f
+
+  let bidirectional_streaming (type request response) ~f
+      (rpc :
+        ( request,
+          Grpc.Rpc.Value_mode.stream,
+          response,
+          Grpc.Rpc.Value_mode.stream )
+        Grpc.Rpc.Client_rpc.t) =
+    let f requests responses =
+      let requests_reader, requests' = Seq.create_reader_writer () in
+      let responses' = Seq.map rpc.decode_response responses in
+      Eio.Switch.run @@ fun sw ->
+      Eio.Fiber.fork ~sw (fun () ->
+          Seq.iter
+            (fun request -> Seq.write requests (rpc.encode_request request))
+            requests_reader;
+          Seq.close_writer requests);
+      f requests' responses'
+    in
+    Rpc.bidirectional_streaming ~f
+
+  let call (type request request_mode response response_mode a)
+      (rpc :
+        (request, request_mode, response, response_mode) Grpc.Rpc.Client_rpc.t)
+      ?scheme
+      ~(handler : (request, request_mode, response, response_mode, a) handler)
+      ~do_request ?headers () =
+    call
+      ~service:(Grpc.Rpc.Service_spec.packaged_service_name rpc.service_spec)
+      ~rpc:rpc.rpc_name ?scheme ~handler:(handler rpc) ~do_request ?headers ()
+end

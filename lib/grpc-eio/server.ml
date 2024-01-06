@@ -127,3 +127,126 @@ module Service = struct
       | None -> respond_with `Not_found
     else respond_with `Not_found
 end
+
+module Typed_rpc = struct
+  type server = t
+
+  type ('request, 'response) unary =
+    'request -> Grpc.Status.t * 'response option
+
+  type ('request, 'response) client_streaming =
+    'request Seq.t -> Grpc.Status.t * 'response option
+
+  type ('request, 'response) server_streaming =
+    'request -> ('response -> unit) -> Grpc.Status.t
+
+  type ('request, 'response) bidirectional_streaming =
+    'request Seq.t -> ('response -> unit) -> Grpc.Status.t
+
+  type 'service_spec t =
+    | T : {
+        rpc_spec :
+          ( 'request,
+            'request_mode,
+            'response,
+            'response_mode,
+            'service_spec )
+          Grpc.Rpc.Server_rpc.t;
+        rpc_impl : Rpc.t;
+      }
+        -> 'service_spec t
+
+  let rec make_handlers handlers =
+    match (handlers : _ Grpc.Rpc.Handlers.t) with
+    | a :: tl -> List.concat (make_handlers a :: List.map make_handlers tl)
+    | Handlers { handlers = ts } -> ts
+    | With_service_spec { service_spec; handlers = ts } ->
+        List.map
+          (fun (T t) ->
+            T
+              {
+                t with
+                rpc_spec = { t.rpc_spec with service_spec = Some service_spec };
+              })
+          ts
+
+  let server handlers : server =
+    let handlers = make_handlers handlers in
+    List.fold_left
+      (fun map (T t as packed) ->
+        let service_name =
+          match t.rpc_spec.service_spec with
+          | Some service_spec ->
+              Grpc.Rpc.Service_spec.packaged_service_name service_spec
+        in
+        let rpc_impl =
+          ServiceMap.find_opt service_name map |> Option.value ~default:[]
+        in
+        ServiceMap.add service_name (packed :: rpc_impl) map)
+      ServiceMap.empty handlers
+    |> ServiceMap.map (fun ts ->
+           let service =
+             List.fold_left
+               (fun acc (T t) ->
+                 Service.add_rpc ~name:t.rpc_spec.rpc_name ~rpc:t.rpc_impl acc)
+               (Service.v ()) ts
+           in
+           Service.handle_request service)
+
+  let unary (type request response)
+      (rpc_spec :
+        ( request,
+          Grpc.Rpc.Value_mode.unary,
+          response,
+          Grpc.Rpc.Value_mode.unary,
+          _ )
+        Grpc.Rpc.Server_rpc.t) ~f:handler =
+    let handler buffer =
+      let status, response = handler (rpc_spec.decode_request buffer) in
+      (status, Option.map rpc_spec.encode_response response)
+    in
+    T { rpc_spec; rpc_impl = Rpc.Unary handler }
+
+  let server_streaming (type request response)
+      (rpc_spec :
+        ( request,
+          Grpc.Rpc.Value_mode.unary,
+          response,
+          Grpc.Rpc.Value_mode.stream,
+          _ )
+        Grpc.Rpc.Server_rpc.t) ~f:handler =
+    let handler buffer f =
+      handler (rpc_spec.decode_request buffer) (fun response ->
+          f (rpc_spec.encode_response response))
+    in
+    T { rpc_spec; rpc_impl = Rpc.Server_streaming handler }
+
+  let client_streaming (type request response)
+      (rpc_spec :
+        ( request,
+          Grpc.Rpc.Value_mode.stream,
+          response,
+          Grpc.Rpc.Value_mode.unary,
+          _ )
+        Grpc.Rpc.Server_rpc.t) ~f:handler =
+    let handler requests =
+      let requests = Seq.map rpc_spec.decode_request requests in
+      let status, response = handler requests in
+      (status, Option.map rpc_spec.encode_response response)
+    in
+    T { rpc_spec; rpc_impl = Rpc.Client_streaming handler }
+
+  let bidirectional_streaming (type request response)
+      (rpc_spec :
+        ( request,
+          Grpc.Rpc.Value_mode.stream,
+          response,
+          Grpc.Rpc.Value_mode.stream,
+          _ )
+        Grpc.Rpc.Server_rpc.t) ~f:handler =
+    let handler requests f =
+      let requests = Seq.map rpc_spec.decode_request requests in
+      handler requests (fun response -> f (rpc_spec.encode_response response))
+    in
+    T { rpc_spec; rpc_impl = Rpc.Bidirectional_streaming handler }
+end
