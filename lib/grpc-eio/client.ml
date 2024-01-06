@@ -88,7 +88,7 @@ module Typed_rpc = struct
     'a
 
   let make_handler (type request response)
-      (rpc : (request, _, response, _) Grpc.Rpc.Client_rpc.t) ~f =
+      ~(rpc : (request, _, response, _) Grpc.Rpc.Client_rpc.t) ~f =
     make_handler ~encode_request:rpc.encode_request
       ~decode_response:rpc.decode_response ~f
 
@@ -99,7 +99,7 @@ module Typed_rpc = struct
           response,
           Grpc.Rpc.Value_mode.stream )
         Grpc.Rpc.Client_rpc.t) =
-    make_handler rpc ~f
+    make_handler ~rpc ~f
 
   let client_streaming (type request response) ~f
       (rpc :
@@ -108,7 +108,7 @@ module Typed_rpc = struct
           response,
           Grpc.Rpc.Value_mode.unary )
         Grpc.Rpc.Client_rpc.t) =
-    make_handler rpc ~f:(fun request_writer responses ->
+    make_handler ~rpc ~f:(fun request_writer responses ->
         let response, response_resolver = Eio.Promise.create () in
         Eio.Fiber.pair
           (fun () -> f request_writer response)
@@ -124,7 +124,7 @@ module Typed_rpc = struct
           response,
           Grpc.Rpc.Value_mode.stream )
         Grpc.Rpc.Client_rpc.t) =
-    make_handler rpc ~f:(fun request_writer responses ->
+    make_handler ~rpc ~f:(fun request_writer responses ->
         Seq.write request_writer request;
         Seq.close_writer request_writer;
         f responses)
@@ -136,7 +136,7 @@ module Typed_rpc = struct
           response,
           Grpc.Rpc.Value_mode.unary )
         Grpc.Rpc.Client_rpc.t) =
-    make_handler rpc ~f:(fun request_writer responses ->
+    make_handler ~rpc ~f:(fun request_writer responses ->
         Seq.write request_writer request;
         Seq.close_writer request_writer;
         let response = Seq.read_and_exhaust responses in
