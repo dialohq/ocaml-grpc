@@ -10,8 +10,7 @@ module Service_spec = struct
   type t = { package : string list; service_name : string }
 
   let packaged_service_name t =
-    (match t.package with _ :: _ as p -> String.concat "." p | [] -> "")
-    ^ t.service_name
+    String.concat "." (t.package @ [ t.service_name ])
 end
 
 module Handlers = struct
@@ -30,9 +29,6 @@ module Client_rpc = struct
     request_mode : 'request_mode Value_mode.t;
     response_mode : 'response_mode Value_mode.t;
   }
-
-  let packaged_service_name t =
-    Service_spec.packaged_service_name t.service_spec
 end
 
 module Server_rpc = struct

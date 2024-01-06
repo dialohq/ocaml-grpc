@@ -30,8 +30,6 @@ module Client_rpc : sig
     request_mode : 'request_mode Value_mode.t;
     response_mode : 'response_mode Value_mode.t;
   }
-
-  val packaged_service_name : _ t -> string
 end
 
 module Server_rpc : sig

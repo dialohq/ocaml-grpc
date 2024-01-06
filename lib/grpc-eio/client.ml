@@ -194,6 +194,6 @@ module Typed_rpc = struct
       ~(handler : (request, request_mode, response, response_mode, a) handler)
       ~do_request ?headers () =
     call
-      ~service:(Grpc.Rpc.Client_rpc.packaged_service_name rpc)
+      ~service:(Grpc.Rpc.Service_spec.packaged_service_name rpc.service_spec)
       ~rpc:rpc.rpc_name ?scheme ~handler:(handler rpc) ~do_request ?headers ()
 end
