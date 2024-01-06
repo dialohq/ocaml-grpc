@@ -69,15 +69,15 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
 let make_handler ~encode_request ~decode_response ~f write_body read_body =
   let response_reader, response_writer = Seq.create_reader_writer () in
   let request_reader, request_writer = Seq.create_reader_writer () in
-  Connection.Typed.grpc_recv_streaming ~decode:decode_response read_body
+  Connection.grpc_recv_streaming ~decode:decode_response read_body
     response_writer;
   let res, res_notify = Eio.Promise.create () in
   Eio.Fiber.both
     (fun () ->
       Eio.Promise.resolve res_notify (f request_writer response_reader))
     (fun () ->
-      Connection.Typed.grpc_send_streaming_client ~encode:encode_request
-        write_body request_reader);
+      Connection.grpc_send_streaming_client ~encode:encode_request write_body
+        request_reader);
   Eio.Promise.await res
 
 module Typed_rpc = struct

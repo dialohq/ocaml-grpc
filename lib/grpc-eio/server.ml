@@ -49,8 +49,7 @@ let implement_rpc ~decode_request ~encode_response ~f reqd =
   let body = H2.Reqd.request_body reqd in
   let request_reader, request_writer = Seq.create_reader_writer () in
   let response_reader, response_writer = Seq.create_reader_writer () in
-  Connection.Typed.grpc_recv_streaming ~decode:decode_request body
-    request_writer;
+  Connection.grpc_recv_streaming ~decode:decode_request body request_writer;
   let status_promise, status_notify = Eio.Promise.create () in
   Eio.Fiber.both
     (fun () ->
@@ -60,7 +59,7 @@ let implement_rpc ~decode_request ~encode_response ~f reqd =
       Eio.Promise.resolve status_notify status)
     (fun () ->
       try
-        Connection.Typed.grpc_send_streaming ~encode:encode_response reqd
+        Connection.grpc_send_streaming ~encode:encode_response reqd
           response_reader status_promise
       with exn ->
         (* https://github.com/anmonteiro/ocaml-h2/issues/175 *)
