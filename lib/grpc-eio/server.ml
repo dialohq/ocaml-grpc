@@ -116,10 +116,10 @@ module Service = struct
     let parts = String.split_on_char '/' request.target in
     if List.length parts > 1 then
       let rpc_name = List.nth parts (List.length parts - 1) in
-      let rpc_impl = RpcMap.find_opt rpc_name t in
-      match rpc_impl with
-      | Some rpc_impl -> (
-          match rpc_impl with
+      let rpc = RpcMap.find_opt rpc_name t in
+      match rpc with
+      | Some rpc -> (
+          match rpc with
           | Unary f -> Rpc.unary ~f reqd
           | Client_streaming f -> Rpc.client_streaming ~f reqd
           | Server_streaming f -> Rpc.server_streaming ~f reqd
