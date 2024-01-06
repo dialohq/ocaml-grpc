@@ -62,7 +62,7 @@ module Rpc = struct
     let body = H2.Reqd.request_body reqd in
     let request_reader, request_writer = Seq.create_reader_writer () in
     let response_reader, response_writer = Seq.create_reader_writer () in
-    Connection.grpc_recv_streaming body request_writer;
+    Connection.Untyped.grpc_recv_streaming body request_writer;
     let status_promise, status_notify = Eio.Promise.create () in
     Eio.Fiber.both
       (fun () ->
@@ -71,7 +71,9 @@ module Rpc = struct
         Seq.close_writer response_writer;
         Eio.Promise.resolve status_notify status)
       (fun () ->
-        try Connection.grpc_send_streaming reqd response_reader status_promise
+        try
+          Connection.Untyped.grpc_send_streaming reqd response_reader
+            status_promise
         with exn ->
           (* https://github.com/anmonteiro/ocaml-h2/issues/175 *)
           Eio.traceln "%s" (Printexc.to_string exn))
@@ -193,6 +195,20 @@ module Typed_rpc = struct
            in
            Service.handle_request service)
 
+  let bidirectional_streaming (type request response)
+      (rpc_spec :
+        ( request,
+          Grpc.Rpc.Value_mode.stream,
+          response,
+          Grpc.Rpc.Value_mode.stream,
+          _ )
+        Grpc.Rpc.Server_rpc.t) ~f:handler =
+    let handler requests f =
+      let requests = Seq.map rpc_spec.decode_request requests in
+      handler requests (fun response -> f (rpc_spec.encode_response response))
+    in
+    T { rpc_spec; rpc_impl = Rpc.Bidirectional_streaming handler }
+
   let unary (type request response)
       (rpc_spec :
         ( request,
@@ -235,18 +251,4 @@ module Typed_rpc = struct
       (status, Option.map rpc_spec.encode_response response)
     in
     T { rpc_spec; rpc_impl = Rpc.Client_streaming handler }
-
-  let bidirectional_streaming (type request response)
-      (rpc_spec :
-        ( request,
-          Grpc.Rpc.Value_mode.stream,
-          response,
-          Grpc.Rpc.Value_mode.stream,
-          _ )
-        Grpc.Rpc.Server_rpc.t) ~f:handler =
-    let handler requests f =
-      let requests = Seq.map rpc_spec.decode_request requests in
-      handler requests (fun response -> f (rpc_spec.encode_response response))
-    in
-    T { rpc_spec; rpc_impl = Rpc.Bidirectional_streaming handler }
 end
