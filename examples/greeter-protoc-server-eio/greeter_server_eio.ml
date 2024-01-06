@@ -1,15 +1,13 @@
 open Grpc_eio
 
-let say_hello =
-  let module SayHello = Greeter.Mypackage.Greeter.SayHello in
-  Grpc_eio.Server.Typed_rpc.unary
-    (Grpc_protoc_plugin.Server_rpc.unary (module SayHello))
-    ~f:(fun request ->
+let sayHello rpc =
+  Grpc_eio.Server.Typed_rpc.unary (Grpc_protoc.Server_rpc.unary rpc)
+    ~f:(fun (request : Greeter_protoc.Greeter.hello_request) ->
       let message =
-        if request = "" then "You forgot your name!"
-        else Format.sprintf "Hello, %s!" request
+        if request.name = "" then "You forgot your name!"
+        else Format.sprintf "Hello, %s!" request.name
       in
-      let reply = SayHello.Response.make ~message () in
+      let reply = Greeter_protoc.Greeter.default_hello_reply ~message () in
       (Grpc.Status.(v OK), Some reply))
 
 let connection_handler server sw =
@@ -49,12 +47,13 @@ let serve server env =
   print_endline "Try running:";
   print_endline "";
   print_endline
-    {| dune exec -- examples/greeter-client-eio/greeter_client_eio.exe <your_name> |};
+    {| dune exec -- examples/greeter-protoc-client-eio/greeter_client_eio.exe <your_name> |};
   listen ()
 
 let () =
   let server =
-    Server.Typed_rpc.server (Grpc_protoc_plugin.handlers [ say_hello ])
+    Greeter_protoc.Greeter.Greeter.Server.make ~sayHello ()
+    |> Grpc_protoc.handlers |> Server.Typed_rpc.server
   in
 
   Eio_main.run (serve server)

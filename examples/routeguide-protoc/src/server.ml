@@ -1,5 +1,5 @@
 open Grpc_eio
-open Routeguide.Route_guide.Routeguide
+module Route_guide = Routeguide_protoc.Route_guide
 
 (* Derived data types to make reading JSON data easier. *)
 type location = { latitude : int; longitude : int } [@@deriving yojson]
@@ -7,38 +7,41 @@ type feature = { location : location; name : string } [@@deriving yojson]
 type feature_list = feature list [@@deriving yojson]
 
 (* This will act as a master state that the server is serving over RPC. *)
-type t = { features : Feature.t list }
+type t = { features : Route_guide.feature list }
 
 module RouteNotesMap = Hashtbl.Make (struct
-  type t = Point.t
+  type t = Route_guide.point
 
-  let equal = Point.equal
+  let equal = Route_guide.equal_point
   let hash s = Hashtbl.hash s
 end)
 
 (** Load route_guide data from a JSON file. *)
-let load_features path : Feature.t list =
+let load_features path : Route_guide.feature list =
   let json = Yojson.Safe.from_file path in
   match feature_list_of_yojson json with
   | Ok v ->
       List.map
         (fun feature ->
-          Feature.make ~name:feature.name
+          Route_guide.default_feature ~name:feature.name
             ~location:
-              (Point.make ~longitude:feature.location.longitude
-                 ~latitude:feature.location.latitude ())
+              (Route_guide.default_point
+                 ~longitude:(feature.location.longitude |> Int32.of_int)
+                 ~latitude:(feature.location.latitude |> Int32.of_int)
+                 ()
+              |> Option.some)
             ())
         v
   | Error err -> failwith err
 
-let in_range (point : Point.t) (rect : Rectangle.t) : bool =
+let in_range (point : Route_guide.point) (rect : Route_guide.rectangle) : bool =
   let lo = Option.get rect.lo in
   let hi = Option.get rect.hi in
 
-  let left = Int.min lo.longitude hi.longitude in
-  let right = Int.max lo.longitude hi.longitude in
-  let top = Int.max lo.latitude hi.latitude in
-  let bottom = Int.min lo.latitude hi.latitude in
+  let left = Int32.min lo.longitude hi.longitude in
+  let right = Int32.max lo.longitude hi.longitude in
+  let top = Int32.max lo.latitude hi.latitude in
+  let bottom = Int32.min lo.latitude hi.latitude in
 
   point.longitude >= left && point.longitude <= right
   && point.latitude >= bottom && point.latitude <= top
@@ -48,14 +51,14 @@ let radians_of_degrees = ( *. ) (pi /. 180.)
 
 (* Calculates the distance between two points using the "haversine" formula. *)
 (* This code was taken from http://www.movable-type.co.uk/scripts/latlong.html. *)
-let calc_distance (p1 : Point.t) (p2 : Point.t) : int =
+let calc_distance (p1 : Route_guide.point) (p2 : Route_guide.point) : int =
   let cord_factor = 1e7 in
   let r = 6_371_000.0 in
   (* meters *)
-  let lat1 = Float.of_int p1.latitude /. cord_factor in
-  let lat2 = Float.of_int p2.latitude /. cord_factor in
-  let lng1 = Float.of_int p1.longitude /. cord_factor in
-  let lng2 = Float.of_int p2.longitude /. cord_factor in
+  let lat1 = Int32.to_float p1.latitude /. cord_factor in
+  let lat2 = Int32.to_float p2.latitude /. cord_factor in
+  let lng1 = Int32.to_float p1.longitude /. cord_factor in
+  let lng2 = Int32.to_float p2.longitude /. cord_factor in
 
   let lat_rad1 = radians_of_degrees lat1 in
   let lat_rad2 = radians_of_degrees lat2 in
@@ -73,40 +76,40 @@ let calc_distance (p1 : Point.t) (p2 : Point.t) : int =
   Float.to_int (r *. c)
 
 (* $MDX part-begin=server-get-feature *)
-let get_feature (t : t) =
-  Grpc_eio.Server.Typed_rpc.unary
-    (Grpc_protoc_plugin.Server_rpc.unary (module RouteGuide.GetFeature))
+let get_feature (t : t) rpc =
+  Grpc_eio.Server.Typed_rpc.unary (Grpc_protoc.Server_rpc.unary rpc)
     ~f:(fun point ->
-      Eio.traceln "GetFeature = {:%s}" (Point.show point);
+      Eio.traceln "GetFeature = {:%a}" Route_guide.pp_point point;
 
       (* Lookup the feature and if found return it. *)
       let feature =
         List.find_opt
-          (fun (f : Feature.t) ->
+          (fun (f : Route_guide.feature) ->
             match (f.location, point) with
-            | Some p1, p2 -> Point.equal p1 p2
+            | Some p1, p2 -> Route_guide.equal_point p1 p2
             | _, _ -> false)
           t.features
       in
       Eio.traceln "Found feature %s"
-        (feature |> Option.map Feature.show |> Option.value ~default:"Missing");
+        (feature
+        |> Option.map Route_guide.show_feature
+        |> Option.value ~default:"Missing");
       match feature with
       | Some feature -> (Grpc.Status.(v OK), Some feature)
       | None ->
           (* No feature was found, return an unnamed feature. *)
-          (Grpc.Status.(v OK), Some (Feature.make ~location:point ())))
+          ( Grpc.Status.(v OK),
+            Some (Route_guide.default_feature ~location:(Some point) ()) ))
 
 (* $MDX part-end *)
 (* $MDX part-begin=server-list-features *)
-let list_features (t : t) =
+let list_features (t : t) rpc =
   Grpc_eio.Server.Typed_rpc.server_streaming
-    (Grpc_protoc_plugin.Server_rpc.server_streaming
-       (module RouteGuide.ListFeatures))
-    ~f:(fun rectangle f ->
+    (Grpc_protoc.Server_rpc.server_streaming rpc) ~f:(fun rectangle f ->
       (* Lookup and reply with features found. *)
       let () =
         List.iter
-          (fun (feature : Feature.t) ->
+          (fun (feature : Route_guide.feature) ->
             if in_range (Option.get feature.location) rectangle then f feature
             else ())
           t.features
@@ -115,11 +118,10 @@ let list_features (t : t) =
 
 (* $MDX part-end *)
 (* $MDX part-begin=server-record-route *)
-let record_route (t : t) (clock : _ Eio.Time.clock) =
+let record_route (t : t) (clock : _ Eio.Time.clock) rpc =
   Grpc_eio.Server.Typed_rpc.client_streaming
-    (Grpc_protoc_plugin.Server_rpc.client_streaming
-       (module RouteGuide.RecordRoute))
-    ~f:(fun (stream : Point.t Seq.t) ->
+    (Grpc_protoc.Server_rpc.client_streaming rpc)
+    ~f:(fun (stream : Route_guide.point Seq.t) ->
       Eio.traceln "RecordRoute";
 
       let last_point = ref None in
@@ -128,7 +130,7 @@ let record_route (t : t) (clock : _ Eio.Time.clock) =
       let point_count, feature_count, distance =
         Seq.fold_left
           (fun (point_count, feature_count, distance) point ->
-            Eio.traceln "  ==> Point = {%s}" (Point.show point);
+            Eio.traceln "  ==> Point = {%s}" (Route_guide.show_point point);
 
             (* Increment the point count *)
             let point_count = point_count + 1 in
@@ -136,8 +138,8 @@ let record_route (t : t) (clock : _ Eio.Time.clock) =
             (* Find features *)
             let feature_count =
               List.find_all
-                (fun (feature : Feature.t) ->
-                  Point.equal (Option.get feature.location) point)
+                (fun (feature : Route_guide.feature) ->
+                  Route_guide.equal_point (Option.get feature.location) point)
                 t.features
               |> fun x -> List.length x + feature_count
             in
@@ -155,23 +157,30 @@ let record_route (t : t) (clock : _ Eio.Time.clock) =
       let stop = Eio.Time.now clock in
       let elapsed_time = int_of_float (stop -. start) in
       let summary =
-        RouteSummary.make ~point_count ~feature_count ~distance ~elapsed_time ()
+        Route_guide.default_route_summary
+          ~point_count:(point_count |> Int32.of_int)
+          ~feature_count:(feature_count |> Int32.of_int)
+          ~distance:(distance |> Int32.of_int)
+          ~elapsed_time:(elapsed_time |> Int32.of_int)
+          ()
       in
       Eio.traceln "RecordRoute exit\n";
       (Grpc.Status.(v OK), Some summary))
 
 (* $MDX part-end *)
 (* $MDX part-begin=server-route-chat *)
-let route_chat (_ : t) =
+let route_chat (_ : t) rpc =
   Grpc_eio.Server.Typed_rpc.bidirectional_streaming
-    (Grpc_protoc_plugin.Server_rpc.bidirectional_streaming
-       (module RouteGuide.RouteChat))
-    ~f:(fun (stream : RouteNote.t Seq.t) (f : RouteNote.t -> unit) ->
+    (Grpc_protoc.Server_rpc.bidirectional_streaming rpc)
+    ~f:(fun
+         (stream : Route_guide.route_note Seq.t)
+         (f : Route_guide.route_note -> unit)
+       ->
       Printf.printf "RouteChat\n";
 
       Seq.iter
         (fun note ->
-          Printf.printf "  ==> Note = {%s}\n" (RouteNote.show note);
+          Printf.printf "  ==> Note = {%s}\n" (Route_guide.show_route_note note);
           f note)
         stream;
 
@@ -181,9 +190,10 @@ let route_chat (_ : t) =
 (* $MDX part-end *)
 (* $MDX part-begin=server-grpc *)
 let server t clock =
-  Server.Typed_rpc.server
-    (Grpc_protoc_plugin.handlers
-       [ get_feature t; list_features t; record_route t clock; route_chat t ])
+  Route_guide.RouteGuide.Server.make ~getFeature:(get_feature t)
+    ~listFeatures:(list_features t) ~recordRoute:(record_route t clock)
+    ~routeChat:(route_chat t) ()
+  |> Grpc_protoc.handlers |> Server.Typed_rpc.server
 
 (* $MDX part-end *)
 let connection_handler server ~sw =

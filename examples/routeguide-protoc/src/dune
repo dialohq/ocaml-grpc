@@ -1,0 +1,14 @@
+(executables
+ (names server client)
+ (package grpc-examples)
+ (public_names routeguide-protoc-server routeguide-protoc-client)
+ (libraries
+  grpc-eio
+  grpc-protoc
+  eio_main
+  h2-eio
+  routeguide_protoc
+  yojson
+  ppx_deriving_yojson.runtime)
+ (preprocess
+  (pps ppx_deriving_yojson ppx_deriving.show ppx_deriving.eq)))

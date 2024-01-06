@@ -19,18 +19,18 @@ let main env =
       H2_eio.Client.create_connection ~sw ~error_handler:ignore socket
     in
 
-    let open Greeter.Mypackage in
-    let request = HelloRequest.make ~name () in
+    let request = Greeter_protoc.Greeter.default_hello_request ~name () in
 
     let f response =
       match response with
       | Some response -> response
-      | None -> Greeter.SayHello.Response.make ()
+      | None -> Greeter_protoc.Greeter.default_hello_reply ()
     in
 
     let result =
       Grpc_eio.Client.Typed_rpc.call
-        (Grpc_protoc_plugin.Client_rpc.unary (module Greeter.SayHello))
+        (Grpc_protoc.Client_rpc.unary
+           Greeter_protoc.Greeter.Greeter.Client.sayHello)
         ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
         ~handler:(Grpc_eio.Client.Typed_rpc.unary request ~f)
         ()
@@ -43,6 +43,6 @@ let main env =
 
 let () =
   match Eio_main.run main with
-  | Ok (message, status) ->
-      Eio.traceln "%s: %s" (Grpc.Status.show status) message
+  | Ok (reply, status) ->
+      Eio.traceln "%s: %s" (Grpc.Status.show status) reply.message
   | Error err -> Eio.traceln "Error: %a" H2.Status.pp_hum err
