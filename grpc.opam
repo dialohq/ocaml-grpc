@@ -21,9 +21,9 @@ bug-reports: "https://github.com/dialohq/ocaml-grpc/issues"
 depends: [
   "dune" {>= "3.7"}
   "ocaml" {>= "4.08"}
-  "uri" {>= "4.0.0"}
   "h2" {>= "0.9.0"}
   "ppx_deriving"
+  "uri" {>= "4.0.0"}
   "odoc" {with-doc}
 ]
 build: [

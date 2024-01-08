@@ -18,8 +18,8 @@ doc: "https://dialohq.github.io/ocaml-grpc"
 bug-reports: "https://github.com/dialohq/ocaml-grpc/issues"
 depends: [
   "dune" {>= "3.7"}
-  "grpc" {= version}
   "eio" {>= "0.12"}
+  "grpc" {= version}
   "stringext"
   "odoc" {with-doc}
 ]

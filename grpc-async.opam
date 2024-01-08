@@ -21,8 +21,8 @@ bug-reports: "https://github.com/dialohq/ocaml-grpc/issues"
 depends: [
   "dune" {>= "3.7"}
   "ocaml" {>= "4.11"}
-  "grpc" {= version}
   "async" {>= "v0.16"}
+  "grpc" {= version}
   "stringext"
   "odoc" {with-doc}
 ]
