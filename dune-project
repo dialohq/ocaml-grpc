@@ -97,6 +97,17 @@
   stringext))
 
 (package
+ (name grpc-protoc-plugin)
+ (synopsis "An implementation of gRPC using ocaml-protoc-plugin")
+ (description
+  "Functionality for building gRPC services and rpcs with `ocaml-protoc-plugin`")
+ (depends
+  (grpc
+   (= :version))
+  (ocaml-protoc-plugin
+   (>= 4.5))))
+
+(package
  (name grpc-examples)
  (synopsis "Various gRPC examples")
  (description "Various gRPC examples.")
