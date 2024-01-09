@@ -1,5 +1,95 @@
 include Grpc.Server.S
 
+(** {1 Typed API} *)
+
+module Typed_rpc : sig
+  (** A typed interface to build RPCs on the server side.
+
+      Compared to {!module:Rpc}, this interface will:
+
+      - handle the coding/decoding of messages for you under the hood;
+      - use the service and RPC names provided by the rpc specification to
+        register the services with their expected names. *)
+
+  type server := t
+
+  type ('request, 'response) unary =
+    'request -> Grpc.Status.t * 'response option
+  (** [unary] is the type for a unary grpc rpc, one request, one response. *)
+
+  type ('request, 'response) client_streaming =
+    'request Seq.t -> Grpc.Status.t * 'response option
+  (** [client_streaming] is the type for an rpc where the client streams the
+      requests and the server responds once. *)
+
+  type ('request, 'response) server_streaming =
+    'request -> ('response -> unit) -> Grpc.Status.t
+  (** [server_streaming] is the type for an rpc where the client sends one
+    request and the server sends multiple responses. *)
+
+  type ('request, 'response) bidirectional_streaming =
+    'request Seq.t -> ('response -> unit) -> Grpc.Status.t
+  (** [bidirectional_streaming] is the type for an rpc where both the client and
+    server can send multiple messages. *)
+
+  type 'service_spec t
+  (** [t] represents an implementation for an RPC on the server side. *)
+
+  (** The next functions are meant to be used by the server to create RPC
+      implementations. The rpc specification that the function implements must
+      be provided as it is used to handle coding/decoding of messages. It also
+      allows to refer to the service and RPC names specified in the [.proto]
+      file. *)
+
+  val unary :
+    ( 'request,
+      Grpc.Rpc.Value_mode.unary,
+      'response,
+      Grpc.Rpc.Value_mode.unary,
+      'service_spec )
+    Grpc.Rpc.Server_rpc.t ->
+    f:('request, 'response) unary ->
+    'service_spec t
+
+  val client_streaming :
+    ( 'request,
+      Grpc.Rpc.Value_mode.stream,
+      'response,
+      Grpc.Rpc.Value_mode.unary,
+      'service_spec )
+    Grpc.Rpc.Server_rpc.t ->
+    f:('request, 'response) client_streaming ->
+    'service_spec t
+
+  val server_streaming :
+    ( 'request,
+      Grpc.Rpc.Value_mode.unary,
+      'response,
+      Grpc.Rpc.Value_mode.stream,
+      'service_spec )
+    Grpc.Rpc.Server_rpc.t ->
+    f:('request, 'response) server_streaming ->
+    'service_spec t
+
+  val bidirectional_streaming :
+    ( 'request,
+      Grpc.Rpc.Value_mode.stream,
+      'response,
+      Grpc.Rpc.Value_mode.stream,
+      'service_spec )
+    Grpc.Rpc.Server_rpc.t ->
+    f:('request, 'response) bidirectional_streaming ->
+    'service_spec t
+
+  val server : (Grpc.Rpc.Service_spec.t t, unit t) Grpc.Rpc.Handlers.t -> server
+  (** Having built a list of RPCs you will use this function to package them up
+      into a server that is ready to be served over the network. This function
+      takes care of registering the services based on the names provided by the
+      protoc specification.  *)
+end
+
+(** {1 Untyped API} *)
+
 module Rpc : sig
   type unary = string -> Grpc.Status.t * string option
   (** [unary] is the type for a unary grpc rpc, one request, one response. *)

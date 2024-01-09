@@ -439,7 +439,7 @@ Calling the simple RPC `get_feature` requires building up a `Client.call` repres
 let call_get_feature connection point =
   let encode, decode = Service.make_client_functions RouteGuide.getFeature in
   let response =
-    Client.call ~service:"routeguide.RouteGuide" ~rpc:"GetFeature"
+    Client.Rpc.call ~service:"routeguide.RouteGuide" ~rpc:"GetFeature"
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Rpc.unary
@@ -476,7 +476,7 @@ let print_features connection =
 
   let encode, decode = Service.make_client_functions RouteGuide.listFeatures in
   let stream =
-    Client.call ~service:"routeguide.RouteGuide" ~rpc:"ListFeatures"
+    Client.Rpc.call ~service:"routeguide.RouteGuide" ~rpc:"ListFeatures"
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Rpc.server_streaming
@@ -528,7 +528,7 @@ let run_record_route connection =
 
   let encode, decode = Service.make_client_functions RouteGuide.recordRoute in
   let response =
-    Client.call ~service:"routeguide.RouteGuide" ~rpc:"RecordRoute"
+    Client.Rpc.call ~service:"routeguide.RouteGuide" ~rpc:"RecordRoute"
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Rpc.client_streaming ~f:(fun f response ->
@@ -615,7 +615,7 @@ We start by generating a short sequence of locations, similar to how we did for 
             go writer reader' xs)
   in
   let result =
-    Client.call ~service:"routeguide.RouteGuide" ~rpc:"RouteChat"
+    Client.Rpc.call ~service:"routeguide.RouteGuide" ~rpc:"RouteChat"
       ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
       ~handler:
         (Client.Rpc.bidirectional_streaming ~f:(fun writer reader ->
