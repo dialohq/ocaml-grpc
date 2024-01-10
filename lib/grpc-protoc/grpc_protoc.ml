@@ -7,13 +7,18 @@ let decode (type a) (decode : Pbrt.Decoder.t -> a) buffer =
   let decoder = Pbrt.Decoder.of_string buffer in
   decode decoder
 
+let client_service_spec (rpc : _ Pbrt_services.Client.rpc) =
+  {
+    Grpc.Rpc.Service_spec.package = rpc.package;
+    service_name = rpc.service_name;
+  }
+
 module Client_rpc = struct
   let make (type request response)
       (rpc : (request, _, response, _) Pbrt_services.Client.rpc) ~request_mode
       ~response_mode =
     {
-      Grpc.Rpc.Client_rpc.service_spec =
-        { package = rpc.package; service_name = rpc.service_name };
+      Grpc.Rpc.Client_rpc.service_spec = client_service_spec rpc;
       rpc_name = rpc.rpc_name;
       encode_request = encode rpc.encode_pb_req;
       decode_response = decode rpc.decode_pb_res;
@@ -50,6 +55,12 @@ module Server_rpc = struct
     make rpc ~request_mode:Stream ~response_mode:Stream
 end
 
-let handlers { Pbrt_services.Server.package; service_name; handlers } =
+let server_service_spec
+    { Pbrt_services.Server.package; service_name; handlers = _ } =
+  { Grpc.Rpc.Service_spec.package; service_name }
+
+let handlers
+    ({ Pbrt_services.Server.package = _; service_name = _; handlers } as server)
+    =
   Grpc.Rpc.Handlers.With_service_spec
-    { service_spec = { package; service_name }; handlers }
+    { service_spec = server_service_spec server; handlers }
