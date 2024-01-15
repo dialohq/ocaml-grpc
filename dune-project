@@ -34,11 +34,13 @@
  (depends
   (ocaml
    (>= 4.08))
-  (uri
-   (>= 4.0.0))
+  (bigstringaf
+   (>= 0.9.1))
   (h2
    (>= 0.9.0))
-  ppx_deriving))
+  ppx_deriving
+  (uri
+   (>= 4.0.0))))
 
 (package
  (name grpc-lwt)
@@ -50,6 +52,8 @@
  (depends
   (grpc
    (= :version))
+  (h2
+   (>= 0.9.0))
   (lwt
    (>= 5.3.0))
   stringext))
@@ -64,10 +68,14 @@
  (depends
   (ocaml
    (>= 4.11))
-  (grpc
-   (= :version))
   (async
    (>= v0.16))
+  (grpc
+   (= :version))
+  (h2
+   (>= 0.9.0))
+  (ppx_jane
+   (>= v0.16.0))
   stringext))
 
 (package
@@ -76,10 +84,12 @@
  (description
   "Functionality for building gRPC services and rpcs with `eio`.")
  (depends
-  (grpc
-   (= :version))
   (eio
    (>= 0.12))
+  (grpc
+   (= :version))
+  (h2
+   (>= 0.9.0))
   stringext))
 
 (package
@@ -89,27 +99,44 @@
  (tags
   (network rpc serialisation))
  (depends
-  grpc-lwt
-  h2-lwt-unix
-  grpc-async
-  h2-async
-  grpc-eio
-  h2-eio
-  (ocaml-protoc-plugin
-   (>= 4.5))
-  ppx_deriving_yojson
-  conduit-lwt-unix
+  (async
+   (>= v0.16.0))
+  cohttp
+  cohttp-lwt
   cohttp-lwt-unix
-  tls-async
+  conduit-lwt-unix
+  (core
+   (>= v0.16.2))
+  (core_unix
+   (>= v0.16.0))
+  (eio_main
+   (>= 0.12))
+  grpc-async
+  grpc-eio
+  grpc-lwt
+  (h2
+   (>= 0.9.0))
+  h2-async
+  h2-eio
+  h2-lwt-unix
+  (lwt
+   (>= 5.3.0))
   (lwt_ssl
    (>= 1.2.0))
   (mdx
    (and
     (>= 2.2.1)
     :with-test))
-  (eio_main
-   (>= 0.12))
-  stringext))
+  (ocaml-protoc-plugin
+   (>= 4.5))
+  ppx_deriving
+  ppx_deriving_yojson
+  (ppx_jane
+   (>= v0.16.0))
+  stringext
+  tls-async
+  (uri
+   (>= 4.0.0))))
 
 (package
  (name grpc-bench)
@@ -118,13 +145,12 @@
  (tags
   (network rpc serialisation benchmark))
  (depends
-  grpc
   (bechamel
    (>= 0.4.0))
-  notty
   (bechamel-notty
    (>= 0.4.0))
   (bigstringaf
    (>= 0.9.1))
+  grpc
   (notty
    (>= 0.2.3))))
