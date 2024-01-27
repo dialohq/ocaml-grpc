@@ -38,6 +38,10 @@
    (>= 0.9.1))
   (h2
    (>= 0.9.0))
+  (odoc
+   (and
+    (>= 2.4.0)
+    :with-doc))
   ppx_deriving
   (uri
    (>= 4.0.0))))
@@ -91,6 +95,32 @@
   (h2
    (>= 0.9.0))
   stringext))
+
+(package
+ (name grpc-protoc-plugin)
+ (synopsis "An implementation of gRPC using ocaml-protoc-plugin")
+ (description
+  "Functionality for building gRPC services and rpcs with `ocaml-protoc-plugin`")
+ (depends
+  (grpc
+   (= :version))
+  (ocaml-protoc-plugin
+   (>= 4.5))))
+
+(package
+ (name grpc-protoc)
+ (synopsis "An implementation of gRPC using ocaml-protoc")
+ (description
+  "Functionality for building gRPC services and rpcs with `ocaml-protoc`")
+ (depends
+  (grpc
+   (= :version))
+  (ocaml-protoc
+   (>= 3.0))
+  (pbrt
+   (>= 3.0))
+  (pbrt_services
+   (>= 3.0))))
 
 (package
  (name grpc-examples)
