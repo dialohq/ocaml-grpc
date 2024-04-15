@@ -63,9 +63,9 @@ let v ?message code = { code; message }
 let code t = t.code
 let message t = Option.map (fun message -> Uri.pct_encode message) t.message
 
-let extract_status headers =
+let extract_status ~get_header =
   let code, message =
-    match H2.Headers.get headers "grpc-status" with
+    match get_header "grpc-status" with
     | None -> (Unknown, Some "Expected gprc-status header, got nothing")
     | Some s -> (
         match int_of_string_opt s with
@@ -81,6 +81,6 @@ let extract_status headers =
                   Printf.sprintf "Expected valid gprc-status code, got %i" i
                 in
                 (Unknown, Some msg)
-            | Some c -> (c, H2.Headers.get headers "grpc-message")))
+            | Some c -> (c, get_header "grpc-message")))
   in
   v ?message code

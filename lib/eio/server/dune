@@ -1,0 +1,8 @@
+(library
+ (name grpc_server_eio)
+ (public_name grpc-server-eio)
+ (libraries grpc grpc-core-eio eio grpc-server))
+
+(deprecated_library_name
+   (old_public_name grpc-eio)
+   (new_public_name grpc-server-eio))

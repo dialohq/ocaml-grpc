@@ -1,0 +1,3 @@
+(dirs bench examples lib)
+
+(vendored_dirs ocaml-h2 gluten)

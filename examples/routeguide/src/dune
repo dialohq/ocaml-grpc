@@ -3,12 +3,14 @@
  (package grpc-examples)
  (public_names routeguide-server routeguide-client)
  (libraries
-  grpc-eio
+  grpc-server-eio
+  grpc-client-eio
   eio_main
-  h2-eio
   ocaml-protoc-plugin
   routeguide
   yojson
-  ppx_deriving_yojson.runtime)
+  ppx_deriving_yojson.runtime
+  grpc-eio-net-server-h2
+  grpc-eio-net-client-h2)
  (preprocess
   (pps ppx_deriving_yojson ppx_deriving.eq)))

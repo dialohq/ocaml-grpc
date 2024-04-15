@@ -12,8 +12,8 @@ let make content =
   Bytes.blit_string content 0 payload 5 content_len;
   Bytes.to_string payload
 
-(** [extract_message buf] extracts the grpc message starting in [buf]
-    in the buffer if there is one *)
+(** [extract_message buf] extracts the grpc message starting in [buf] in the
+    buffer if there is one *)
 let extract_message buf =
   if Buffer.length buf >= 5 then (
     let compressed =
@@ -36,8 +36,8 @@ let extract_message buf =
     else None)
   else None
 
-(** [get_message_and_shift buf] tries to extract the first grpc message
-    from [buf] and if successful shifts these bytes out of the buffer *)
+(** [get_message_and_shift buf] tries to extract the first grpc message from
+    [buf] and if successful shifts these bytes out of the buffer *)
 let get_message_and_shift buf =
   match extract_message buf with
   | None -> None
@@ -57,3 +57,10 @@ let extract_all f buf =
         loop ()
   in
   loop ()
+
+type format = [ `Json | `Proto | `Other of string ]
+
+let format_to_content_type = function
+  | `Json -> "application/grpc+json"
+  | `Proto -> "application/grpc+proto"
+  | `Other s -> Printf.sprintf "application/grpc+%s" s

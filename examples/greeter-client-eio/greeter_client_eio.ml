@@ -1,56 +1,33 @@
 let main env =
   let name = if Array.length Sys.argv > 1 then Sys.argv.(1) else "anonymous" in
-  let host = "localhost" in
-  let port = "8080" in
   let network = Eio.Stdenv.net env in
   let run sw =
-    let inet, port =
-      Eio_unix.run_in_systhread (fun () ->
-          Unix.getaddrinfo host port [ Unix.(AI_FAMILY PF_INET) ])
-      |> List.filter_map (fun (addr : Unix.addr_info) ->
-             match addr.ai_addr with
-             | Unix.ADDR_UNIX _ -> None
-             | ADDR_INET (addr, port) -> Some (addr, port))
-      |> List.hd
-    in
-    let addr = `Tcp (Eio_unix.Net.Ipaddr.of_unix inet, port) in
-    let socket = Eio.Net.connect ~sw network addr in
-    let connection =
-      H2_eio.Client.create_connection ~sw ~error_handler:ignore socket
-    in
-
     let open Ocaml_protoc_plugin in
     let open Greeter.Mypackage in
     let encode, decode = Service.make_client_functions Greeter.sayHello in
-    let encoded_request =
-      HelloRequest.make ~name () |> encode |> Writer.contents
-    in
 
-    let f decoder =
-      match decoder with
-      | Some decoder -> (
-          Reader.create decoder |> decode |> function
-          | Ok v -> v
-          | Error e ->
-              failwith
-                (Printf.sprintf "Could not decode request: %s"
-                   (Result.show_error e)))
-      | None -> Greeter.SayHello.Response.make ()
+    let net =
+      Grpc_eio_net_client_h2.create_client ~sw ~net:network
+        "http://localhost:8080"
     in
 
     let result =
-      Grpc_eio.Client.call ~service:"mypackage.Greeter" ~rpc:"SayHello"
-        ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
-        ~handler:(Grpc_eio.Client.Rpc.unary encoded_request ~f)
-        ()
+      Grpc_client_eio.Client.unary ~sw ~net ~service:"mypackage.Greeter"
+        ~method_name:"SayHello"
+        ~encode:(fun x -> x |> encode |> Writer.contents)
+        ~decode:(fun x -> Reader.create x |> decode)
+        ~headers:(Grpc_client.make_request_headers `Proto)
+        (HelloRequest.make ~name ())
     in
-    Eio.Promise.await (H2_eio.Client.shutdown connection);
-    result
+    match result with
+    | Ok message -> Eio.traceln "%s" message
+    | Error (`Rpc (response, status)) ->
+        Eio.traceln "Error: %a, %a" H2.Status.pp_hum response.status
+          Grpc.Status.pp status
+    | Error (`Connection _err) -> Eio.traceln "Connection error"
+    | Error (`Decoding err) ->
+        Eio.traceln "Decoding error: %a" Ocaml_protoc_plugin.Result.pp_error err
   in
   Eio.Switch.run run
 
-let () =
-  match Eio_main.run main with
-  | Ok (message, status) ->
-      Eio.traceln "%s: %s" (Grpc.Status.show status) message
-  | Error err -> Eio.traceln "Error: %a" H2.Status.pp_hum err
+let () = Eio_main.run main

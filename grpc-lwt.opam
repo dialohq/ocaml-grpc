@@ -19,7 +19,7 @@ doc: "https://dialohq.github.io/ocaml-grpc"
 bug-reports: "https://github.com/dialohq/ocaml-grpc/issues"
 depends: [
   "dune" {>= "3.7"}
-  "grpc" {= version}
+  "grpc-server" {= version}
   "h2" {>= "0.9.0"}
   "lwt" {>= "5.3.0"}
   "stringext"

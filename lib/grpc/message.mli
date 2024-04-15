@@ -6,3 +6,8 @@ val extract : Buffer.t -> string option
 
 val extract_all : (string -> unit) -> Buffer.t -> unit
 (** [extract_all f b] extracts and calls [f] on all gRPC messages from [b]. *)
+
+type format = [ `Json | `Proto | `Other of string ]
+
+val format_to_content_type : format -> string
+(** [format_to_content_type f] returns the content type for [f]. *)

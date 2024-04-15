@@ -28,7 +28,7 @@
  (name grpc)
  (synopsis "A modular gRPC library")
  (description
-  "This library builds some of the signatures and implementations of gRPC functionality. This is used in the more specialised package `grpc-lwt` which has more machinery, however this library can also be used to do some bits yourself.")
+  "This library contains the implementation of (de)serialization of gRPC messages and statuses.")
  (tags
   (network rpc serialisation))
  (depends
@@ -36,11 +36,45 @@
    (>= 4.08))
   (bigstringaf
    (>= 0.9.1))
-  (h2
-   (>= 0.9.0))
   ppx_deriving
   (uri
    (>= 4.0.0))))
+
+(package
+ (name grpc-server)
+ (synopsis "Reusable logic for server side gRPC")
+ (description
+  "All modules are networking-layer and concurrency-layer agnostic.")
+ (tags
+  (network rpc serialisation))
+ (depends
+  (ocaml
+   (>= 4.08))
+  (grpc (= :version))))
+
+(package
+ (name grpc-client)
+ (synopsis "Reusable logic for client side gRPC")
+ (description
+  "All modules are networking-layer and concurrency-layer agnostic.")
+ (tags
+  (network rpc serialisation))
+ (depends
+  (ocaml
+   (>= 4.08))
+  (grpc (= :version))))
+
+(package
+ (name grpc-core-eio)
+ (synopsis "Shared logic for gRPC clients and servers based on eio.")
+ (description
+  "All modules are networking-layer agnostic.")
+ (tags
+  (network rpc serialisation))
+ (depends
+  (eio
+   (>= 0.12))
+  (grpc (= :version))))
 
 (package
  (name grpc-lwt)
@@ -50,7 +84,7 @@
  (tags
   (network rpc serialisation))
  (depends
-  (grpc
+  (grpc-server
    (= :version))
   (h2
    (>= 0.9.0))
@@ -70,7 +104,7 @@
    (>= 4.11))
   (async
    (>= v0.16))
-  (grpc
+  (grpc-server
    (= :version))
   (h2
    (>= 0.9.0))
@@ -79,18 +113,47 @@
   stringext))
 
 (package
- (name grpc-eio)
- (synopsis "An Eio implementation of gRPC")
+ (name grpc-server-eio)
+ (deprecated_package_names grpc-eio)
+ (synopsis "An Eio implementation of gRPC server")
  (description
   "Functionality for building gRPC services and rpcs with `eio`.")
  (depends
   (eio
    (>= 0.12))
-  (grpc
+  (grpc-server
+   (= :version))
+  stringext))
+
+(package
+ (name grpc-eio-net-server-h2)
+ (synopsis "An h2 implementation of gRPC networking layer for eio based servers.")
+ (depends
+  (grpc-server-eio
    (= :version))
   (h2
    (>= 0.9.0))
   stringext))
+
+(package
+ (name grpc-client-eio)
+ (synopsis "An Eio implementation of gRPC client")
+ (description
+  "Functionality for building gRPC services and rpcs with `eio`.")
+ (depends
+  (eio
+   (>= 0.12))
+  (grpc-client
+   (= :version))))
+
+(package
+ (name grpc-eio-net-client-h2)
+ (synopsis "An h2 implementation of gRPC networking layer for eio based clients.")
+ (depends
+  (grpc-client-eio
+   (= :version))
+  (h2
+   (>= 0.9.0))))
 
 (package
  (name grpc-examples)

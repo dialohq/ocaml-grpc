@@ -1,0 +1,4 @@
+(library
+ (name grpc_server)
+ (public_name grpc-server)
+ (libraries grpc))
