@@ -8,9 +8,12 @@
     };
     flake-parts.url = "github:hercules-ci/flake-parts";
     nix-filter.url = "github:numtide/nix-filter";
+    ocaml-overlay.url =
+      "github:nix-ocaml/nix-overlays/a6364bea92bb35b01a3a70eed9a5cdb1063e128e";
+    ocaml-overlay.inputs.nixpkgs.follows = "nixpkgs";
   };
 
-  outputs = inputs@{ flake-parts, nix-filter, ... }:
+  outputs = inputs@{ flake-parts, nix-filter, ocaml-overlay, ... }:
     flake-parts.lib.mkFlake { inherit inputs; } {
       systems =
         [ "x86_64-linux" "aarch64-linux" "x86_64-darwin" "aarch64-darwin" ];
@@ -19,14 +22,14 @@
 
       perSystem = { config, self', inputs', system, ... }:
         let
-          pkgs = (import inputs.nixpkgs {
+          pkgs = (((import inputs.nixpkgs {
             inherit system;
             config.allowUnfree = true;
-            overlays = [ ];
-          }).extend (self: super: {
+            overlays = [ ocaml-overlay.outputs.overlays ];
+          })).extend (import ./overlay.nix)).extend (self: super: {
             ocamlPackages = super.ocaml-ng.ocamlPackages_5_1;
           });
-          camlPkgs = pkgs.ocamlPackages;
+          camlPkgs = pkgs.ocaml-ng.ocamlPackages_5_1;
           bechamel-notty = camlPkgs.buildDunePackage {
             pname = "bechamel-notty";
             version = "0.5.0";
@@ -112,8 +115,8 @@
                 core_unix
                 ppx_deriving_yojson
                 cohttp-lwt-unix
-                h2-eio
-                h2-async
+                camlPkgs.h2-eio
+                camlPkgs.h2-async
                 tls-async
                 self'.packages.grpc
                 self'.packages.grpc-lwt
