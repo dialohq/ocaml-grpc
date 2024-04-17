@@ -68,7 +68,7 @@ let bidirectional_streaming (type headers response conn_error) ~sw
               }
             in
 
-            let () =
+            let res =
               f ~writer ~take:(fun () ->
                   match Eio.Stream.take reader with
                   | None -> None
@@ -85,7 +85,7 @@ let bidirectional_streaming (type headers response conn_error) ~sw
             | None -> (
                 let status = Eio.Promise.await grpc_status in
                 match Grpc.Status.code status with
-                | Grpc.Status.OK -> Ok ()
+                | Grpc.Status.OK -> Ok res
                 | _ -> Error (`Rpc (response, status))))
           else Error (`Rpc (response, Eio.Promise.await grpc_status))
       | Error e -> Error (`Connection e))

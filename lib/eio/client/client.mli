@@ -65,5 +65,5 @@ val bidirectional_streaming :
   decode:(string -> ('response, 'decoding_error) result) ->
   encode:('request -> string) ->
   headers:Grpc_client.request_headers ->
-  (writer:'request writer -> take:(unit -> 'response option) -> unit) ->
-  (unit, 'decoding_error, 'conn_error, 'net_response) rpc_result
+  (writer:'request writer -> take:(unit -> 'response option) -> 'a) ->
+  ('a, 'decoding_error, 'conn_error, 'net_response) rpc_result
