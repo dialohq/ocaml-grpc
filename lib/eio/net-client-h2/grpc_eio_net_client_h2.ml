@@ -84,21 +84,8 @@ module Make_net (Client : Client) :
 end
 
 module Expert = struct
-  (* TODO: Connection management *)
-  let create_client ~(net : Eio_unix.Net.t) ~sw ~scheme ~host ~port :
+  let create_with_socket ~sw ~(socket : _ Eio.Net.stream_socket) ~host ~scheme :
       (Headers.t, Response.t, connection_error) Grpc_client_eio.Net.t =
-    let inet, port =
-      Eio_unix.run_in_systhread (fun () ->
-          Unix.getaddrinfo host (string_of_int port)
-            [ Unix.(AI_FAMILY PF_INET) ])
-      |> List.filter_map (fun (addr : Unix.addr_info) ->
-             match addr.ai_addr with
-             | Unix.ADDR_UNIX _ -> None
-             | ADDR_INET (addr, port) -> Some (addr, port))
-      |> List.hd
-    in
-    let addr = `Tcp (Eio_unix.Net.Ipaddr.of_unix inet, port) in
-    let socket = Eio.Net.connect ~sw net addr in
     let connection, connection_resolve = Eio.Promise.create () in
     Eio.Fiber.fork_daemon ~sw (fun () ->
         Eio.Switch.run (fun sw' ->
@@ -116,6 +103,23 @@ module Expert = struct
       let host = host
       let scheme = scheme
     end))
+
+  (* TODO: Connection management *)
+  let create_with_address ~(net : Eio_unix.Net.t) ~sw ~scheme ~host ~port :
+      (Headers.t, Response.t, connection_error) Grpc_client_eio.Net.t =
+    let inet, port =
+      Eio_unix.run_in_systhread (fun () ->
+          Unix.getaddrinfo host (string_of_int port)
+            [ Unix.(AI_FAMILY PF_INET) ])
+      |> List.filter_map (fun (addr : Unix.addr_info) ->
+             match addr.ai_addr with
+             | Unix.ADDR_UNIX _ -> None
+             | ADDR_INET (addr, port) -> Some (addr, port))
+      |> List.hd
+    in
+    let addr = `Tcp (Eio_unix.Net.Ipaddr.of_unix inet, port) in
+    let socket = Eio.Net.connect ~sw net addr in
+    create_with_socket ~socket ~host ~scheme ~sw
 end
 
 let create_client ~net ~sw addr =
@@ -135,4 +139,4 @@ let create_client ~net ~sw addr =
            | "https" -> 443
            | _ -> failwith "Don't know default port for this scheme")
   in
-  Expert.create_client ~net ~sw ~scheme ~host ~port
+  Expert.create_with_address ~net ~sw ~scheme ~host ~port
