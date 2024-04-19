@@ -1,6 +1,6 @@
-open Grpc_eio
 open Routeguide.Route_guide.Routeguide
 open Ocaml_protoc_plugin
+module Server = Grpc_server_eio
 
 (* Derived data types to make reading JSON data easier. *)
 type location = { latitude : int; longitude : int } [@@deriving yojson]
@@ -98,15 +98,17 @@ let get_feature (buffer : string) =
     (feature |> Option.map Feature.show |> Option.value ~default:"Missing");
   match feature with
   | Some feature ->
-      (Grpc.Status.(v OK), Some (feature |> encode |> Writer.contents))
+      ( Grpc_server.trailers_with_code Grpc.Status.OK,
+        Some (feature |> encode |> Writer.contents) )
   | None ->
       (* No feature was found, return an unnamed feature. *)
-      ( Grpc.Status.(v OK),
+      ( Grpc_server.trailers_with_code Grpc.Status.OK,
         Some (Feature.make ~location:point () |> encode |> Writer.contents) )
 
 (* $MDX part-end *)
 (* $MDX part-begin=server-list-features *)
 let list_features (buffer : string) (f : string -> unit) =
+  Eio.traceln "ListFeatures";
   (* Decode request. *)
   let decode, encode = Service.make_service_functions RouteGuide.listFeatures in
   let rectangle =
@@ -126,13 +128,12 @@ let list_features (buffer : string) (f : string -> unit) =
         else ())
       !features
   in
-  Grpc.Status.(v OK)
+  Grpc_server.trailers_with_code OK
 
 (* $MDX part-end *)
 (* $MDX part-begin=server-record-route *)
-let record_route (clock : _ Eio.Time.clock) (stream : string Seq.t) =
+let record_route (clock : _ Eio.Time.clock) stream =
   Eio.traceln "RecordRoute";
-
   let last_point = ref None in
   let start = Eio.Time.now clock in
   let decode, encode = Service.make_service_functions RouteGuide.recordRoute in
@@ -170,7 +171,8 @@ let record_route (clock : _ Eio.Time.clock) (stream : string Seq.t) =
         in
         last_point := Some point;
         (point_count, feature_count, distance))
-      (0, 0, 0) stream
+      (0, 0, 0)
+      (Grpc_core_eio.Stream.to_seq stream)
   in
   let stop = Eio.Time.now clock in
   let elapsed_time = int_of_float (stop -. start) in
@@ -178,12 +180,12 @@ let record_route (clock : _ Eio.Time.clock) (stream : string Seq.t) =
     RouteSummary.make ~point_count ~feature_count ~distance ~elapsed_time ()
   in
   Eio.traceln "RecordRoute exit\n";
-  (Grpc.Status.(v OK), Some (encode summary |> Writer.contents))
+  (Grpc_server.trailers_with_code OK, Some (encode summary |> Writer.contents))
 
 (* $MDX part-end *)
 (* $MDX part-begin=server-route-chat *)
-let route_chat (stream : string Seq.t) (f : string -> unit) =
-  Printf.printf "RouteChat\n";
+let route_chat stream (write : string -> unit) =
+  Printf.printf "RouteChat\n%!";
 
   let decode, encode = Service.make_service_functions RouteGuide.routeChat in
   Seq.iter
@@ -196,66 +198,54 @@ let route_chat (stream : string Seq.t) (f : string -> unit) =
               (Printf.sprintf "Could not decode request: %s"
                  (Result.show_error e))
       in
-      Printf.printf "  ==> Note = {%s}\n" (RouteNote.show note);
-      encode note |> Writer.contents |> f)
-    stream;
+      Printf.printf "  ==> Note = {%s}\n%!" (RouteNote.show note);
+      encode note |> Writer.contents |> write)
+    (Grpc_core_eio.Stream.to_seq stream);
 
-  Printf.printf "RouteChat exit\n";
-  Grpc.Status.(v OK)
+  Printf.printf "RouteChat exit\n%!";
+  Grpc_server.trailers_with_code OK
 
 (* $MDX part-end *)
 (* $MDX part-begin=server-grpc *)
+
+let mk_handler f =
+  { Grpc_server_eio.Rpc.headers = (fun _ -> Grpc_server.headers `Proto); f }
+
 let route_guide_service clock =
-  Server.Service.(
-    v ()
-    |> add_rpc ~name:"GetFeature" ~rpc:(Unary get_feature)
-    |> add_rpc ~name:"ListFeatures" ~rpc:(Server_streaming list_features)
-    |> add_rpc ~name:"RecordRoute" ~rpc:(Client_streaming (record_route clock))
-    |> add_rpc ~name:"RouteChat" ~rpc:(Bidirectional_streaming route_chat)
-    |> handle_request)
+  let add_rpc = Server.Service.add_rpc in
+  let open Server.Rpc in
+  Server.Service.v ()
+  |> add_rpc ~name:"GetFeature" ~rpc:(mk_handler (unary get_feature))
+  |> add_rpc ~name:"ListFeatures"
+       ~rpc:(mk_handler (server_streaming list_features))
+  |> add_rpc ~name:"RecordRoute"
+       ~rpc:(mk_handler (client_streaming (record_route clock)))
+  |> add_rpc ~name:"RouteChat" ~rpc:(mk_handler route_chat)
 
 let server clock =
   Server.(
-    v ()
+    make ()
     |> add_service ~name:"routeguide.RouteGuide"
          ~service:(route_guide_service clock))
 
 (* $MDX part-end *)
-let connection_handler server ~sw =
-  let error_handler client_address ?request:_ _error start_response =
-    Eio.traceln "Error in request from:%a" Eio.Net.Sockaddr.pp client_address;
-    let response_body = start_response H2.Headers.empty in
-    H2.Body.Writer.write_string response_body
-      "There was an error handling your request.\n";
-    H2.Body.Writer.close response_body
-  in
-  let request_handler _client_address request_descriptor =
-    Eio.Fiber.fork ~sw (fun () ->
-        Grpc_eio.Server.handle_request server request_descriptor)
-  in
-  fun socket addr ->
-    H2_eio.Server.create_connection_handler ?config:None ~request_handler
-      ~error_handler addr socket ~sw
 
 (* $MDX part-begin=server-main *)
-let serve server env =
+let serve server env : unit =
   let port = 8080 in
   let net = Eio.Stdenv.net env in
-  let clock = Eio.Stdenv.clock env in
   let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
   Eio.Switch.run @@ fun sw ->
-  let handler = connection_handler ~sw (server clock) in
   let server_socket =
     Eio.Net.listen net ~sw ~reuse_addr:true ~backlog:10 addr
   in
-  let rec listen () =
-    Eio.Net.accept_fork ~sw server_socket
-      ~on_error:(fun exn -> Eio.traceln "%s" (Printexc.to_string exn))
-      handler;
-    listen ()
+  let connection_handler client_addr socket =
+    Eio.Switch.run (fun sw ->
+        Grpc_eio_net_server_h2.connection_handler ~sw server client_addr socket)
   in
-  Eio.traceln "Listening on port %i for grpc requests\n" port;
-  listen ()
+  Eio.Net.run_server
+    ~on_error:(fun exn -> Eio.traceln "%s" (Printexc.to_string exn))
+    server_socket connection_handler
 
 let () =
   let path =
@@ -266,5 +256,5 @@ let () =
   (* Load features. *)
   features := load path;
 
-  Eio_main.run (serve server)
+  Eio_main.run (fun env -> serve (server (Eio.Stdenv.clock env)) env)
 (* $MDX part-end *)

@@ -3,4 +3,4 @@
  (public_name grpc)
  (preprocess
   (pps ppx_deriving.show))
- (libraries h2 bigstringaf uri))
+ (libraries bigstringaf uri))
