@@ -44,8 +44,8 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
   match response.status with
   | `OK ->
       let+ status =
-        match H2.Headers.get headers "grpc-status" with
-        | Some _ -> Lwt.return (Grpc.Status.extract_status headers)
+        match H2.Headers.get response.headers "grpc-status" with
+        | Some _ -> Lwt.return (Grpc.Status.extract_status response.headers)
         | None -> status
       in
       Ok (handler_res, status)
