@@ -1,3 +1,6 @@
+## Unreleased
+- Fix bug in Grpc-lwt-client to fetch status code from response header ([#58](https://github.com/dialohq/ocaml-grpc/pull/58)) ([acerone85](https://github.com/acerone85)) review by ([@quernd](https://github.com/quernd))
+
 ## 0.2.0 2023-10-23
 
 - Report HTTP2 error status when it's not OK
