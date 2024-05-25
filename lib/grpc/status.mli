@@ -29,15 +29,16 @@ val code_of_int : int -> code option
 type t [@@deriving show]
 (** [t] represents a full gRPC status, this includes code and optional message. *)
 
-val v : ?message:string -> code -> t
-(** [v ~message code] creates a new status with the given [code] and [message]. *)
+val v : ?error_message:string -> code -> t
+(** [v ~message code] creates a new status with the given [code] and [message].
+    It is an error to construct an OK status with non-empty error_message *)
 
 val code : t -> code
 (** [code t] returns the code associated with [t]. *)
 
-val message : t -> string option
+val error_message : t -> string option
 (** [message t] returns the message associated with [t], if there is one. *)
 
 val extract_status : get_header:(string -> string option) -> t
-(** [extract_status ~get_header] returns the status embedded in the headers, or a default
-    when the status is invalid or missing. *)
+(** [extract_status ~get_header] returns the status embedded in the headers, or
+    a default when the status is invalid or missing. *)
