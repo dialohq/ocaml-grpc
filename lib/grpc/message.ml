@@ -12,10 +12,15 @@ let make content =
   Bytes.blit_string content 0 payload 5 content_len;
   Bytes.to_string payload
 
+let get_u32_be ~pos t =
+  let high = Bytes.get_uint16_be t pos in
+  let low = Bytes.get_uint16_be t (pos + 2) in
+  (high lsl 16) lor low
+
 (** [extract_message buf] extracts the grpc message starting in [buf] in the
     buffer if there is one *)
-let extract_message buf =
-  if Buffer.length buf >= 5 then (
+let extract_message_pos ~start buf =
+  if Bytes.length buf >= 5 + start then (
     let compressed =
       (* A Compressed-Flag value of 1 indicates that the binary octet
          sequence of Message is compressed using the mechanism declared by
@@ -25,23 +30,22 @@ let extract_message buf =
          new context for each message in the stream. If the Message-Encoding
          header is omitted then the Compressed-Flag must be 0. *)
       (* encoded as 1 byte unsigned integer *)
-      Buffer.get_u8 buf ~pos:0 == 1
+      Bytes.get_uint8 buf start == 1
     and length =
       (* encoded as 4 byte unsigned integer (big endian) *)
-      Buffer.get_u32_be buf ~pos:1
+      get_u32_be buf ~pos:(start + 1)
     in
     if compressed then failwith "Compressed flag set but not supported";
-    if Buffer.length buf - 5 >= length then
-      Some (Buffer.sub_string buf ~start:5 ~length)
-    else None)
+    if Bytes.length buf - 5 >= length then Some (start + 5, length) else None)
   else None
 
 (** [get_message_and_shift buf] tries to extract the first grpc message from
     [buf] and if successful shifts these bytes out of the buffer *)
 let get_message_and_shift buf =
-  match extract_message buf with
+  match extract_message_pos ~start:0 (Buffer.internal_buffer buf) with
   | None -> None
-  | Some message ->
+  | Some (start, length) ->
+      let message = Buffer.sub_string ~start ~length buf in
       let mlen = String.length message in
       Buffer.shift_left buf ~by:(5 + mlen);
       Some message

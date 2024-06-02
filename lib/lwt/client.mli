@@ -9,9 +9,9 @@ module Rpc : sig
 
   val client_streaming :
     f:((string option -> unit) -> string option Lwt.t -> 'a Lwt.t) -> 'a handler
-  (** [client_streaming ~f write read] sets up the sending and receiving
-      logic using [write] and [read], then calls [f] with a push function for
-      requests and promise for the response. *)
+  (** [client_streaming ~f write read] sets up the sending and receiving logic
+      using [write] and [read], then calls [f] with a push function for requests
+      and promise for the response. *)
 
   val server_streaming :
     f:(string Lwt_stream.t -> 'a Lwt.t) -> string -> 'a handler
@@ -20,9 +20,9 @@ module Rpc : sig
       stream of responses. *)
 
   val unary : f:(string option Lwt.t -> 'a Lwt.t) -> string -> 'a handler
-  (** [unary ~f enc write read] sets up the sending and receiving
-      logic using [write] and [read], then sends [enc] and calls [f] with a
-      promise for the response. *)
+  (** [unary ~f enc write read] sets up the sending and receiving logic using
+      [write] and [read], then sends [enc] and calls [f] with a promise for the
+      response. *)
 end
 
 type response_handler = H2.Client_connection.response_handler
@@ -44,6 +44,6 @@ val call :
   ?headers:H2.Headers.t ->
   unit ->
   ('a * Grpc.Status.t, H2.Status.t) result Lwt.t
-(** [call ~service ~rpc ~handler ~do_request ()] calls the rpc endpoint given
-      by [service] and [rpc] using the [do_request] function. The [handler] is
-      called when this request is set up to send and receive data. *)
+(** [call ~service ~rpc ~handler ~do_request ()] calls the rpc endpoint given by
+    [service] and [rpc] using the [do_request] function. The [handler] is called
+    when this request is set up to send and receive data. *)

@@ -59,9 +59,11 @@ let code_of_int = function
 
 type t = { code : code; message : string option } [@@deriving show]
 
-let v ?message code = { code; message }
+let make ?error_message code = { code; message = error_message }
 let code t = t.code
-let message t = Option.map (fun message -> Uri.pct_encode message) t.message
+
+let error_message t =
+  Option.map (fun message -> Uri.pct_encode message) t.message
 
 let extract_status ~get_header =
   let code, message =
@@ -83,4 +85,4 @@ let extract_status ~get_header =
                 (Unknown, Some msg)
             | Some c -> (c, get_header "grpc-message")))
   in
-  v ?message code
+  make ?error_message:message code

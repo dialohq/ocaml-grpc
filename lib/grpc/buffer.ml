@@ -33,3 +33,5 @@ let get_u32_be ~pos t =
   let high = Bytes.get_uint16_be t.contents pos in
   let low = Bytes.get_uint16_be t.contents (pos + 2) in
   (high lsl 16) lor low
+
+let internal_buffer t = t.contents

@@ -1,15 +1,3 @@
-module Service : sig
-  type 'handler t
-  (** [t] represents a service. *)
-
-  val v : unit -> 'handler t
-  (** [v ()] creates a new service. *)
-
-  val add_rpc : name:string -> rpc:'handler -> 'handler t -> 'handler t
-  (** [add_rpc ~name ~rpc t] adds [rpc] to [t] and ensures that it is routable
-      via [name]. *)
-end
-
 type error =
   [ `Not_found of
     [ `Service_not_found
@@ -20,34 +8,15 @@ type error =
   | `Not_acceptable
   | `Bad_request ]
 
-type 'handler t
-(** [t] represents a server and its associated services and routing information. *)
+type parsed_request = { service : string; meth : string }
 
-val v : unit -> 'handler t
-(** [v ()] creates a new server. *)
-
-val add_service :
-  name:string -> service:'handler Service.t -> 'handler t -> 'handler t
-(** [add_service ~name ~service t] adds [service] to [t] and ensures that it is
-    routable via [name]. *)
-
-val handle_request :
-  'handler t ->
+val parse_request :
   is_post_request:bool ->
   get_header:(string -> string option) ->
   path:string ->
-  ('handler, error) result
+  (parsed_request, error) result
 (** [handle_request t handler] handles a request using [handler] and the
     services registered in [t]. *)
-
-(** Expert functionality. *)
-module Expert : sig
-  type 'handler rpc_handler = string -> ('handler, error) result
-
-  val add_service : name:string -> service:'a rpc_handler -> 'a t -> 'a t
-  (** [add_rpc ~name ~rpc t] adds [service] to [t] and ensures that it is
-      routable via [name]. *)
-end
 
 type headers = { content_type : string; extra : (string * string) list }
 
@@ -61,4 +30,3 @@ type trailers = {
 }
 
 val make_trailers : ?extra:(string * string) list -> Grpc.Status.t -> trailers
-val trailers_with_code : Grpc.Status.code -> trailers

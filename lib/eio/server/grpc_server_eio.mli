@@ -1,35 +1,32 @@
-module Net = Net
+module Io = Io
+
+type extra_trailers = (string * string) list
 
 module Rpc : sig
-  type stream = Grpc_core_eio.Stream.t
-
-  type 'request handler = {
-    headers : 'request -> Grpc_server.headers;
-    f : stream -> (string -> unit) -> Grpc_server.trailers;
+  type ('net_req, 'req, 'res) handler = {
+    headers : 'net_req -> Grpc_server.headers;
+    f : 'req Seq.t -> ('res -> unit) -> extra_trailers;
   }
 
-  type rpc_impl = stream -> (string -> unit) -> Grpc_server.trailers
+  type ('req, 'res) rpc_impl = 'req Seq.t -> ('res -> unit) -> extra_trailers
   (** [handler] represents the most general signature of a gRPC handler. *)
 
-  type unary = string -> Grpc_server.trailers * string option
-  type client_streaming = stream -> Grpc_server.trailers * string option
-  type server_streaming = string -> (string -> unit) -> Grpc_server.trailers
-  type bidirectional_streaming = rpc_impl
+  type ('req, 'res) unary = 'req -> 'res * extra_trailers
+  type ('req, 'res) client_streaming = 'req Seq.t -> 'res * extra_trailers
+  type ('req, 'res) server_streaming = 'req -> ('res -> unit) -> extra_trailers
+  type ('req, 'res) bidirectional_streaming = ('req, 'res) rpc_impl
 
-  val unary : unary -> rpc_impl
-  val client_streaming : client_streaming -> rpc_impl
-  val server_streaming : server_streaming -> rpc_impl
+  val unary : ('req, 'res) unary -> ('req, 'res) rpc_impl
+  val client_streaming : ('req, 'res) client_streaming -> ('req, 'res) rpc_impl
+  val server_streaming : ('req, 'res) server_streaming -> ('req, 'res) rpc_impl
 end
 
-module Service = Grpc_server.Service
+type ('net_request, 'req, 'resp) t =
+  service:string -> meth:string -> ('net_request, 'req, 'resp) Rpc.handler
 
-type 'request t = 'request Rpc.handler Grpc_server.t
-
-val make : unit -> 'a t
-
-val add_service :
-  name:string -> service:'a Rpc.handler Service.t -> 'a t -> 'a t
-
-(* TODO: add context *)
 val handle_request :
-  net:'request Net.t -> 'request Rpc.handler Grpc_server.t -> 'request -> unit
+  error_handler:(exn -> extra_trailers) ->
+  io:('net_request, 'req, 'resp) Io.t ->
+  ('net_request, 'req, 'resp) t ->
+  'net_request ->
+  unit

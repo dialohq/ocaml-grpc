@@ -1,5 +1,8 @@
-module Net = struct
-  module Request = struct
+module Io = struct
+  type request = Pbrt.Decoder.t
+  type response = Pbrt.Encoder.t -> unit
+
+  module Net_request = struct
     type t = Eio.Net.Sockaddr.stream * H2.Reqd.t * H2.Request.t
 
     let is_post (_, _, req) =
@@ -8,10 +11,14 @@ module Net = struct
     let target (_, _, req) = req.H2.Request.target
     let get_header (_, _, req) name = H2.Headers.get req.H2.Request.headers name
 
-    let read_body (_, reqd, _) =
+    let body (_, reqd, _) =
       let body = H2.Reqd.request_body reqd in
-      Grpc_core_eio.Stream.make
-        ~schedule_read_raw:(H2.Body.Reader.schedule_read body)
+      (* TODO: Fix mej *)
+      H2.Body.Reader.schedule_read
+        ~on_eof:(fun () -> ())
+        ~on_read:(fun _ ~off:_ ~len:_ -> ())
+        body;
+      fun () -> Seq.Nil
   end
 
   let write_trailers reqd (trailers : Grpc_server.trailers) =
@@ -39,13 +46,17 @@ module Net = struct
                 :: headers.extra))
            `OK)
     in
+    let encoder = Pbrt.Encoder.create () in
     let close () = H2.Body.Writer.close body_writer in
-    let on_msg input =
-
-      H2.Body.Writer.write_string body_writer input
+    let write input =
+      Pbrt.Encoder.clear encoder;
+      input encoder;
+      let data = Pbrt.Encoder.to_bytes encoder |> Bytes.unsafe_to_string in
+      H2.Body.Writer.write_string body_writer data
     in
     let write_trailers = write_trailers reqd in
-    { Grpc_server_eio.Net.close; on_msg; write_trailers }
+    let is_closed () = H2.Body.Writer.is_closed body_writer in
+    { Grpc_server_eio.Io.close; write; write_trailers; is_closed }
 
   let respond_error (_, reqd, _) (error : Grpc_server.error) =
     let respond_with code =
@@ -58,18 +69,21 @@ module Net = struct
     | `Bad_request -> respond_with `Bad_request
 end
 
-include Net
+include Io
 
-let net =
-  (module Net : Grpc_server_eio.Net.S with type Request.t = Net.Request.t)
+let io =
+  (module Io : Grpc_server_eio.Io.S
+    with type Net_request.t = Io.Net_request.t
+     and type request = Pbrt.Decoder.t
+     and type response = Pbrt.Encoder.t -> unit)
 
-let connection_handler ~sw ?config ?error_handler server :
-    'a Eio.Net.connection_handler =
+let connection_handler ~sw ?config ?h2_error_handler ~grpc_error_handler server
+    : 'a Eio.Net.connection_handler =
  fun socket addr ->
   let error_handler client_address ?request error respond =
     (* Report internal error via headers *)
     let () =
-      match error_handler with
+      match h2_error_handler with
       | Some f -> f client_address ?request error
       | None -> ()
     in
@@ -86,6 +100,7 @@ let connection_handler ~sw ?config ?error_handler server :
   H2_eio.Server.create_connection_handler ?config
     ~request_handler:(fun client_addr reqd ->
       Eio.Fiber.fork ~sw (fun () ->
-          Grpc_server_eio.handle_request ~net server
+          Grpc_server_eio.handle_request ~io ~error_handler:grpc_error_handler
+            server
             (client_addr, reqd, H2.Reqd.request reqd)))
     ~error_handler addr socket ~sw

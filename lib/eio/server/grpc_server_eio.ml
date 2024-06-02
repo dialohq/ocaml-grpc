@@ -1,72 +1,89 @@
-module Net = Net
+module Io = Io
+
+type extra_trailers = (string * string) list
+
+exception Server_error of Grpc.Status.t * (string * string) list
 
 module Rpc = struct
-  type stream = Grpc_core_eio.Stream.t
-  type unary = string -> Grpc_server.trailers * string option
-  type client_streaming = stream -> Grpc_server.trailers * string option
-  type server_streaming = string -> (string -> unit) -> Grpc_server.trailers
+  type ('request, 'response) unary =
+    'request -> 'response * (string * string) list
 
-  type bidirectional_streaming =
-    stream -> (string -> unit) -> Grpc_server.trailers
+  type ('req, 'res) client_streaming =
+    'req Seq.t -> 'res * (string * string) list
 
-  type rpc_impl = stream -> (string -> unit) -> Grpc_server.trailers
+  type ('req, 'res) server_streaming =
+    'req -> ('res -> unit) -> (string * string) list
 
-  type 'request handler = {
-    headers : 'request -> Grpc_server.headers;
-    f : stream -> (string -> unit) -> Grpc_server.trailers;
+  type ('req, 'res) bidirectional_streaming =
+    'req Seq.t -> ('res -> unit) -> (string * string) list
+
+  type ('req, 'res) rpc_impl =
+    'req Seq.t -> ('res -> unit) -> (string * string) list
+
+  type ('net_request, 'req, 'res) handler = {
+    headers : 'net_request -> Grpc_server.headers;
+    f : 'req Seq.t -> ('res -> unit) -> (string * string) list;
   }
 
-  module Stream = Grpc_core_eio.Stream
-
-  let unary (unary_handler : unary) =
+  let unary (unary_handler : _ unary) : _ rpc_impl =
    fun request_stream respond ->
-    match Eio.Stream.take request_stream with
-    | Some request ->
-        let status, response = unary_handler request in
-        Option.iter respond response;
-        status
-    | None -> Grpc_server.make_trailers Grpc.Status.(v OK)
+    match request_stream () with
+    | Seq.Cons (request, _) ->
+        let response, extra = unary_handler request in
+        respond response;
+        extra
+        (* TODO: Look up which error this is *)
+    | Seq.Nil -> raise (Server_error (Grpc.Status.make Not_found, []))
 
-  let client_streaming (client_streaming_handler : client_streaming) =
+  let client_streaming (client_streaming_handler : _ client_streaming) :
+      _ rpc_impl =
    fun request_stream respond ->
-    let status, response = client_streaming_handler request_stream in
-    Option.iter respond response;
-    status
+    let response, extra = client_streaming_handler request_stream in
+    respond response;
+    extra
 
-  let server_streaming (server_streaming_handler : server_streaming) =
+  let server_streaming (server_streaming_handler : _ server_streaming) :
+      _ rpc_impl =
    fun requests respond ->
-    match Eio.Stream.take requests with
-    | Some request -> server_streaming_handler request respond
-    | None -> Grpc_server.make_trailers Grpc.Status.(v OK)
+    match requests () with
+    | Seq.Cons (request, _) -> server_streaming_handler request respond
+    | Seq.Nil -> raise (Server_error (Grpc.Status.make Not_found, []))
+  (* TODO: Look up which error this is *)
 end
 
-module Service = Grpc_server.Service
 module G = Grpc_server
 
-type 'request t = 'request Rpc.handler Grpc_server.t
+type ('net_request, 'req, 'resp) t =
+  service:string -> meth:string -> ('net_request, 'req, 'resp) Rpc.handler
 
-let make = G.v
-let add_service = G.add_service
-
-type 'request net = (module Net.S with type Request.t = 'request)
-
-let handle_request (type request) ~(net : request net) server request =
-  let module Net' = (val net) in
+let handle_request ~error_handler (type net_request req resp)
+    ~(io : (net_request, req, resp) Io.t) server request =
+  let module Io' = (val io) in
   match
-    G.handle_request server
-      ~is_post_request:(Net'.Request.is_post request)
-      ~get_header:(fun header -> Net'.Request.get_header request header)
-      ~path:(Net'.Request.target request)
+    G.parse_request
+      ~is_post_request:(Io'.Net_request.is_post request)
+      ~get_header:(fun header -> Io'.Net_request.get_header request header)
+      ~path:(Io'.Net_request.target request)
   with
-  | Ok handler ->
-      let request_stream = Net'.Request.read_body request in
-      let { Net.on_msg; write_trailers; close } =
+  | Ok { service; meth } -> (
+      let handler = server ~service ~meth in
+      let request_stream = Io'.Net_request.body request in
+      let { Io.write; write_trailers; close; is_closed } =
         let headers = handler.Rpc.headers request in
-        Net'.respond_streaming ~headers request
+        Io'.respond_streaming ~headers request
       in
-      let trailers =
-        handler.f request_stream (fun input -> on_msg (Grpc.Message.make input))
-      in
-      write_trailers trailers;
-      close ()
-  | Error e -> Net'.respond_error request e
+      try
+        let extra = handler.f request_stream write in
+        write_trailers (Grpc_server.make_trailers ~extra (Grpc.Status.make OK))
+      with
+      | Server_error (status, extra) ->
+          if not (is_closed ()) then (
+            write_trailers (Grpc_server.make_trailers ~extra status);
+            close ())
+      | exn ->
+          let extra = error_handler exn in
+          if not (is_closed ()) then (
+            write_trailers
+              (Grpc_server.make_trailers ~extra (Grpc.Status.make Internal));
+            close ()))
+  | Error e -> Io'.respond_error request e

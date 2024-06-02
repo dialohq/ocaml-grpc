@@ -78,6 +78,7 @@
               nixfmt
               camlPkgs.ocaml-lsp
               camlPkgs.ocamlformat
+              camlPkgs.ocaml-protoc
             ];
           };
 

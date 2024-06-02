@@ -1,4 +1,0 @@
-(library
- (name grpc_core_eio)
- (public_name grpc-core-eio)
- (libraries grpc eio))

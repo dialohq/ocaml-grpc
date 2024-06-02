@@ -19,13 +19,18 @@ val copy_from_bigstringaf :
     end of the buffer. *)
 
 val sub_string : start:int -> length:int -> t -> string
-(** [sub_string ~start ~length t] returns a string containing the data in the range \[start, start+length). *)
+(** [sub_string ~start ~length t] returns a string containing the data in the
+    range \[start, start+length). *)
 
 val get_u8 : pos:int -> t -> int
 (** [get_u8 ~pos t] returns the unsigned 8 bit integer at [pos] in [t]. *)
 
 val get_u32_be : pos:int -> t -> int
-(** [get_u32_be ~pos t] returns the unsigned 32 bit big endian integer at [pos] in [t]. *)
+(** [get_u32_be ~pos t] returns the unsigned 32 bit big endian integer at [pos]
+    in [t]. *)
 
 val shift_left : by:int -> t -> unit
 (** [shift_left ~by t] shifts [t] left by [by] positions, discarding the data. *)
+
+val internal_buffer : t -> Bytes.t
+(** [internal_buffer t] returns the internal buffer. *)

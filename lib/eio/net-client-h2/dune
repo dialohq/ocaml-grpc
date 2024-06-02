@@ -1,4 +1,0 @@
-(library
- (name grpc_eio_net_client_h2)
- (public_name grpc-eio-net-client-h2)
- (libraries grpc-client-eio h2-eio))

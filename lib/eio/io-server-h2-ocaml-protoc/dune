@@ -1,0 +1,4 @@
+(library
+ (name io_server_h2_ocaml_protoc)
+ (public_name grpc-eio-net-server-h2)
+ (libraries grpc-server-eio h2-eio pbrt))

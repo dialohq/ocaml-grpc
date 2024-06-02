@@ -78,7 +78,7 @@ let call (type headers net_response request response stream_error conn_error)
               (match Eio.Promise.await recv_net with
               | Error conn_error ->
                   Eio.Promise.resolve status_notify
-                    (Grpc.Status.v ~error_message:"Connection error"
+                    (Grpc.Status.make ~error_message:"Connection error"
                        Grpc.Status.Unknown);
                   Error conn_error
               | Ok { response; next; trailers } ->

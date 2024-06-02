@@ -29,7 +29,7 @@ val code_of_int : int -> code option
 type t [@@deriving show]
 (** [t] represents a full gRPC status, this includes code and optional message. *)
 
-val v : ?error_message:string -> code -> t
+val make : ?error_message:string -> code -> t
 (** [v ~message code] creates a new status with the given [code] and [message].
     It is an error to construct an OK status with non-empty error_message *)
 
