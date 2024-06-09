@@ -3,7 +3,7 @@
  (package grpc-examples)
  (preprocess
   (pps ppx_deriving.show ppx_deriving.eq))
- (libraries ocaml-protoc-plugin))
+ (libraries pbrt))
 
 (rule
  (targets route_guide.ml)
@@ -11,8 +11,4 @@
   (:proto route_guide.proto))
  (action
   (run
-   protoc
-   -I
-   .
-   "--ocaml_out=annot=[@@deriving show { with_path = false }, eq]:."
-   %{proto})))
+   ocaml-protoc --ocaml_all_types_ppx "deriving show" --int32_type int_t --int64_type int_t --binary --ml_out ./ %{proto})))

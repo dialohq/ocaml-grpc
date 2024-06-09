@@ -1,0 +1,6 @@
+(library
+ (name grpc_eio_core)
+ (public_name grpc-eio-core)
+ (libraries eio eio.mock)
+ (preprocess
+   (pps ppx_expect)))

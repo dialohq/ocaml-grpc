@@ -1,3 +1,6 @@
+val fill_header : length:int -> Bytes.t -> unit
+(** [fill_header ~length b] fills the header of a gRPC message in [b]. *)
+
 val make : string -> string
 (** [make s] encodes a string as a gRPC message. *)
 

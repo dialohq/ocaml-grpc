@@ -21,17 +21,17 @@ module Net_response = struct
 end
 
 type connection_error = H2.Client_connection.error
+type stream_error = [ connection_error | `Unexpected_eof ]
 
 type t =
   ( H2.Headers.t,
     H2.Response.t,
     Pbrt.Encoder.t -> unit,
-    Pbrt.Decoder.t,
-    H2.Client_connection.error,
+    Pbrt.Decoder.t Grpc_eio_core.Body_reader.consumer,
+    stream_error,
     H2.Client_connection.error )
   Grpc_client_eio.Io.t
 
-type stream_error = connection_error
 type exn += Write_after_error
 
 module Growing_buffer = Grpc.Buffer
@@ -44,7 +44,7 @@ module Make_net (Client : Client) :
      and type Headers.t = H2.Headers.t
      and type connection_error = connection_error
      and type request = Pbrt.Encoder.t -> unit
-     and type response = Pbrt.Decoder.t
+     and type response = Pbrt.Decoder.t Grpc_eio_core.Body_reader.consumer
      and type stream_error = stream_error = struct
   module Net_response = Net_response
   module Headers = Headers
@@ -52,7 +52,7 @@ module Make_net (Client : Client) :
   type nonrec connection_error = connection_error
   type nonrec stream_error = stream_error
   type request = Pbrt.Encoder.t -> unit
-  type response = Pbrt.Decoder.t
+  type response = Pbrt.Decoder.t Grpc_eio_core.Body_reader.consumer
 
   let send_request ~(headers : Grpc_client.request_headers) target =
     (* We are flushing headers immediately but potentially for the
@@ -76,14 +76,16 @@ module Make_net (Client : Client) :
     let error_handler =
       ref (fun error -> Eio.Promise.resolve_error result_u error)
     in
-    let buffer = Growing_buffer.v () in
+    (* Allocate once, use a pool of these *)
     let errored = ref false in
+    (*
     let report_net_error resolver trailers_resolver err =
       errored := true;
       Eio.Promise.resolve resolver
         (Grpc_client_eio.Io.Err (err :> stream_error));
       Eio.Promise.resolve trailers_resolver H2.Headers.empty
     in
+    *)
     let response_handler response reader =
       let trailers, trailers_u = Eio.Promise.create () in
       let () =
@@ -91,53 +93,30 @@ module Make_net (Client : Client) :
           fun trailers -> Eio.Promise.resolve trailers_u trailers
       in
 
-      let drain_buffer () =
-        if Growing_buffer.length buffer = 0 then Grpc_client_eio.Io.Done
-        else
-          let inner = Growing_buffer.internal_buffer buffer in
-          let rec drain_seq start =
-            match Grpc.Message.extract_message_pos ~start inner with
-            | Some (start, length) ->
-                let decoder = Pbrt.Decoder.of_subbytes inner start length in
-                Grpc_client_eio.Io.Next
-                  (decoder, fun () -> drain_seq (start + length))
-            | None -> Grpc_client_eio.Io.Done
-          in
-          drain_seq 0
+      let next =
+        (* FIXME: connection error handling
+
+                Eio.Switch.run (fun sw ->
+                    Eio.Fiber.fork_daemon ~sw (fun () ->
+                        report_net_error next_item_u trailers_u
+                          (Eio.Promise.await Client.connection_error);
+                        `Stop_daemon);
+                    Eio.Promise.await next_item |> ignore));
+                    *)
+        let _ = Client.connection_error in
+        (fun () ->
+          Grpc_eio_core.Body_reader.read_next
+            (H2.Body.Reader.schedule_read reader))
+        |> Grpc_eio_core.Recv_seq.map
+             (fun { Grpc_eio_core.Body_reader.consume } ->
+               {
+                 Grpc_eio_core.Body_reader.consume =
+                   (fun f ->
+                     consume (fun { Grpc_eio_core.Body_reader.bytes; len } ->
+                         f (Pbrt.Decoder.of_subbytes bytes 0 len)));
+               })
       in
 
-      let rec next () =
-        let next_item, next_item_u = Eio.Promise.create () in
-        let () = error_handler := report_net_error next_item_u trailers_u in
-
-        H2.Body.Reader.schedule_read reader
-          ~on_eof:(fun () -> Eio.Promise.resolve next_item_u (drain_buffer ()))
-          ~on_read:(fun bigstring ~off ~len ->
-            Grpc.Buffer.copy_from_bigstringaf ~src_off:off ~src:bigstring
-              ~dst:buffer ~length:len;
-
-            match
-              Grpc.Message.extract_message_pos ~start:0
-                (Growing_buffer.internal_buffer buffer)
-            with
-            | Some (start, length) ->
-                let decoder =
-                  Pbrt.Decoder.of_subbytes
-                    (Growing_buffer.internal_buffer buffer)
-                    start length
-                in
-                Growing_buffer.shift_left buffer ~by:(start + length);
-                Eio.Promise.resolve next_item_u
-                  (Grpc_client_eio.Io.Next (decoder, next))
-            | None -> ());
-
-        Eio.Switch.run (fun sw ->
-            Eio.Fiber.fork_daemon ~sw (fun () ->
-                report_net_error next_item_u trailers_u
-                  (Eio.Promise.await Client.connection_error);
-                `Stop_daemon);
-            Eio.Promise.await next_item)
-      in
       Eio.Promise.resolve result_u
         (Ok { Grpc_client_eio.Io.response; next; trailers })
     in
@@ -151,13 +130,19 @@ module Make_net (Client : Client) :
     Ok
       ( {
           Grpc_client_eio.Io.write =
-            (fun input ->
-              if !errored = true then raise Write_after_error
-              else (
-                Pbrt.Encoder.clear encoder;
-                input encoder;
-                H2.Body.Writer.write_string body_writer
-                  (Bytes.unsafe_to_string (Pbrt.Encoder.to_bytes encoder))));
+            (let header_buffer = Bytes.create 5 in
+             fun input ->
+               if !errored = true then raise Write_after_error
+               else (
+                 Pbrt.Encoder.clear encoder;
+                 input encoder;
+                 let msg = Pbrt.Encoder.to_bytes encoder in
+                 Grpc.Message.fill_header ~length:(Bytes.length msg)
+                   header_buffer;
+                 H2.Body.Writer.write_string body_writer
+                   (Bytes.unsafe_to_string header_buffer);
+                 H2.Body.Writer.write_string body_writer
+                   (Bytes.unsafe_to_string msg)));
           close = (fun () -> H2.Body.Writer.close body_writer);
         },
         result )

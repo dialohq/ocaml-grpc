@@ -1,13 +1,16 @@
 [@@@landmark "auto"]
 
+let fill_header ~length buffer =
+  (* write compressed flag (uint8) *)
+  Bytes.set buffer 0 '\x00';
+  (* write msg length (uint32 be) *)
+  Bytes.set_uint16_be buffer 1 (length lsr 16);
+  Bytes.set_uint16_be buffer 3 (length land 0xFFFF)
+
 let make content =
   let content_len = String.length content in
   let payload = Bytes.create @@ (content_len + 1 + 4) in
-  (* write compressed flag (uint8) *)
-  Bytes.set payload 0 '\x00';
-  (* write msg length (uint32 be) *)
-  Bytes.set_uint16_be payload 1 (content_len lsr 16);
-  Bytes.set_uint16_be payload 3 (content_len land 0xFFFF);
+  fill_header ~length:content_len payload;
   (* write msg *)
   Bytes.blit_string content 0 payload 5 content_len;
   Bytes.to_string payload

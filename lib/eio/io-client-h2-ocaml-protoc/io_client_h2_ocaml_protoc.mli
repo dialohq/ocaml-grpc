@@ -1,9 +1,11 @@
+type stream_error = [ H2.Client_connection.error | `Unexpected_eof ]
+
 type t =
   ( H2.Headers.t,
     H2.Response.t,
     Pbrt.Encoder.t -> unit,
-    Pbrt.Decoder.t,
-    H2.Client_connection.error,
+    Pbrt.Decoder.t Grpc_eio_core.Body_reader.consumer,
+    stream_error,
     H2.Client_connection.error )
   Grpc_client_eio.Io.t
 

@@ -1,5 +1,7 @@
 module Io = Io
 
+exception Server_error of Grpc.Status.t * (string * string) list
+
 type extra_trailers = (string * string) list
 
 module Rpc : sig
@@ -25,7 +27,7 @@ type ('net_request, 'req, 'resp) t =
   service:string -> meth:string -> ('net_request, 'req, 'resp) Rpc.handler
 
 val handle_request :
-  error_handler:(exn -> extra_trailers) ->
+  ?error_handler:(exn -> extra_trailers) ->
   io:('net_request, 'req, 'resp) Io.t ->
   ('net_request, 'req, 'resp) t ->
   'net_request ->

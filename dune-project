@@ -19,6 +19,8 @@
 
 (maintainers "Daniel Quernheim <grpc@quernd.uber.space>")
 
+(cram enable)
+
 (source
  (github dialohq/ocaml-grpc))
 
@@ -156,6 +158,19 @@
    (>= 0.9.0))))
 
 (package
+ (name arpaca)
+ (synopsis "An Eio implementation of gRPC client")
+ (description
+  "Functionality for building gRPC services and rpcs with `eio`.")
+ (depends
+  (grpc
+   (= :version))
+  (grpc-client-eio
+    (= :version))
+  (grpc-client
+   (= :version))))
+
+(package
  (name grpc-examples)
  (synopsis "Various gRPC examples")
  (description "Various gRPC examples.")
@@ -217,3 +232,12 @@
   grpc
   (notty
    (>= 0.2.3))))
+
+(package
+ (name grpc-eio-core)
+ (synopsis "Benchmarking package for gRPC")
+ (description "Benchmarking package for gRPC.")
+ (tags
+  (network rpc serialisation benchmark))
+ (depends
+  eio))

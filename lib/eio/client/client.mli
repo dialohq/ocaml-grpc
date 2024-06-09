@@ -1,6 +1,6 @@
 type ('net_response, 'response, 'stream_err, 'headers) recv = {
   net_response : 'net_response;
-  recv_seq : ('response, 'stream_err) Io.recv_seq;
+  recv_seq : ('response, 'stream_err) Grpc_eio_core.Recv_seq.t;
   trailers : 'headers Eio.Promise.t;
 }
 
@@ -153,7 +153,7 @@ module Client_streaming : sig
 end
 
 module Server_streaming : sig
-  val server_streaming :
+  val call :
     sw:Eio.Switch.t ->
     io:
       ( 'headers,

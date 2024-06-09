@@ -1,6 +1,10 @@
+exception Unexpected_eof
+
 module Io = struct
-  type request = Pbrt.Decoder.t
+  type request = Pbrt.Decoder.t Grpc_eio_core.Body_reader.consumer
   type response = Pbrt.Encoder.t -> unit
+
+  module Growing_buffer = Grpc.Buffer
 
   module Net_request = struct
     type t = Eio.Net.Sockaddr.stream * H2.Reqd.t * H2.Request.t
@@ -9,16 +13,32 @@ module Io = struct
       match req with { H2.Request.meth = `POST; _ } -> true | _ -> false
 
     let target (_, _, req) = req.H2.Request.target
+
+    (* Expose a way to interrupt *)
     let get_header (_, _, req) name = H2.Headers.get req.H2.Request.headers name
+
+    let to_seq recv =
+      let rec loop recv () =
+        match recv () with
+        | Grpc_eio_core.Recv_seq.Done -> Seq.Nil
+        | Next (x, recv) -> Seq.Cons (x, loop recv)
+        | Err `Unexpected_eof -> raise Unexpected_eof
+      in
+      loop recv
 
     let body (_, reqd, _) =
       let body = H2.Reqd.request_body reqd in
-      (* TODO: Fix mej *)
-      H2.Body.Reader.schedule_read
-        ~on_eof:(fun () -> ())
-        ~on_read:(fun _ ~off:_ ~len:_ -> ())
-        body;
-      fun () -> Seq.Nil
+      (fun () ->
+        Grpc_eio_core.Body_reader.read_next (H2.Body.Reader.schedule_read body))
+      |> Grpc_eio_core.Recv_seq.map
+           (fun { Grpc_eio_core.Body_reader.consume } ->
+             {
+               Grpc_eio_core.Body_reader.consume =
+                 (fun f ->
+                   consume (fun { Grpc_eio_core.Body_reader.bytes; len } ->
+                       f (Pbrt.Decoder.of_subbytes bytes 0 len)));
+             })
+      |> to_seq
   end
 
   let write_trailers reqd (trailers : Grpc_server.trailers) =
@@ -48,10 +68,14 @@ module Io = struct
     in
     let encoder = Pbrt.Encoder.create () in
     let close () = H2.Body.Writer.close body_writer in
+    let header_buffer = Bytes.create 5 in
     let write input =
       Pbrt.Encoder.clear encoder;
       input encoder;
       let data = Pbrt.Encoder.to_bytes encoder |> Bytes.unsafe_to_string in
+      Grpc.Message.fill_header ~length:(String.length data) header_buffer;
+      H2.Body.Writer.write_string body_writer
+        (Bytes.unsafe_to_string header_buffer);
       H2.Body.Writer.write_string body_writer data
     in
     let write_trailers = write_trailers reqd in
@@ -74,10 +98,10 @@ include Io
 let io =
   (module Io : Grpc_server_eio.Io.S
     with type Net_request.t = Io.Net_request.t
-     and type request = Pbrt.Decoder.t
+     and type request = Pbrt.Decoder.t Grpc_eio_core.Body_reader.consumer
      and type response = Pbrt.Encoder.t -> unit)
 
-let connection_handler ~sw ?config ?h2_error_handler ~grpc_error_handler server
+let connection_handler ~sw ?config ?h2_error_handler ?grpc_error_handler server
     : 'a Eio.Net.connection_handler =
  fun socket addr ->
   let error_handler client_address ?request error respond =
@@ -100,7 +124,7 @@ let connection_handler ~sw ?config ?h2_error_handler ~grpc_error_handler server
   H2_eio.Server.create_connection_handler ?config
     ~request_handler:(fun client_addr reqd ->
       Eio.Fiber.fork ~sw (fun () ->
-          Grpc_server_eio.handle_request ~io ~error_handler:grpc_error_handler
+          Grpc_server_eio.handle_request ~io ?error_handler:grpc_error_handler
             server
             (client_addr, reqd, H2.Reqd.request reqd)))
     ~error_handler addr socket ~sw

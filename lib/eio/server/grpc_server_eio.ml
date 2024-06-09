@@ -56,7 +56,7 @@ module G = Grpc_server
 type ('net_request, 'req, 'resp) t =
   service:string -> meth:string -> ('net_request, 'req, 'resp) Rpc.handler
 
-let handle_request ~error_handler (type net_request req resp)
+let handle_request ?error_handler (type net_request req resp)
     ~(io : (net_request, req, resp) Io.t) server request =
   let module Io' = (val io) in
   match
@@ -64,9 +64,9 @@ let handle_request ~error_handler (type net_request req resp)
       ~is_post_request:(Io'.Net_request.is_post request)
       ~get_header:(fun header -> Io'.Net_request.get_header request header)
       ~path:(Io'.Net_request.target request)
+    |> Result.map (fun { G.service; meth } -> server ~service ~meth)
   with
-  | Ok { service; meth } -> (
-      let handler = server ~service ~meth in
+  | Ok handler -> (
       let request_stream = Io'.Net_request.body request in
       let { Io.write; write_trailers; close; is_closed } =
         let headers = handler.Rpc.headers request in
@@ -74,16 +74,23 @@ let handle_request ~error_handler (type net_request req resp)
       in
       try
         let extra = handler.f request_stream write in
-        write_trailers (Grpc_server.make_trailers ~extra (Grpc.Status.make OK))
+        write_trailers (Grpc_server.make_trailers ~extra (Grpc.Status.make OK));
+        close ()
       with
       | Server_error (status, extra) ->
           if not (is_closed ()) then (
             write_trailers (Grpc_server.make_trailers ~extra status);
             close ())
       | exn ->
-          let extra = error_handler exn in
+          let extra =
+            Option.map (fun f -> f exn) error_handler
+            |> Option.value ~default:[]
+          in
           if not (is_closed ()) then (
             write_trailers
               (Grpc_server.make_trailers ~extra (Grpc.Status.make Internal));
             close ()))
+  | exception Server_error (_status, _extra) ->
+      (* FIXME: proper handling *)
+      Io'.respond_error request `Not_acceptable
   | Error e -> Io'.respond_error request e

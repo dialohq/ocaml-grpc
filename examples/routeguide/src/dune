@@ -10,7 +10,7 @@
   routeguide
   yojson
   ppx_deriving_yojson.runtime
-  grpc-eio-net-server-h2
-  grpc-eio-net-client-h2)
+  io_server_h2_ocaml_protoc
+  io_client_h2_ocaml_protoc)
  (preprocess
   (pps ppx_deriving_yojson ppx_deriving.eq)))

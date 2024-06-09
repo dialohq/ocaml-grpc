@@ -1,6 +1,6 @@
 type ('net_response, 'response, 'stream_err, 'headers) recv = {
   net_response : 'net_response;
-  recv_seq : ('response, 'stream_err) Io.recv_seq;
+  recv_seq : ('response, 'stream_err) Grpc_eio_core.Recv_seq.t;
   trailers : 'headers Eio.Promise.t;
 }
 
@@ -138,7 +138,7 @@ module Bidirectional_streaming = struct
               in
               let rec read recv_seq' () =
                 match recv_seq' () with
-                | Io.Done -> Seq.Nil
+                | Grpc_eio_core.Recv_seq.Done -> Seq.Nil
                 | Err e ->
                     let () = error := Some e in
                     Seq.Nil
@@ -254,7 +254,7 @@ module Unary = struct
                 let (module Io') = io in
                 if Io'.Net_response.is_ok net_response then
                   match recv_seq () with
-                  | Io.Done ->
+                  | Grpc_eio_core.Recv_seq.Done ->
                       `Premature_close
                         {
                           net_response;
@@ -262,7 +262,7 @@ module Unary = struct
                           trailers = Eio.Promise.await trailers;
                           stream_error = None;
                         }
-                  | Io.Err stream_error ->
+                  | Err stream_error ->
                       `Premature_close
                         {
                           net_response;
@@ -270,7 +270,7 @@ module Unary = struct
                           trailers = Eio.Promise.await trailers;
                           stream_error = Some stream_error;
                         }
-                  | Io.Next (response, _) -> (
+                  | Next (response, _) -> (
                       let status = Eio.Promise.await grpc_status in
                       match Grpc.Status.code status with
                       | OK ->
@@ -363,7 +363,7 @@ module Client_streaming = struct
               if not !closed then writer.close ();
 
               match recv_seq () with
-              | Io.Done ->
+              | Grpc_eio_core.Recv_seq.Done ->
                   `Premature_close
                     {
                       result = res;
@@ -409,7 +409,7 @@ module Client_streaming = struct
 end
 
 module Server_streaming = struct
-  let server_streaming ~sw ~io ~service ~method_name ~headers request f =
+  let call ~sw ~io ~service ~method_name ~headers request f =
     let result =
       Bidirectional_streaming.call ~sw ~io ~service ~method_name ~headers
         (fun net_response ~writer ~read ->

@@ -1,4 +1,4 @@
 (library
  (name grpc_client_eio)
  (public_name grpc-client-eio)
- (libraries grpc eio grpc-client))
+ (libraries grpc eio grpc-client grpc-eio-core))

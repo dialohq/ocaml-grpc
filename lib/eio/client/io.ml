@@ -4,17 +4,10 @@ type 'request writer = {
   close : unit -> unit;
 }
 
-type ('a, 'err) recv_seq = unit -> ('a, 'err) recv_item
-
-and ('a, 'err) recv_item =
-  | Done
-  | Next of 'a * ('a, 'err) recv_seq
-  | Err of 'err
-
 type ('net_response, 'response, 'headers, 'err) reader = {
   response : 'net_response;
   trailers : 'headers Eio.Promise.t;
-  next : ('response, 'err) recv_seq;
+  next : ('response, 'err) Grpc_eio_core.Recv_seq.t;
 }
 
 type ('net_response,
