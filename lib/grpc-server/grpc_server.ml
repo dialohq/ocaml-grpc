@@ -1,14 +1,17 @@
 module StringMap = Map.Make (String)
 
 type error =
-  [ `Not_found of
-    [ `Service_not_found
-    | `Rpc_not_found of string
-    | `Invalid_url
-    | `Bad_method ]
+  [ `Not_found of [ `Service_not_found | `Invalid_url | `Bad_method ]
   | `Unsupported_media_type
-  | `Not_acceptable
-  | `Bad_request ]
+  | `Bad_request
+  | `Grpc of Grpc.Status.t ]
+
+let error_to_code_and_headers error =
+  match error with
+  | `Not_found _ -> (404, [])
+  | `Unsupported_media_type -> (415, [])
+  | `Bad_request -> (400, [])
+  | `Grpc status -> Grpc.Status.to_net_resp status
 
 let rec service_name_and_method = function
   | [] -> None
@@ -18,8 +21,8 @@ let rec service_name_and_method = function
 
 type parsed_request = { service : string; meth : string }
 
-let parse_request ~is_post_request ~get_header ~path : ('handler, error) result
-    =
+let parse_request ~is_post_request ~get_header ~path :
+    (parsed_request, error) result =
   let route () =
     let parts = String.split_on_char '/' path in
     match service_name_and_method parts with
@@ -40,9 +43,7 @@ let parse_request ~is_post_request ~get_header ~path : ('handler, error) result
                 | Some encodings ->
                     let encodings = String.split_on_char ',' encodings in
                     if List.mem "identity" encodings then route ()
-                    else
-                      (* TODO: respond with unimplemented *)
-                      Error `Not_acceptable)
+                    else Error (`Grpc (Grpc.Status.make Unimplemented)))
             | Some _ ->
                 (* TODO: not sure if there is a specific way to handle this in grpc *)
                 Error `Bad_request

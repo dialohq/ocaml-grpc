@@ -23,7 +23,8 @@ module type S = sig
   val respond_streaming :
     headers:Grpc_server.headers -> Net_request.t -> response streaming_writer
 
-  val respond_error : Net_request.t -> Grpc_server.error -> unit
+  val respond_error :
+    status_code:int -> headers:(string * string) list -> Net_request.t -> unit
 end
 
 type ('net_request, 'request, 'response) t =

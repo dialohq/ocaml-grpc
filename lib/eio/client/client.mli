@@ -102,7 +102,7 @@ module Unary : sig
     service:string ->
     method_name:string ->
     headers:Grpc_client.request_headers ->
-    request:'request ->
+    'request ->
     ('response, 'headers, 'stream_error, 'conn_error, 'net_response) result'
 end
 

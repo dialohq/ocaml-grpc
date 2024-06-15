@@ -1,0 +1,39 @@
+(rule
+ (targets route_guide.ml)
+ (deps
+  (:proto route_guide.proto))
+ (action
+  (run
+   ocaml-protoc --ocaml_all_types_ppx "deriving show" --int32_type int_t --int64_type int_t --binary --ml_out ./ %{proto})))
+
+(rule
+ (targets RouteGuide_client.ml)
+ (deps
+  (:proto route_guide.proto) %{bin:arpaca-gen})
+ (action
+  (run
+   arpaca-gen client -o ./ --suffix _client %{proto})))
+
+(rule
+ (targets RouteGuide_server.ml)
+ (deps
+  (:proto route_guide.proto) %{bin:arpaca-gen})
+ (action
+  (run
+   arpaca-gen server -o ./ --suffix _server %{proto})))
+
+(executables
+ (names server client)
+ (libraries
+  grpc-server-eio
+  grpc-client-eio
+  eio_main
+  ocaml-protoc-plugin
+  routeguide
+  yojson
+  ppx_deriving_yojson.runtime
+  io_server_h2_ocaml_protoc
+  io_client_h2_ocaml_protoc)
+ (preprocess
+  (pps ppx_deriving_yojson ppx_deriving.eq ppx_deriving.show)))
+

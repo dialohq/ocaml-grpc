@@ -1,0 +1,2 @@
+(cram
+ (deps route_guide.proto %{bin:arpaca-gen}))

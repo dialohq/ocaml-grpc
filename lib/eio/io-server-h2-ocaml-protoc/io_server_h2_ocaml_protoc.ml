@@ -82,15 +82,12 @@ module Io = struct
     let is_closed () = H2.Body.Writer.is_closed body_writer in
     { Grpc_server_eio.Io.close; write; write_trailers; is_closed }
 
-  let respond_error (_, reqd, _) (error : Grpc_server.error) =
-    let respond_with code =
-      H2.Reqd.respond_with_string reqd (H2.Response.create code) ""
-    in
-    match error with
-    | `Not_found _ -> respond_with `Not_found
-    | `Unsupported_media_type -> respond_with `Unsupported_media_type
-    | `Not_acceptable -> respond_with `Not_acceptable
-    | `Bad_request -> respond_with `Bad_request
+  let respond_error ~status_code ~headers (_, reqd, _) =
+    H2.Reqd.respond_with_string reqd
+      (H2.Response.create
+         ~headers:(H2.Headers.of_list headers)
+         (H2.Status.of_code status_code))
+      ""
 end
 
 include Io

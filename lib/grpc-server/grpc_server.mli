@@ -1,12 +1,12 @@
 type error =
-  [ `Not_found of
-    [ `Service_not_found
-    | `Rpc_not_found of string
-    | `Invalid_url
-    | `Bad_method ]
+  [ `Not_found of [ `Service_not_found | `Invalid_url | `Bad_method ]
   | `Unsupported_media_type
-  | `Not_acceptable
-  | `Bad_request ]
+  | `Bad_request
+  | `Grpc of Grpc.Status.t ]
+
+val error_to_code_and_headers : error -> int * (string * string) list
+(** [error_to_code_and_headers e] returns the HTTP status code and headers
+    corresponding to [e]. *)
 
 type parsed_request = { service : string; meth : string }
 

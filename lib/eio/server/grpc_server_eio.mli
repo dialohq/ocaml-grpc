@@ -5,10 +5,17 @@ exception Server_error of Grpc.Status.t * (string * string) list
 type extra_trailers = (string * string) list
 
 module Rpc : sig
-  type ('net_req, 'req, 'res) handler = {
-    headers : 'net_req -> Grpc_server.headers;
-    f : 'req Seq.t -> ('res -> unit) -> extra_trailers;
+  type rpc_complete
+
+  type ('req, 'res) handler_accept = {
+    accept :
+      Grpc_server.headers ->
+      ('req Seq.t -> ('res -> unit) -> extra_trailers) ->
+      rpc_complete;
   }
+
+  type ('net_req, 'req, 'res) handler =
+    'net_req -> ('req, 'res) handler_accept -> rpc_complete
 
   type ('req, 'res) rpc_impl = 'req Seq.t -> ('res -> unit) -> extra_trailers
   (** [handler] represents the most general signature of a gRPC handler. *)

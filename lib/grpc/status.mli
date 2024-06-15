@@ -42,3 +42,7 @@ val error_message : t -> string option
 val extract_status : get_header:(string -> string option) -> t
 (** [extract_status ~get_header] returns the status embedded in the headers, or
     a default when the status is invalid or missing. *)
+
+val to_net_resp : t -> int * (string * string) list
+(** [to_net_resp t] returns the status code and headers to send over the
+    network. *)

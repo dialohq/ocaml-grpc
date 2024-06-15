@@ -1,6 +1,25 @@
 open Routeguide
 module Client = Grpc_client_eio.Client
 
+let get_feature sw io request =
+  let response =
+    Client.Unary.call ~sw ~io ~service:"routeguide.RouteGuide"
+      ~method_name:"GetFeature"
+      ~headers:(Grpc_client.make_request_headers `Proto) (fun encoder ->
+        Route_guide.encode_pb_point request encoder)
+  in
+  match response with
+  | `Success ({ response = res; _ } as result) ->
+      `Success
+        {
+          result with
+          response =
+            res.Grpc_eio_core.Body_reader.consume Route_guide.decode_pb_feature;
+        }
+  | ( `Premature_close _ | `Write_error _ | `Connection_error _
+    | `Response_not_ok _ ) as rest ->
+      rest
+
 (* $MDX part-end *)
 (* $MDX part-begin=client-get-feature *)
 let call_get_feature sw io point =
@@ -8,7 +27,7 @@ let call_get_feature sw io point =
     Client.Unary.call ~sw ~io ~service:"routeguide.RouteGuide"
       ~method_name:"GetFeature"
       ~headers:(Grpc_client.make_request_headers `Proto)
-      ~request:(fun encoder -> Route_guide.encode_pb_point point encoder)
+      (fun encoder -> Route_guide.encode_pb_point point encoder)
   in
   match response with
   | `Success { response = res; _ } ->
@@ -169,3 +188,17 @@ let main env =
 let () = Eio_main.run main
 
 (* $MDX part-end *)
+
+let list_features ~sw ~io request handler =
+  Client.Server_streaming.call ~sw ~io ~service:"routeguide.RouteGuide"
+    ~method_name:"ListFeatures"
+    ~headers:(Grpc_client.make_request_headers `Proto)
+    (Route_guide.encode_pb_rectangle request) (fun net_response ~read ->
+      let responses =
+        Seq.map
+          (fun response ->
+            response.Grpc_eio_core.Body_reader.consume
+              Route_guide.decode_pb_feature)
+          read
+      in
+      handler net_response responses)

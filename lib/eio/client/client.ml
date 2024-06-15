@@ -240,7 +240,7 @@ module Unary = struct
            response,
            stream_error,
            conn_error )
-         Io.t) ~service ~method_name ~headers ~request :
+         Io.t) ~service ~method_name ~headers request :
       (_, headers, stream_error, conn_error, net_response) result' =
     match call ~sw ~io ~service ~method_name ~headers () with
     | Ok { writer; recv; grpc_status; write_exn } -> (

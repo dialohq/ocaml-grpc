@@ -86,3 +86,33 @@ let extract_status ~get_header =
             | Some c -> (c, get_header "grpc-message")))
   in
   make ?error_message:message code
+
+let status_to_headers status =
+  let message = error_message status in
+  ("grpc-status", string_of_int (int_of_code (code status)))
+  :: (match message with Some s -> [ ("grpc-message", s) ] | None -> [])
+
+let to_net_resp status =
+  (* https://cloud.google.com/apis/design/errors#error_model *)
+  let headers = status_to_headers status in
+  let status_code =
+    match code status with
+    | OK -> 200
+    | Cancelled -> 499
+    | Unknown -> 500
+    | Invalid_argument -> 400
+    | Deadline_exceeded -> 504
+    | Not_found -> 404
+    | Already_exists -> 409
+    | Permission_denied -> 403
+    | Resource_exhausted -> 429
+    | Failed_precondition -> 400
+    | Aborted -> 409
+    | Out_of_range -> 400
+    | Unimplemented -> 501
+    | Internal -> 500
+    | Unavailable -> 503
+    | Data_loss -> 500
+    | Unauthenticated -> 401
+  in
+  (status_code, headers)

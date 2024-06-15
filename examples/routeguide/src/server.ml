@@ -65,32 +65,36 @@ let calc_distance (p1 : R.point) (p2 : R.point) : int =
   Float.to_int (r *. c)
 
 (* $MDX part-begin=server-get-feature *)
+
+let get_feature _ point =
+  Format.printf "%a" Route_guide.pp_point point;
+  Eio.traceln "GetFeature = {:%s}" (R.show_point point);
+  let feature =
+    List.find_opt (fun (f : feature) -> f.location = point) !features
+    |> Option.map (fun { location; name } : R.feature ->
+           { R.name; location = Some location })
+  in
+  Eio.traceln "Found feature %s"
+    (feature |> Option.map R.show_feature |> Option.value ~default:"Missing");
+  match feature with
+  | Some feature -> (feature, [])
+  | None ->
+      (* No feature was found, return an unnamed feature. *)
+      (R.default_feature ~location:(Some point) (), [])
+
 let get_feature =
   Grpc_server_eio.Rpc.unary (fun req ->
-      let point =
-        req.Grpc_eio_core.Body_reader.consume Route_guide.decode_pb_point
+      let feature, headers =
+        get_feature ()
+          (req.Grpc_eio_core.Body_reader.consume Route_guide.decode_pb_point)
       in
-      Format.printf "%a" Route_guide.pp_point point;
-      Eio.traceln "GetFeature = {:%s}" (R.show_point point);
-      let feature =
-        List.find_opt (fun (f : feature) -> f.location = point) !features
-        |> Option.map (fun { location; name } : R.feature ->
-               { R.name; location = Some location })
-      in
-      Eio.traceln "Found feature %s"
-        (feature |> Option.map R.show_feature |> Option.value ~default:"Missing");
-      match feature with
-      | Some feature ->
-          ((fun encoder -> R.encode_pb_feature feature encoder), [])
-      | None ->
-          (* No feature was found, return an unnamed feature. *)
-          (R.encode_pb_feature (R.default_feature ~location:(Some point) ()), []))
+      ((fun encoder -> R.encode_pb_feature feature encoder), headers))
 
 (* $MDX part-end *)
 (* $MDX part-begin=server-grpc *)
 
-let mk_handler f =
-  { Grpc_server_eio.Rpc.headers = (fun _ -> Grpc_server.headers `Proto); f }
+let mk_handler f _req rpc =
+  rpc.Grpc_server_eio.Rpc.accept (Grpc_server.headers `Proto) f
 
 (*
 let route_guide_service clock =
@@ -154,57 +158,6 @@ let route_chat =
 
 (* $MDX part-end *)
 (* $MDX part-begin=server-record-route *)
-(*
-let record_route (clock : _ Eio.Time.clock) stream =
-  Eio.traceln "RecordRoute";
-  let last_point = ref None in
-  let start = Eio.Time.now clock in
-
-  let point_count, feature_count, distance =
-    Seq.fold_left
-      (fun (point_count, feature_count, distance) i ->
-        let point =
-          Reader.create i |> decode |> function
-          | Ok v -> v
-          | Error e ->
-              failwith
-                (Printf.sprintf "Could not decode request: %s"
-                   (Result.show_error e))
-        in
-        Eio.traceln "  ==> Point = {%s}" (Point.show point);
-
-        (* Increment the point count *)
-        let point_count = point_count + 1 in
-
-        (* Find features *)
-        let feature_count =
-          List.find_all
-            (fun (feature : Feature.t) ->
-              Point.equal (Option.get feature.location) point)
-            !features
-          |> fun x -> List.length x + feature_count
-        in
-
-        (* Calculate the distance *)
-        let distance =
-          match !last_point with
-          | Some last_point -> calc_distance last_point point
-          | None -> distance
-        in
-        last_point := Some point;
-        (point_count, feature_count, distance))
-      (0, 0, 0)
-      (Grpc_core_eio.Stream.to_seq stream)
-  in
-  let stop = Eio.Time.now clock in
-  let elapsed_time = int_of_float (stop -. start) in
-  let summary =
-    RouteSummary.make ~point_count ~feature_count ~distance ~elapsed_time ()
-  in
-  Eio.traceln "RecordRoute exit\n";
-  (Grpc_server.trailers_with_code OK, Some (encode summary |> Writer.contents))
-  *)
-
 let record_route clock =
   Grpc_server_eio.Rpc.client_streaming (fun stream ->
       Eio.traceln "RecordRoute";
