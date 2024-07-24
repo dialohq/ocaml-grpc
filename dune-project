@@ -67,18 +67,6 @@
   (grpc (= :version))))
 
 (package
- (name grpc-core-eio)
- (synopsis "Shared logic for gRPC clients and servers based on eio.")
- (description
-  "All modules are networking-layer agnostic.")
- (tags
-  (network rpc serialisation))
- (depends
-  (eio
-   (>= 0.12))
-  (grpc (= :version))))
-
-(package
  (name grpc-lwt)
  (synopsis "An Lwt implementation of gRPC")
  (description
@@ -128,16 +116,6 @@
   stringext))
 
 (package
- (name grpc-eio-net-server-h2)
- (synopsis "An h2 implementation of gRPC networking layer for eio based servers.")
- (depends
-  (grpc-server-eio
-   (= :version))
-  (h2
-   (>= 0.9.0))
-  stringext))
-
-(package
  (name grpc-client-eio)
  (synopsis "An Eio implementation of gRPC client")
  (description
@@ -149,13 +127,34 @@
    (= :version))))
 
 (package
- (name grpc-eio-net-client-h2)
+ (name grpc-eio-io-client-h2-ocaml-protoc)
  (synopsis "An h2 implementation of gRPC networking layer for eio based clients.")
  (depends
   (grpc-client-eio
    (= :version))
   (h2
-   (>= 0.9.0))))
+   (>= 0.9.0))
+  pbrt
+  pbrt_services
+  eio
+  h2-eio
+  grpc-eio-core))
+
+(package
+ (name grpc-eio-io-server-h2-ocaml-protoc)
+ (synopsis "An h2 implementation of gRPC networking layer for eio based servers.")
+ (depends
+  (grpc-server-eio
+   (= :version))
+  (h2
+   (>= 0.9.0))
+  stringext
+  pbrt
+  pbrt_services
+  eio
+  h2-eio
+  grpc-eio-core))
+
 
 (package
  (name arpaca)
