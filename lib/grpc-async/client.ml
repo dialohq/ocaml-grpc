@@ -21,12 +21,12 @@ let default_headers =
     [ ("te", "trailers"); ("content-type", "application/grpc+proto") ]
 
 let trailers_handler trailers_status_ivar headers =
-  Ivar.fill trailers_status_ivar (Grpc.Status.extract_status headers)
+  Async.Ivar.fill_exn trailers_status_ivar (Grpc.Status.extract_status headers)
 
 let response_handler read_body_ivar out_ivar (response : H2.Response.t)
     (body : H2.Body.Reader.t) =
-  Ivar.fill read_body_ivar body;
-  Ivar.fill out_ivar response
+  Async.Ivar.fill_exn read_body_ivar body;
+  Async.Ivar.fill_exn out_ivar response
 
 let call ~service ~rpc ?(scheme = "https") ~handler ~do_request
     ?(headers = default_headers) () =

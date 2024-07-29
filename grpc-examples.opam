@@ -19,7 +19,7 @@ doc: "https://dialohq.github.io/ocaml-grpc"
 bug-reports: "https://github.com/dialohq/ocaml-grpc/issues"
 depends: [
   "dune" {>= "3.7"}
-  "async" {>= "v0.16.0"}
+  "async" {>= "v0.17.0"}
   "cohttp"
   "cohttp-lwt"
   "cohttp-lwt-unix"
