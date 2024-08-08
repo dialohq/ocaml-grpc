@@ -69,7 +69,7 @@
   (ocaml
    (>= 4.11))
   (async
-   (>= v0.16))
+   (>= v0.17))
   (grpc
    (= :version))
   (h2
@@ -100,7 +100,7 @@
   (network rpc serialisation))
  (depends
   (async
-   (>= v0.16.0))
+   (>= v0.17.0))
   cohttp
   cohttp-lwt
   cohttp-lwt-unix
