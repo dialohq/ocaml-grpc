@@ -1,0 +1,4 @@
+(library
+ (name grpc_protoc)
+ (public_name grpc-protoc)
+ (libraries grpc ocaml-protoc pbrt pbrt_services))
