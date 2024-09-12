@@ -1,5 +1,6 @@
 exception Unexpected_eof
 
+
 module Io = struct
   type request = Pbrt.Decoder.t Grpc_eio_core.Body_reader.consumer
   type response = Pbrt.Encoder.t -> unit
@@ -76,7 +77,8 @@ module Io = struct
       Grpc.Message.fill_header ~length:(String.length data) header_buffer;
       H2.Body.Writer.write_string body_writer
         (Bytes.unsafe_to_string header_buffer);
-      H2.Body.Writer.write_string body_writer data
+      H2.Body.Writer.write_string body_writer data;
+      H2.Body.Writer.flush body_writer ignore
     in
     let write_trailers = write_trailers reqd in
     let is_closed () = H2.Body.Writer.is_closed body_writer in
