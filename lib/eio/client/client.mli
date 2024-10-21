@@ -167,7 +167,9 @@ module Server_streaming : sig
     method_name:string ->
     headers:Grpc_client.request_headers ->
     'request ->
-    ('net_response -> read:(unit -> 'response Seq.node) -> 'a) ->
+    ((unit -> ('net_response, 'conn_err) result) ->
+    read:(unit -> 'response Seq.node) ->
+    'a) ->
     [ `Stream_result of ('a, 'headers, 'stream_error) streaming_result
     | `Write_error of ('stream_error, 'headers) streaming_err option * 'headers
     | ('net_response, 'headers, 'conn_err) common_error ]
@@ -177,6 +179,28 @@ module Bidirectional_streaming : sig
   type ('a, 'headers, 'stream_err, 'conn_err, 'net_response) result' =
     [ `Stream_result of ('a, 'headers, 'stream_err) streaming_result
     | ('net_response, 'headers, 'conn_err) common_error ]
+  (*
+  val call :
+    sw:Eio.Switch.t ->
+    io:
+      ( 'headers,
+        'net_response,
+        'request,
+        'response,
+        'stream_error,
+        'conn_error )
+      Io.t ->
+    service:string ->
+    method_name:string ->
+    headers:Grpc_client.request_headers ->
+    ?init_requests:'request Seq.t ->
+    ('net_response ->
+    'request Seq.t ->
+    writer:'request writer ->
+    read:(unit -> 'response Seq.node) ->
+    'a) ->
+    ('a, 'headers, 'stream_error, 'conn_error, 'net_response) result'
+    *)
 
   val call :
     sw:Eio.Switch.t ->
@@ -191,7 +215,7 @@ module Bidirectional_streaming : sig
     service:string ->
     method_name:string ->
     headers:Grpc_client.request_headers ->
-    ('net_response ->
+    ((unit -> ('net_response, 'conn_error) result) ->
     writer:'request writer ->
     read:(unit -> 'response Seq.node) ->
     'a) ->

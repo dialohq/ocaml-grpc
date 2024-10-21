@@ -1,6 +1,5 @@
 exception Unexpected_eof
 
-
 module Io = struct
   type request = Pbrt.Decoder.t Grpc_eio_core.Body_reader.consumer
   type response = Pbrt.Encoder.t -> unit
