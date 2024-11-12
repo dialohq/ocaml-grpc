@@ -21,17 +21,8 @@ type ('net_response,
     Eio.Promise.t;
   grpc_status : Grpc.Status.t Eio.Promise.t;
   write_exn : exn option ref;
+  conn_err : 'conn_error Eio.Promise.t;
 }
-
-type ('net_response, 'headers) resp_not_ok = {
-  net_response : 'net_response;
-  grpc_status : Grpc.Status.t;
-  trailers : 'headers;
-}
-
-type ('net_response, 'headers, 'conn_err) common_error =
-  [ `Connection_error of 'conn_err
-  | `Response_not_ok of ('net_response, 'headers) resp_not_ok ]
 
 val call :
   sw:Eio.Switch.t ->
@@ -57,26 +48,12 @@ val call :
     'conn_error )
   result
 
-type ('stream_err, 'headers) streaming_err = {
-  stream_error : 'stream_err option;
-  write_exn : exn option;
-  grpc_status : Grpc.Status.t;
-}
-
-type ('a, 'headers, 'stream_err) streaming_result = {
+type ('a, 'headers) streaming_result_success = {
   result : 'a;
   trailers : 'headers;
-  err : ('stream_err, 'headers) streaming_err option;
 }
 
 module Unary : sig
-  type ('net_response, 'headers, 'stream_err) premature_close = {
-    trailers : 'headers;
-    grpc_status : Grpc.Status.t;
-    net_response : 'net_response;
-    stream_error : 'stream_err option;
-  }
-
   type ('net_response, 'response, 'headers) success = {
     net_response : 'net_response;
     response : 'response;
@@ -84,10 +61,13 @@ module Unary : sig
   }
 
   type ('response, 'headers, 'stream_err, 'conn_err, 'net_response) result' =
-    [ `Premature_close of ('net_response, 'headers, 'stream_err) premature_close
-    | `Success of ('net_response, 'response, 'headers) success
-    | `Write_error of exn
-    | ('net_response, 'headers, 'conn_err) common_error ]
+    [ `Success of ('net_response, 'response, 'headers) success
+    | ( 'response,
+        'headers,
+        'stream_err,
+        'conn_err,
+        'net_response )
+      Rpc_error.Unary.error' ]
 
   val call :
     sw:Eio.Switch.t ->
@@ -107,14 +87,6 @@ module Unary : sig
 end
 
 module Client_streaming : sig
-  type ('a, 'headers, 'stream_err) stream_err = {
-    trailers : 'headers;
-    grpc_status : Grpc.Status.t;
-    result : 'a;
-    stream_error : 'stream_err;
-    write_exn : exn option;
-  }
-
   type ('a, 'response, 'headers) success = {
     result : 'a;
     response : 'response;
@@ -122,18 +94,15 @@ module Client_streaming : sig
     write_exn : exn option;
   }
 
-  type ('a, 'headers) premature_close = {
-    result : 'a;
-    trailers : 'headers;
-    grpc_status : Grpc.Status.t;
-    write_exn : exn option;
-  }
-
   type ('a, 'headers, 'stream_err, 'conn_err, 'net_response, 'response) result' =
-    [ `Premature_close of ('a, 'headers) premature_close
-    | `Stream_error of ('a, 'headers, 'stream_err) stream_err
-    | `Success of ('a, 'response, 'headers) success
-    | ('net_response, 'headers, 'conn_err) common_error ]
+    [ `Success of ('a, 'response, 'headers) success
+    | ( 'a,
+        'headers,
+        'stream_err,
+        'conn_err,
+        'net_response,
+        'response )
+      Rpc_error.Client_streaming.error' ]
 
   val call :
     sw:Eio.Switch.t ->
@@ -153,6 +122,15 @@ module Client_streaming : sig
 end
 
 module Server_streaming : sig
+  type ('a, 'headers, 'stream_error, 'net_response, 'conn_err) result' =
+    [ `Stream_result_success of ('a, 'headers) streaming_result_success
+    | ( 'a,
+        'headers,
+        'stream_error,
+        'net_response,
+        'conn_err )
+      Rpc_error.Server_streaming.error' ]
+
   val call :
     sw:Eio.Switch.t ->
     io:
@@ -170,15 +148,18 @@ module Server_streaming : sig
     ((unit -> ('net_response, 'conn_err) result) ->
     read:(unit -> 'response Seq.node) ->
     'a) ->
-    [ `Stream_result of ('a, 'headers, 'stream_error) streaming_result
-    | `Write_error of ('stream_error, 'headers) streaming_err option * 'headers
-    | ('net_response, 'headers, 'conn_err) common_error ]
+    ('a, 'headers, 'stream_error, 'net_response, 'conn_err) result'
 end
 
 module Bidirectional_streaming : sig
   type ('a, 'headers, 'stream_err, 'conn_err, 'net_response) result' =
-    [ `Stream_result of ('a, 'headers, 'stream_err) streaming_result
-    | ('net_response, 'headers, 'conn_err) common_error ]
+    [ `Stream_result_success of ('a, 'headers) streaming_result_success
+    | ( 'a,
+        'headers,
+        'stream_err,
+        'conn_err,
+        'net_response )
+      Rpc_error.Bidirectional_streaming.error' ]
   (*
   val call :
     sw:Eio.Switch.t ->

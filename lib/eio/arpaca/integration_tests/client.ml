@@ -13,15 +13,13 @@ let print_features sw io =
   in
 
   let stream =
-    RouteGuide_client.list_features ~sw ~io rectangle (fun _ read ->
+    RouteGuide_client.Expert.list_features ~sw ~io rectangle (fun _ read ->
         Seq.iter
           (fun f ->
             Printf.printf "RESPONSE = {%s}%!" (Route_guide.show_feature f))
           read)
   in
-  match stream with
-  | `Stream_result { err = None; _ } -> ()
-  | _ -> failwith "an erra"
+  match stream with `Stream_result_success _ -> () | _ -> failwith "an erra"
 
 let random_point () =
   let latitude = (Random.int 180 - 90) * 10000000 in
@@ -35,7 +33,7 @@ let run_record_route sw io =
   in
 
   let response =
-    RouteGuide_client.record_route ~io ~sw (fun _ ~writer ->
+    RouteGuide_client.Expert.record_route ~io ~sw (fun _ ~writer ->
         Seq.iter
           (fun point ->
             writer point |> ignore;
@@ -82,13 +80,11 @@ let run_route_chat clock io sw =
             go ~send reader' xs)
   in
   let result =
-    RouteGuide_client.route_chat ~io ~sw (fun _ ~writer ~read ->
+    RouteGuide_client.Expert.route_chat ~io ~sw (fun _ ~writer ~read ->
         go ~send:writer read route_notes;
         [])
   in
-  match result with
-  | `Stream_result { err = None; _ } -> ()
-  | _e -> failwith "Error"
+  match result with `Stream_result_success _ -> () | _e -> failwith "Error"
 
 let main env =
   let clock = Eio.Stdenv.clock env in
@@ -104,7 +100,7 @@ let main env =
     Printf.printf "*** SIMPLE RPC ***\n%!";
 
     let result =
-      RouteGuide_client.get_feature ~sw ~io
+      RouteGuide_client.Expert.get_feature ~sw ~io
         (Route_guide.default_point ~latitude:409146138 ~longitude:(-746188906)
            ())
     in

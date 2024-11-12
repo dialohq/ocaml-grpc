@@ -21,7 +21,9 @@ module Net_response = struct
 end
 
 type connection_error = H2.Client_connection.error
-type stream_error = [ connection_error | `Unexpected_eof ]
+
+type stream_error =
+  [ `Unexpected_eof | `Connection_error of H2.Client_connection.error ]
 
 type t =
   ( H2.Headers.t,
@@ -54,6 +56,45 @@ module Make_net (Client : Client) :
   type request = Pbrt.Encoder.t -> unit
   type response = Pbrt.Decoder.t Grpc_eio_core.Body_reader.consumer
 
+  type client_error =
+    | Unary of
+        ( response,
+          Headers.t,
+          stream_error,
+          connection_error,
+          Net_response.t )
+        Grpc_client_eio.Rpc_error.Unary.error'
+    | Client_streaming :
+        ( 'a,
+          Headers.t,
+          stream_error,
+          connection_error,
+          Net_response.t,
+          response )
+        Grpc_client_eio.Rpc_error.Client_streaming.error'
+        -> client_error
+    | Server_streaming :
+        ( 'a,
+          Headers.t,
+          stream_error,
+          Net_response.t,
+          connection_error )
+        Grpc_client_eio.Rpc_error.Server_streaming.error'
+        -> client_error
+    | Bidirectional_streaming :
+        ( 'a,
+          Headers.t,
+          stream_error,
+          connection_error,
+          Net_response.t )
+        Grpc_client_eio.Rpc_error.Bidirectional_streaming.error'
+        -> client_error
+
+  exception Grpc_client_error of client_error
+
+  let raise_client_error (error : client_error) =
+    raise (Grpc_client_error error)
+
   let send_request ~(headers : Grpc_client.request_headers) target =
     (* We are flushing headers immediately but potentially for the
      unary and server streaming cases we shouldn't do it
@@ -78,14 +119,6 @@ module Make_net (Client : Client) :
     in
     (* Allocate once, use a pool of these *)
     let errored = ref false in
-    (*
-    let report_net_error resolver trailers_resolver err =
-      errored := true;
-      Eio.Promise.resolve resolver
-        (Grpc_client_eio.Io.Err (err :> stream_error));
-      Eio.Promise.resolve trailers_resolver H2.Headers.empty
-    in
-    *)
     let response_handler response reader =
       let trailers, trailers_u = Eio.Promise.create () in
       let () =
@@ -94,18 +127,8 @@ module Make_net (Client : Client) :
       in
 
       let next =
-        (* FIXME: connection error handling
-
-                Eio.Switch.run (fun sw ->
-                    Eio.Fiber.fork_daemon ~sw (fun () ->
-                        report_net_error next_item_u trailers_u
-                          (Eio.Promise.await Client.connection_error);
-                        `Stop_daemon);
-                    Eio.Promise.await next_item |> ignore));
-                    *)
-        let _ = Client.connection_error in
         (fun () ->
-          Grpc_eio_core.Body_reader.read_next
+          Grpc_eio_core.Body_reader.read_next ~error:Client.connection_error
             (H2.Body.Reader.schedule_read reader))
         |> Grpc_eio_core.Recv_seq.map
              (fun { Grpc_eio_core.Body_reader.consume } ->
@@ -127,25 +150,29 @@ module Make_net (Client : Client) :
         ~response_handler request
     in
     let encoder = Pbrt.Encoder.create ~size:65536 () in
-    Ok
-      ( {
-          Grpc_client_eio.Io.write =
-            (let header_buffer = Bytes.create 5 in
-             fun input ->
-               if !errored = true then raise Write_after_error
-               else (
-                 Pbrt.Encoder.clear encoder;
-                 input encoder;
-                 let msg = Pbrt.Encoder.to_bytes encoder in
-                 Grpc.Message.fill_header ~length:(Bytes.length msg)
-                   header_buffer;
-                 H2.Body.Writer.write_string body_writer
-                   (Bytes.unsafe_to_string header_buffer);
-                 H2.Body.Writer.write_string body_writer
-                   (Bytes.unsafe_to_string msg)));
-          close = (fun () -> H2.Body.Writer.close body_writer);
-        },
-        result )
+    ( {
+        Grpc_client_eio.Io.write =
+          (let header_buffer = Bytes.create 5 in
+
+           fun input ->
+             if !errored = true then raise Write_after_error
+             else (
+               Pbrt.Encoder.clear encoder;
+               input encoder;
+
+               let msg = Pbrt.Encoder.to_bytes encoder in
+
+               Grpc.Message.fill_header ~length:(Bytes.length msg) header_buffer;
+
+               H2.Body.Writer.write_string body_writer
+                 (Bytes.unsafe_to_string header_buffer);
+
+               H2.Body.Writer.write_string body_writer
+                 (Bytes.unsafe_to_string msg)));
+        close = (fun () -> H2.Body.Writer.close body_writer);
+      },
+      result,
+      Client.connection_error )
 end
 
 module Expert = struct
@@ -157,9 +184,11 @@ module Expert = struct
         Eio.Switch.run (fun sw' ->
             let conn =
               H2_eio.Client.create_connection ~sw:sw'
-                ~error_handler:(Eio.Promise.resolve connection_error_resolve)
+                ~error_handler:(fun e ->
+                  Eio.Promise.resolve connection_error_resolve e)
                 socket
             in
+
             Eio.Switch.on_release sw' (fun () ->
                 Eio.Promise.await (H2_eio.Client.shutdown conn));
             (* For now we're ignoring the errors, we should probably inject them into grpc handlers to let them handle it *)
@@ -185,7 +214,9 @@ module Expert = struct
       |> List.hd
     in
     let addr = `Tcp (Eio_unix.Net.Ipaddr.of_unix inet, port) in
+
     let socket = Eio.Net.connect ~sw net addr in
+
     create_with_socket ~socket ~host ~scheme ~sw
 end
 

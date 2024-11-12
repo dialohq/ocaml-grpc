@@ -1,6 +1,10 @@
 include
   Grpc_server_eio.Io.S
-    with type Net_request.t = Eio.Net.Sockaddr.stream * H2.Reqd.t * H2.Request.t
+    with type Net_request.t =
+      Eio.Net.Sockaddr.stream
+      * H2.Reqd.t
+      * H2.Request.t
+      * H2.Reqd.error Eio.Promise.t
      and type request = Pbrt.Decoder.t Grpc_eio_core.Body_reader.consumer
      and type response = Pbrt.Encoder.t -> unit
 

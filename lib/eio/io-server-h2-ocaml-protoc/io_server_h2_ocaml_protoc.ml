@@ -1,4 +1,5 @@
 exception Unexpected_eof
+exception Connection_error of H2.Reqd.error
 
 module Io = struct
   type request = Pbrt.Decoder.t Grpc_eio_core.Body_reader.consumer
@@ -7,15 +8,20 @@ module Io = struct
   module Growing_buffer = Grpc.Buffer
 
   module Net_request = struct
-    type t = Eio.Net.Sockaddr.stream * H2.Reqd.t * H2.Request.t
+    type t =
+      Eio.Net.Sockaddr.stream
+      * H2.Reqd.t
+      * H2.Request.t
+      * H2.Reqd.error Eio.Promise.t
 
-    let is_post (_, _, req) =
+    let is_post (_, _, req, _) =
       match req with { H2.Request.meth = `POST; _ } -> true | _ -> false
 
-    let target (_, _, req) = req.H2.Request.target
+    let target (_, _, req, _) = req.H2.Request.target
 
     (* Expose a way to interrupt *)
-    let get_header (_, _, req) name = H2.Headers.get req.H2.Request.headers name
+    let get_header (_, _, req, _) name =
+      H2.Headers.get req.H2.Request.headers name
 
     let to_seq recv =
       let rec loop recv () =
@@ -23,13 +29,15 @@ module Io = struct
         | Grpc_eio_core.Recv_seq.Done -> Seq.Nil
         | Next (x, recv) -> Seq.Cons (x, loop recv)
         | Err `Unexpected_eof -> raise Unexpected_eof
+        | Err (`Connection_error error) -> raise (Connection_error error)
       in
       loop recv
 
-    let body (_, reqd, _) =
+    let body (_, reqd, _, error) =
       let body = H2.Reqd.request_body reqd in
       (fun () ->
-        Grpc_eio_core.Body_reader.read_next (H2.Body.Reader.schedule_read body))
+        Grpc_eio_core.Body_reader.read_next ~error
+          (H2.Body.Reader.schedule_read body))
       |> Grpc_eio_core.Recv_seq.map
            (fun { Grpc_eio_core.Body_reader.consume } ->
              {
@@ -56,7 +64,7 @@ module Io = struct
     ->
       ()
 
-  let respond_streaming ~headers (_, reqd, _) =
+  let respond_streaming ~headers (_, reqd, _, _) =
     let body_writer =
       H2.Reqd.respond_with_streaming ~flush_headers_immediately:true reqd
         (H2.Response.create
@@ -83,7 +91,7 @@ module Io = struct
     let is_closed () = H2.Body.Writer.is_closed body_writer in
     { Grpc_server_eio.Io.close; write; write_trailers; is_closed }
 
-  let respond_error ~status_code ~headers (_, reqd, _) =
+  let respond_error ~status_code ~headers (_, reqd, _, _) =
     H2.Reqd.respond_with_string reqd
       (H2.Response.create
          ~headers:(H2.Headers.of_list headers)
@@ -102,8 +110,10 @@ let io =
 let connection_handler ~sw ?config ?h2_error_handler ?grpc_error_handler server
     : 'a Eio.Net.connection_handler =
  fun socket addr ->
+  let error, error_r = Eio.Promise.create () in
   let error_handler client_address ?request error respond =
     (* Report internal error via headers *)
+    Eio.Promise.resolve error_r error;
     let () =
       match h2_error_handler with
       | Some f -> f client_address ?request error
@@ -124,5 +134,5 @@ let connection_handler ~sw ?config ?h2_error_handler ?grpc_error_handler server
       Eio.Fiber.fork ~sw (fun () ->
           Grpc_server_eio.handle_request ~io ?error_handler:grpc_error_handler
             server
-            (client_addr, reqd, H2.Reqd.request reqd)))
+            (client_addr, reqd, H2.Reqd.request reqd, error)))
     ~error_handler addr socket ~sw

@@ -96,7 +96,7 @@ and unwrap_message ~msg_len ~data ~off ~len ~into:promise ~read_next ~read_more
     Bigstringaf.blit_to_bytes data ~src_off:off bytes ~dst_off:0 ~len;
     read_more (`Body (bytes, msg_len, msg_len - len)) ~into:promise
 
-let rec read_more schedule_read buffer ~into:promise =
+let rec read_more ~error schedule_read buffer ~into:promise =
   schedule_read
     ~on_eof:(fun () -> Eio.Promise.resolve promise (Err `Unexpected_eof))
     ~on_read:(fun bigstring ~off ~len ->
@@ -105,7 +105,7 @@ let rec read_more schedule_read buffer ~into:promise =
           if len < remaining then (
             Bigstringaf.blit bigstring ~src_off:off buffer
               ~dst_off:(5 - remaining) ~len;
-            read_more schedule_read
+            read_more ~error schedule_read
               (`Header (buffer, remaining - len))
               ~into:promise)
           else (
@@ -115,8 +115,8 @@ let rec read_more schedule_read buffer ~into:promise =
             let msg_len = extract_msg_len ~data:buffer ~off:(off + 1) in
             unwrap_message ~msg_len ~data:buffer ~off:remaining
               ~len:(len - remaining) ~into:promise
-              ~read_next:(fun () -> read_next schedule_read)
-              ~read_more:(read_more schedule_read))
+              ~read_next:(fun () -> read_next ~error schedule_read)
+              ~read_more:(read_more ~error schedule_read))
       | `Body (buffer, msg_len, remaining) ->
           if len >= remaining then (
             Bigstringaf.blit_to_bytes bigstring ~src_off:off buffer
@@ -125,8 +125,8 @@ let rec read_more schedule_read buffer ~into:promise =
               let next, next_u = Eio.Promise.create () in
               unwrap_message_with_header ~data:bigstring ~off:(off + remaining)
                 ~len:(len - remaining) ~into:next_u
-                ~read_next:(fun () -> read_next schedule_read)
-                ~read_more:(read_more schedule_read);
+                ~read_next:(fun () -> read_next ~error schedule_read)
+                ~read_more:(read_more ~error schedule_read);
               Eio.Promise.resolve promise
                 (Next
                    ( to_consumer { bytes = buffer; len = msg_len },
@@ -135,22 +135,22 @@ let rec read_more schedule_read buffer ~into:promise =
               Eio.Promise.resolve promise
                 (Next
                    ( to_consumer { bytes = buffer; len = msg_len },
-                     fun () -> read_next schedule_read )))
+                     fun () -> read_next ~error schedule_read )))
           else (
             Bigstringaf.blit_to_bytes bigstring ~src_off:off buffer
               ~dst_off:(msg_len - remaining) ~len;
-            read_more schedule_read
+            read_more ~error schedule_read
               (`Body (buffer, msg_len, remaining - len))
               ~into:promise))
 
-and read_next schedule_read =
+and read_next ~error schedule_read =
   let promise, promise_u = Eio.Promise.create () in
   schedule_read
     ~on_eof:(fun () -> Eio.Promise.resolve promise_u Done)
     ~on_read:(fun bigstring ~off ~len ->
       unwrap_message_with_header ~data:bigstring ~off ~len ~into:promise_u
-        ~read_next:(fun () -> read_next schedule_read)
-        ~read_more:(read_more schedule_read));
+        ~read_next:(fun () -> read_next ~error schedule_read)
+        ~read_more:(read_more ~error schedule_read));
   Eio.Promise.await promise
 
 let fill_header ~pos ~length buffer =
@@ -245,7 +245,8 @@ let%test_module "reading body" =
               2);
           ]
       in
-      let result = read_next schedule_read in
+      let error, _ = Eio.Promise.create () in
+      let result = read_next ~error schedule_read in
       match result with Err `Unexpected_eof -> true | _ -> false
 
     let%expect_test "reading body in multiple chunks" =
@@ -271,15 +272,16 @@ let%test_module "reading body" =
               5);
           ]
       in
-      let result = read_next schedule_read in
+      let error, _ = Eio.Promise.create () in
+      let result = read_next ~error schedule_read in
       (match result with
       | Done -> print_endline "failure"
-      | Err `Unexpected_eof -> print_endline "failure"
+      | Err _ -> print_endline "failure"
       | Next ({ consume }, cons) -> (
           print_endline
             (consume (fun { bytes; len } -> Bytes.sub_string bytes 0 len));
           match cons () with
           | Done -> ()
-          | Err `Unexpected_eof | Next _ -> failwith "expected end of sequence"));
+          | Err _ | Next _ -> failwith "expected end of sequence"));
       [%expect "5555555555"]
   end)
