@@ -53,7 +53,8 @@ let to_snake_case =
   in
   fun str -> regex str
 
-let service_name_of_package path = String.concat "." path
+let service_name_of_package service_packages service =
+  String.concat "." (service_packages @ [ service ])
 
 let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     =
@@ -74,7 +75,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
         connection_error )
       Grpc_client_eio.Io.t) request =
   let response =
-    Grpc_client_eio.Client.Unary.call ~sw ~io ~service:"%s.%s"
+    Grpc_client_eio.Client.Unary.call ~sw ~io ~service:"%s"
       ~method_name:%S
       ~headers:(Grpc_client.make_request_headers `Proto)
       (%s.%s request)
@@ -89,8 +90,8 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
       }
   | #Grpc_client_eio.Rpc_error.Unary.error' as rest -> Io'.raise_client_error (Unary rest)|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
-          (service_name_of_package service.service_packages)
-          service.service_name rpc.rpc_name typ_mod_name
+          (service_name_of_package service.service_packages service.service_name)
+          rpc.rpc_name typ_mod_name
           (function_name_encode_pb ~service_name ~rpc_name rpc.rpc_req)
           typ_mod_name
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
@@ -99,13 +100,13 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
           {|let %s (type headers net_response stream_error connection_error) ~sw ~(io :
       ( headers,
         net_response,
-        Pbrt.Encoder.t -> unit,
+        Pbrt.Encoder.t ->unit,
         Pbrt.Decoder.t Grpc_eio_core.Body_reader.consumer,
         stream_error,
         connection_error )
       Grpc_client_eio.Io.t) request handler =
     let stream =
-      Grpc_client_eio.Client.Server_streaming.call ~sw ~io ~service:"%s.%s"
+      Grpc_client_eio.Client.Server_streaming.call ~sw ~io ~service:"%s"
         ~method_name:"%s"
         ~headers:(Grpc_client.make_request_headers `Proto)
         (%s.%s request) (fun net_response ~read ->
@@ -125,8 +126,8 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     | #Grpc_client_eio.Rpc_error.Server_streaming.error' as rest -> Io'.raise_client_error (Server_streaming rest)
 |}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
-          (service_name_of_package service.service_packages)
-          service.service_name rpc.rpc_name typ_mod_name
+          (service_name_of_package service.service_packages service.service_name)
+          rpc.rpc_name typ_mod_name
           (function_name_encode_pb ~service_name ~rpc_name rpc.rpc_req)
           typ_mod_name
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
@@ -141,7 +142,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
         connection_error )
       Grpc_client_eio.Io.t) handler =
   let response =
-    Grpc_client_eio.Client.Client_streaming.call ~sw ~io ~service:"%s.%s"
+    Grpc_client_eio.Client.Client_streaming.call ~sw ~io ~service:"%s"
       ~method_name:"%s"
       ~headers:(Grpc_client.make_request_headers `Proto)
       (fun net_response ~writer ->
@@ -159,8 +160,8 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
       }
   | #Grpc_client_eio.Rpc_error.Client_streaming.error' as rest -> Io'.raise_client_error (Client_streaming rest)|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
-          (service_name_of_package service.service_packages)
-          service.service_name rpc.rpc_name typ_mod_name
+          (service_name_of_package service.service_packages service.service_name)
+          rpc.rpc_name typ_mod_name
           (function_name_encode_pb ~service_name ~rpc_name rpc.rpc_req)
           typ_mod_name
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
@@ -175,7 +176,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
         connection_error )
       Grpc_client_eio.Io.t) handler =
     let stream =
-      Grpc_client_eio.Client.Bidirectional_streaming.call ~sw ~io ~service:"%s.%s"
+      Grpc_client_eio.Client.Bidirectional_streaming.call ~sw ~io ~service:"%s"
         ~method_name:"%s"
         ~headers:(Grpc_client.make_request_headers `Proto)
         (fun net_response ~writer ~read ->
@@ -194,8 +195,8 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     | `Stream_result_success result -> result
     | #Grpc_client_eio.Rpc_error.Bidirectional_streaming.error' as rest -> Io'.raise_client_error (Bidirectional_streaming rest)|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
-          (service_name_of_package service.service_packages)
-          service.service_name rpc.rpc_name typ_mod_name
+          (service_name_of_package service.service_packages service.service_name)
+          rpc.rpc_name typ_mod_name
           (function_name_encode_pb ~service_name ~rpc_name rpc.rpc_req)
           typ_mod_name
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
@@ -208,7 +209,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
         F.linep sc
           {|let %s ~sw ~io request =
   let response =
-    Grpc_client_eio.Client.Unary.call ~sw ~io ~service:"%s.%s"
+    Grpc_client_eio.Client.Unary.call ~sw ~io ~service:"%s"
       ~method_name:%S
       ~headers:(Grpc_client.make_request_headers `Proto)
       (%s.%s request)
@@ -223,8 +224,8 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
         }
   | #Grpc_client_eio.Rpc_error.Unary.error' as rest -> Error rest|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
-          (service_name_of_package service.service_packages)
-          service.service_name rpc.rpc_name typ_mod_name
+          (service_name_of_package service.service_packages service.service_name)
+          rpc.rpc_name typ_mod_name
           (function_name_encode_pb ~service_name ~rpc_name rpc.rpc_req)
           typ_mod_name
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
@@ -232,7 +233,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
         F.linep sc
           {|let %s ~sw ~io request handler =
     let stream =
-      Grpc_client_eio.Client.Server_streaming.call ~sw ~io ~service:"%s.%s"
+      Grpc_client_eio.Client.Server_streaming.call ~sw ~io ~service:"%s"
         ~method_name:"%s"
         ~headers:(Grpc_client.make_request_headers `Proto)
         (%s.%s request) (fun net_response ~read ->
@@ -249,8 +250,8 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     | `Stream_result_success result -> Ok result
     | #Grpc_client_eio.Rpc_error.Server_streaming.error' as rest -> Error rest|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
-          (service_name_of_package service.service_packages)
-          service.service_name rpc.rpc_name typ_mod_name
+          (service_name_of_package service.service_packages service.service_name)
+          rpc.rpc_name typ_mod_name
           (function_name_encode_pb ~service_name ~rpc_name rpc.rpc_req)
           typ_mod_name
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
@@ -258,7 +259,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
         F.linep sc
           {|let %s ~sw ~io handler =
   let response =
-    Grpc_client_eio.Client.Client_streaming.call ~sw ~io ~service:"%s.%s"
+    Grpc_client_eio.Client.Client_streaming.call ~sw ~io ~service:"%s"
       ~method_name:"%s"
       ~headers:(Grpc_client.make_request_headers `Proto)
       (fun net_response ~writer ->
@@ -276,8 +277,8 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
         }
   | #Grpc_client_eio.Rpc_error.Client_streaming.error' as rest -> Error rest|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
-          (service_name_of_package service.service_packages)
-          service.service_name rpc.rpc_name typ_mod_name
+          (service_name_of_package service.service_packages service.service_name)
+          rpc.rpc_name typ_mod_name
           (function_name_encode_pb ~service_name ~rpc_name rpc.rpc_req)
           typ_mod_name
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
@@ -285,7 +286,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
         F.linep sc
           {|let %s ~sw ~io handler =
     let stream =
-      Grpc_client_eio.Client.Bidirectional_streaming.call ~sw ~io ~service:"%s.%s"
+      Grpc_client_eio.Client.Bidirectional_streaming.call ~sw ~io ~service:"%s"
         ~method_name:"%s"
         ~headers:(Grpc_client.make_request_headers `Proto)
         (fun net_response ~writer ~read ->
@@ -303,8 +304,8 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     | `Stream_result_success result -> Ok result
     | #Grpc_client_eio.Rpc_error.Bidirectional_streaming.error' as rest -> Error rest|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
-          (service_name_of_package service.service_packages)
-          service.service_name rpc.rpc_name typ_mod_name
+          (service_name_of_package service.service_packages service.service_name)
+          rpc.rpc_name typ_mod_name
           (function_name_encode_pb ~service_name ~rpc_name rpc.rpc_req)
           typ_mod_name
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
@@ -333,7 +334,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
   | #Grpc_client_eio.Rpc_error.Unary.error' as rest ->
       rest|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
-          (service_name_of_package service.service_packages)
+          (service_name_of_package service.service_packages service.service_name)
           service.service_name rpc.rpc_name typ_mod_name
           (function_name_encode_pb ~service_name ~rpc_name rpc.rpc_req)
           typ_mod_name
@@ -341,7 +342,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     | `Server_streaming ->
         F.linep sc
           {|let %s ~sw ~io request handler =
-  Grpc_client_eio.Client.Server_streaming.call ~sw ~io ~service:"%s.%s"
+  Grpc_client_eio.Client.Server_streaming.call ~sw ~io ~service:"%s"
     ~method_name:"%s"
     ~headers:(Grpc_client.make_request_headers `Proto)
     (%s.%s request) (fun net_response ~read ->
@@ -354,8 +355,8 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
       in
       handler net_response responses)|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
-          (service_name_of_package service.service_packages)
-          service.service_name rpc.rpc_name typ_mod_name
+          (service_name_of_package service.service_packages service.service_name)
+          rpc.rpc_name typ_mod_name
           (function_name_encode_pb ~service_name ~rpc_name rpc.rpc_req)
           typ_mod_name
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
@@ -363,7 +364,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
         F.linep sc
           {|let %s ~sw ~io handler =
   let response =
-    Grpc_client_eio.Client.Client_streaming.call ~sw ~io ~service:"%s.%s"
+    Grpc_client_eio.Client.Client_streaming.call ~sw ~io ~service:"%s"
       ~method_name:"%s"
       ~headers:(Grpc_client.make_request_headers `Proto)
       (fun net_response ~writer ->
@@ -382,15 +383,15 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
   | #Grpc_client_eio.Rpc_error.Client_streaming.error' as rest ->
       rest|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
-          (service_name_of_package service.service_packages)
-          service.service_name rpc.rpc_name typ_mod_name
+          (service_name_of_package service.service_packages service.service_name)
+          rpc.rpc_name typ_mod_name
           (function_name_encode_pb ~service_name ~rpc_name rpc.rpc_req)
           typ_mod_name
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
     | `Bidirectional_streaming ->
         F.linep sc
           {|let %s ~sw ~io handler =
-  Grpc_client_eio.Client.Bidirectional_streaming.call ~sw ~io ~service:"%s.%s"
+  Grpc_client_eio.Client.Bidirectional_streaming.call ~sw ~io ~service:"%s"
     ~method_name:"%s"
     ~headers:(Grpc_client.make_request_headers `Proto)
     (fun net_response ~writer ~read ->
@@ -404,8 +405,8 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
       in
       handler net_response ~writer:writer' ~read:read')|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
-          (service_name_of_package service.service_packages)
-          service.service_name rpc.rpc_name typ_mod_name
+          (service_name_of_package service.service_packages service.service_name)
+          rpc.rpc_name typ_mod_name
           (function_name_encode_pb ~service_name ~rpc_name rpc.rpc_req)
           typ_mod_name
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
@@ -471,9 +472,9 @@ let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
     let rpc_name = rpc.rpc_name in
     let service_name = service.service_name in
 
-    F.linep sc {|| "%s.%s", %S ->|}
-      (String.concat "." service.service_packages)
-      service.service_name rpc.rpc_name;
+    F.linep sc {|| "%s", %S ->|}
+      (String.concat "." (service.service_packages @ [ service.service_name ]))
+      rpc.rpc_name;
     let impl = Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case in
 
     let decoder_func =
