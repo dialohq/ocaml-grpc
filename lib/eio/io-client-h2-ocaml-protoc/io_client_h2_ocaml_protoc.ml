@@ -120,10 +120,19 @@ module Make_net (Client : Client) :
     (* Allocate once, use a pool of these *)
     let errored = ref false in
     let response_handler response reader =
-      let trailers, trailers_u = Eio.Promise.create () in
-      let () =
-        trailers_handler :=
-          fun trailers -> Eio.Promise.resolve trailers_u trailers
+      let grpc_status_header =
+        H2.Headers.get response.H2.Response.headers "grpc-status"
+      in
+      let trailers =
+        match grpc_status_header with
+        | Some status ->
+            Eio.Promise.create_resolved
+            @@ H2.Headers.of_list [ ("grpc-status", status) ]
+        | None ->
+            let trailers', trailers_u = Eio.Promise.create () in
+            (trailers_handler :=
+               fun trailers -> Eio.Promise.resolve trailers_u trailers);
+            trailers'
       in
 
       let next =
