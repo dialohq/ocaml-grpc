@@ -211,7 +211,7 @@ module Expert = struct
       let scheme = scheme
     end))
 
-  let create_with_address ~(net : Eio_unix.Net.t) ~sw ~scheme ~host ~port =
+  let create_with_address ~(net : _ Eio.Net.t) ~sw ~scheme ~host ~port =
     let inet, port =
       Eio_unix.run_in_systhread (fun () ->
           Unix.getaddrinfo host (string_of_int port)

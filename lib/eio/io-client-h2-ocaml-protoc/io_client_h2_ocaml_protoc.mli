@@ -19,7 +19,7 @@ module Expert : sig
     t
 
   val create_with_address :
-    net:Eio_unix.Net.t ->
+    net:_ Eio.Net.t ->
     sw:Eio.Switch.t ->
     scheme:string ->
     host:string ->
@@ -28,4 +28,4 @@ module Expert : sig
 end
 
 (* TODO: add logger *)
-val create_client : net:Eio_unix.Net.t -> sw:Eio.Switch.t -> string -> t
+val create_client : net:_ Eio.Net.t -> sw:Eio.Switch.t -> string -> t
