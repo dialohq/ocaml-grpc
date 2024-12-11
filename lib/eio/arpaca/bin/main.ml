@@ -120,6 +120,10 @@ let prepare proto_file_name include_dirs =
   let { Pb_codegen_ocaml_type.proto_services; _ }, _ =
     compile proto_file_name include_dirs false
   in
+  let proto_file_name =
+    if not (String.contains proto_file_name '/') then proto_file_name
+    else List.hd @@ List.rev @@ String.split_on_char '/' proto_file_name
+  in
   let proto_gen_module =
     Pb_codegen_util.caml_file_name_of_proto_file_name ~proto_file_name
   in
