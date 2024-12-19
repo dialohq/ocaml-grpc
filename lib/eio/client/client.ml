@@ -240,60 +240,69 @@ module Unary = struct
          Io.t) ~service ~method_name ~headers request :
       (_, headers, stream_error, conn_error, net_response) result' =
     match call ~sw ~io ~service ~method_name ~headers () with
-    | Ok { writer; recv; grpc_status; write_exn; _ } -> (
+    | Ok { writer; recv; grpc_status; write_exn; conn_err = conn_err_p } -> (
         try
           if not (writer.write request) then
             `Write_error (Option.get !write_exn)
           else (
             writer.close ();
-            match Eio.Promise.await recv with
-            | Ok { net_response; recv_seq; trailers } ->
-                let (module Io') = io in
-                if Io'.Net_response.is_ok net_response then
-                  match recv_seq () with
-                  | Grpc_eio_core.Recv_seq.Done ->
-                      `Premature_close
-                        {
-                          net_response;
-                          grpc_status = Eio.Promise.await grpc_status;
-                          trailers = Eio.Promise.await trailers;
-                          stream_error = None;
-                        }
-                  | Err stream_error ->
-                      `Premature_close
-                        {
-                          net_response;
-                          grpc_status = Eio.Promise.await grpc_status;
-                          trailers = Eio.Promise.await trailers;
-                          stream_error = Some stream_error;
-                        }
-                  | Next (response, _) -> (
-                      let status = Eio.Promise.await grpc_status in
-                      match Grpc.Status.code status with
-                      | OK ->
-                          `Success
+            Eio.Fiber.first
+              (fun () -> `Connection_error (Eio.Promise.await conn_err_p))
+              (fun () ->
+                match Eio.Promise.await recv with
+                | Ok { net_response; recv_seq; trailers } ->
+                    let (module Io') = io in
+                    if Io'.Net_response.is_ok net_response then
+                      match recv_seq () with
+                      | Grpc_eio_core.Recv_seq.Done ->
+                          (`Premature_close
+                             {
+                               net_response;
+                               grpc_status = Eio.Promise.await grpc_status;
+                               trailers = Eio.Promise.await trailers;
+                               stream_error = None;
+                             }
+                            : ( response,
+                                headers,
+                                stream_error,
+                                conn_error,
+                                net_response )
+                              result')
+                      | Err stream_error ->
+                          `Premature_close
                             {
                               net_response;
-                              response;
+                              grpc_status = Eio.Promise.await grpc_status;
                               trailers = Eio.Promise.await trailers;
+                              stream_error = Some stream_error;
                             }
-                      | _ ->
-                          (* Not reachable under normal circumstances
+                      | Next (response, _) -> (
+                          let status = Eio.Promise.await grpc_status in
+                          match Grpc.Status.code status with
+                          | OK ->
+                              `Success
+                                {
+                                  net_response;
+                                  response;
+                                  trailers = Eio.Promise.await trailers;
+                                }
+                          | _ ->
+                              (* Not reachable under normal circumstances
                              https://github.com/grpc/grpc/issues/12824 *)
-                          `Response_not_ok
-                            {
-                              net_response;
-                              grpc_status = status;
-                              trailers = Eio.Promise.await trailers;
-                            })
-                else
-                  `Response_not_ok
-                    {
-                      net_response;
-                      grpc_status = Eio.Promise.await grpc_status;
-                      trailers = Eio.Promise.await trailers;
-                    }
-            | Error e -> `Connection_error e)
+                              `Response_not_ok
+                                {
+                                  net_response;
+                                  grpc_status = status;
+                                  trailers = Eio.Promise.await trailers;
+                                })
+                    else
+                      `Response_not_ok
+                        {
+                          net_response;
+                          grpc_status = Eio.Promise.await grpc_status;
+                          trailers = Eio.Promise.await trailers;
+                        }
+                | Error e -> `Connection_error e))
         with exn -> `Write_error exn)
     | Error e -> `Connection_error e
 end
