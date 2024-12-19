@@ -1,4 +1,5 @@
-type stream_error = [ H2.Client_connection.error | `Unexpected_eof ]
+type stream_error =
+  [ `Unexpected_eof | `Connection_error of H2.Client_connection.error ]
 
 type t =
   ( H2.Headers.t,
@@ -18,7 +19,7 @@ module Expert : sig
     t
 
   val create_with_address :
-    net:Eio_unix.Net.t ->
+    net:_ Eio.Net.t ->
     sw:Eio.Switch.t ->
     scheme:string ->
     host:string ->
@@ -26,4 +27,5 @@ module Expert : sig
     t
 end
 
-val create_client : net:Eio_unix.Net.t -> sw:Eio.Switch.t -> string -> t
+(* TODO: add logger *)
+val create_client : net:_ Eio.Net.t -> sw:Eio.Switch.t -> string -> t

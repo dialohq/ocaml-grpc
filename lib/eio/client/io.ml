@@ -37,19 +37,56 @@ module type S = sig
   type connection_error
   type stream_error
 
+  type client_error =
+    | Unary of
+        ( response,
+          Headers.t,
+          stream_error,
+          connection_error,
+          Net_response.t )
+        Rpc_error.Unary.error'
+    | Client_streaming :
+        ( 'a,
+          Headers.t,
+          stream_error,
+          connection_error,
+          Net_response.t,
+          response )
+        Rpc_error.Client_streaming.error'
+        -> client_error
+    | Server_streaming :
+        ( 'a,
+          Headers.t,
+          stream_error,
+          Net_response.t,
+          connection_error )
+        Rpc_error.Server_streaming.error'
+        -> client_error
+    | Bidirectional_streaming :
+        ( 'a,
+          Headers.t,
+          stream_error,
+          connection_error,
+          Net_response.t )
+        Rpc_error.Bidirectional_streaming.error'
+        -> client_error
+
+  exception Grpc_client_error of client_error
+
+  val raise_client_error : client_error -> 'exn
+
   val send_request :
     headers:Grpc_client.request_headers ->
     string ->
-    ( request writer
-      * ( Net_response.t,
-          response,
-          Headers.t,
-          stream_error,
-          connection_error )
-        reader_or_error
-        Eio.Promise.t,
-      connection_error )
-    result
+    request writer
+    * ( Net_response.t,
+        response,
+        Headers.t,
+        stream_error,
+        connection_error )
+      reader_or_error
+      Eio.Promise.t
+    * connection_error Eio.Promise.t
 end
 
 type ('headers,
