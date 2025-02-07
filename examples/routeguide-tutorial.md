@@ -19,9 +19,9 @@ With gRPC we can define our service once in a `.proto` file, and implement clien
 
 ## Prerequisites
 
-To run the sample code and walk through this tutorial, the only prerequisite is OCaml itself. To get OCaml insalled follow the [Up and Running]() guide on ocaml.org.
+To run the sample code and walk through this tutorial, the only prerequisite is OCaml itself. To get OCaml insalled follow the [Get Started]() guide on ocaml.org.
 
-[Up and Running]: https://ocaml.org/docs/up-and-running
+[Get Started]: https://ocaml.org/docs/get-started
 
 ## Running the example
 

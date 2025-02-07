@@ -2,14 +2,14 @@
 
 This tutorial is meant to be an introduction to OCaml-GRPC and assumes that you have basic [OCaml] experience as well as an understanding of what [protocol buffers] are. If you don't, feel free to read up on the pages linked in this paragraph and come back to this tutorial once you feel you are ready!
 
-[ocaml]: https://ocaml.org/docs/up-and-running
+[ocaml]: https://ocaml.org/docs/get-started
 [protocol buffers]: https://developers.google.com/protocol-buffers/docs/overview
 
 ## Prerequisites
 
-To run the sample code and walk through this tutorial, the only prerequisite is OCaml itself. To get OCaml insalled follow the [Up and Running]() guide on ocaml.org.
+To run the sample code and walk through this tutorial, the only prerequisite is OCaml itself. To get OCaml insalled follow the [Get Started]() guide on ocaml.org.
 
-[Up and Running]: https://ocaml.org/docs/up-and-running
+[Get Started]: https://ocaml.org/docs/get-started
 
 ## Project Setup
 
