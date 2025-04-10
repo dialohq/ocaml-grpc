@@ -1,0 +1,12 @@
+type stream_error = [ `Unexpected_eof ]
+
+type t =
+  ( Haha.Headers.t list,
+    Haha.Response.t,
+    Pbrt.Encoder.t -> unit,
+    Pbrt.Decoder.t Grpc_eio_core.Body_reader.consumer,
+    stream_error,
+    Haha.Error.connection_error )
+  Grpc_client_eio.Io.t
+
+val create : sw:Eio.Switch.t -> net:_ Eio.Net.t -> ?debug:bool -> string -> t

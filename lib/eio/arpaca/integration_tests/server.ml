@@ -87,7 +87,12 @@ let () =
   (* Load features. *)
   features := load path;
   Eio_main.run (fun env ->
-      let module RouteGuideRpc : RouteGuide_server.Implementation = struct
+      let module RouteGuideRpc :
+        RouteGuide_server.Implementation
+          with type net_request = Io_server_h2_ocaml_protoc.Net_request.t =
+      struct
+        type net_request = Io_server_h2_ocaml_protoc.Net_request.t
+
         let get_feature _ point =
           Format.printf "%a" Route_guide.pp_point point;
           Eio.traceln "GetFeature = {:%s}" (R.show_point point);

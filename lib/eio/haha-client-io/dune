@@ -1,0 +1,4 @@
+(library
+ (public_name grpc-eio-haha-client-io)
+ (name haha_client_io)
+ (libraries pbrt pbrt_services grpc-client-eio haha eio grpc_eio_core))

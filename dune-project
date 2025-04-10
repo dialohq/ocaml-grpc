@@ -52,7 +52,8 @@
  (depends
   (ocaml
    (>= 4.08))
-  (grpc (= :version))))
+  (grpc
+   (= :version))))
 
 (package
  (name grpc-client)
@@ -64,7 +65,8 @@
  (depends
   (ocaml
    (>= 4.08))
-  (grpc (= :version))))
+  (grpc
+   (= :version))))
 
 (package
  (name grpc-lwt)
@@ -128,7 +130,8 @@
 
 (package
  (name grpc-eio-io-client-h2-ocaml-protoc)
- (synopsis "An h2 implementation of gRPC networking layer for eio based clients.")
+ (synopsis
+  "An h2 implementation of gRPC networking layer for eio based clients.")
  (depends
   (grpc-client-eio
    (= :version))
@@ -142,7 +145,37 @@
 
 (package
  (name grpc-eio-io-server-h2-ocaml-protoc)
- (synopsis "An h2 implementation of gRPC networking layer for eio based servers.")
+ (synopsis
+  "An h2 implementation of gRPC networking layer for eio based servers.")
+ (depends
+  (grpc-server-eio
+   (= :version))
+  (h2
+   (>= 0.9.0))
+  stringext
+  pbrt
+  pbrt_services
+  eio
+  h2-eio
+  grpc-eio-core))
+
+(package
+ (name grpc-eio-haha-client-io)
+ (synopsis
+  "An HaHa implementation of gRPC networking layer for eio based clients.")
+ (depends
+  (grpc-client-eio
+   (= :version))
+  pbrt
+  pbrt_services
+  eio
+  haha
+  grpc-eio-core))
+
+(package
+ (name grpc-eio-haha-server-io)
+ (synopsis
+  "An HaHa implementation of gRPC networking layer for eio based clients.")
  (depends
   (grpc-server-eio
    (= :version))
@@ -165,7 +198,7 @@
   (grpc
    (= :version))
   (grpc-client-eio
-    (= :version))
+   (= :version))
   (grpc-client
    (= :version))))
 
@@ -238,5 +271,4 @@
  (description "Benchmarking package for gRPC.")
  (tags
   (network rpc serialisation benchmark))
- (depends
-  eio))
+ (depends eio))

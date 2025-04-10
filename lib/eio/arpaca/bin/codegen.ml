@@ -431,9 +431,10 @@ let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
     let name = Pb_codegen_util.function_name_of_rpc rpc in
 
     F.linep sc "val %s :" (to_snake_case name);
-    F.linep sc
-      "  Eio.Net.Sockaddr.stream * H2.Reqd.t * H2.Request.t * H2.Reqd.error \
-       Eio.Promise.t ->";
+    (* F.linep sc *)
+    (*   "  Eio.Net.Sockaddr.stream * H2.Reqd.t * H2.Request.t * H2.Reqd.error \ *)
+    (*    Eio.Promise.t ->"; *)
+    F.linep sc "  net_request ->";
     let req_type =
       Printf.sprintf "%s.%s" typ_mod_name (ocaml_type_of_rpc_type rpc.rpc_req)
     in
@@ -549,10 +550,14 @@ let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
   let sc = top_scope in
 
   F.line sc "module type Implementation = sig";
+  F.line sc "  type net_request";
+  F.empty_line sc;
   F.sub_scope sc gen_impl_sig;
   F.line sc "end";
   F.empty_line sc;
-  F.linep sc "let create_server (module Impl : Implementation) ~service ~meth =";
+  F.linep sc
+    "let create_server (type net_request) (module Impl : Implementation with \
+     type net_request = net_request) ~service ~meth =";
   F.sub_scope sc (fun sc ->
       F.linep sc "match (service, meth) with";
       List.iter (gen_rpc_handler sc) service.service_body;

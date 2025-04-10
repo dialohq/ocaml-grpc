@@ -1,10 +1,12 @@
-self: super:
-let inherit (super) fetchFromGitHub;
+nix-filter: self: super: let
+  inherit (super) fetchFromGitHub callPackage;
 in {
-  ocaml-ng = super.ocaml-ng // {
-    ocamlPackages_5_1 = super.ocaml-ng.ocamlPackages_5_1.overrideScope'
-      (oself: super:
-        let
+  ocaml-ng =
+    super.ocaml-ng
+    // {
+      ocamlPackages_5_1 =
+        super.ocaml-ng.ocamlPackages_5_1.overrideScope'
+        (oself: super: let
           ocamlProtocSrc = fetchFromGitHub {
             owner = "mransan";
             repo = "ocaml-protoc";
@@ -12,7 +14,13 @@ in {
             sha256 = "sha256-P5Y+Sk9EfIgK1wSoMDImCoYEF/npdWVMTP5/3msDDhM=";
             fetchSubmodules = true;
           };
+          hahaPkgs = callPackage /Users/adam/libs/haha/nix/packages.nix {
+            inherit nix-filter;
+            pkgs = self;
+          };
         in {
+          haha = hahaPkgs.default;
+          hpackv = hahaPkgs.hpackv;
           h2 = super.h2.overrideAttrs (_: {
             src = fetchFromGitHub {
               owner = "dialohq";
@@ -32,24 +40,25 @@ in {
               fetchSubmodules = true;
             };
           });
-          pbrt = super.pbrt.overrideAttrs (_: { src = ocamlProtocSrc; });
-          pbrt_services = super.buildDunePackage ({
+          pbrt = super.pbrt.overrideAttrs (_: {src = ocamlProtocSrc;});
+          pbrt_services = super.buildDunePackage {
             pname = "pbrt_services";
             version = "3.0.1";
             duneVersion = "3";
-            propagatedBuildInputs = [ oself.pbrt oself.pbrt_yojson ];
+            propagatedBuildInputs = [oself.pbrt oself.pbrt_yojson];
             src = ocamlProtocSrc;
-          });
-          pbrt_yojson = super.buildDunePackage ({
+          };
+          pbrt_yojson = super.buildDunePackage {
             pname = "pbrt_yojson";
             version = "3.0.1";
             duneVersion = "3";
-            propagatedBuildInputs = [ super.yojson super.base64 ];
+            propagatedBuildInputs = [super.yojson super.base64];
             src = ocamlProtocSrc;
-          });
+          };
           ocaml-protoc = super.ocaml-protoc.overrideAttrs (_: {
-            propagatedBuildInputs = super.ocaml-protoc.propagatedBuildInputs
-              ++ [ oself.pbrt_yojson oself.pbrt_services ];
+            propagatedBuildInputs =
+              super.ocaml-protoc.propagatedBuildInputs
+              ++ [oself.pbrt_yojson oself.pbrt_services];
             src = ocamlProtocSrc;
           });
           gluten-eio = super.gluten-eio.overrideAttrs (_: {
@@ -63,6 +72,5 @@ in {
             };
           });
         });
-  };
+    };
 }
-
