@@ -72,21 +72,14 @@ module Io = struct
     in
     let body_writer ~window_size:_ = Eio.Stream.take body_writer_stream in
     let write_end ?(trailers = []) () =
-      Format.printf "Writing End\n%!";
       wrap_in_promise (fun resolve ->
-          Eio.Stream.add body_writer_stream (`End (None, trailers), resolve));
-      Printf.printf "End written\n%!"
+          Eio.Stream.add body_writer_stream (`End (None, trailers), resolve))
     in
 
     let msg_state = ref Grpc_eio_core.Body_parse.Idle in
 
     let on_data = function
       | `Data { Cstruct.buffer = data; len; off } ->
-          (* Format.printf *)
-          (*   "[GRPC] Reading message:@.Data: <bistring %i> | Len: %i | Off: \ *)
-          (*    %i@.State: %a@." *)
-          (*   (Bigstringaf.length data) len off *)
-          (*   Grpc_eio_core.Body_reader_vendor.pp_hum_msg_state !msg_state; *)
           Grpc_eio_core.Body_parse.read_message ~data ~len ~off msg_stream
             msg_state
       | `End _ -> Eio.Stream.add msg_stream None
@@ -126,7 +119,6 @@ module Io = struct
     let close () = write_end () in
 
     let write_trailers (trailers : Grpc_server.trailers) =
-      Printf.printf "GRPC server writing trailers\n%!";
       write_end ~trailers:(grpc_trailers_to_headers trailers) ()
     in
 

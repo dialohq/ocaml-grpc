@@ -1,16 +1,18 @@
+open Buffer_pool
+
 type t = { bytes : Bytes.t; len : int }
 type 'a consumer = { consume : 'b. ('a -> 'b) -> 'b }
 
-(* TODO: use some buffer pool *)
-let take_buffer n = Bytes.create n
-let free_buffer = ignore
+let buffer_pool = Bytes_pool.make ()
+let take_buffer len = Bytes_pool.alloc buffer_pool len
+let free_buffer bytes = Bytes_pool.release buffer_pool bytes
 
-let to_consumer t =
+let to_consumer (t : t) =
   {
     consume =
       (fun f ->
         let res = f t in
-        free_buffer t;
+        free_buffer t.bytes;
         res);
   }
 

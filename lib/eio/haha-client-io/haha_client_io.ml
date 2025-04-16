@@ -174,18 +174,19 @@ module MakeHahaIO (Connection : Connection) :
          {
            write =
              (let header_buffer = Cstruct.create 5 in
-              let body_buffer = Cstruct.create 400_000 in
+              let body_buffer = Cstruct.create 1_000 in
               fun (input : request) ->
                 Pbrt.Encoder.clear encoder;
                 input encoder;
 
-                let msg = Pbrt.Encoder.to_bytes encoder in
-                let length = Bytes.length msg in
-
+                let length =
+                  Pbrt.Encoder.blit_to_buffer
+                    ~blit_from_bytes:Cstruct.blit_from_bytes encoder body_buffer
+                    0
+                in
                 fill_header_cs ~length header_buffer;
 
-                Cstruct.blit_from_bytes msg 0 body_buffer 0 length;
-
+                (* Cstruct.blit_from_bytes msg 0 body_buffer 0 length; *)
                 let css = [ header_buffer; Cstruct.sub body_buffer 0 length ] in
 
                 write_body css);
@@ -195,7 +196,7 @@ module MakeHahaIO (Connection : Connection) :
       Connection.connection_error )
 end
 
-let create ~sw ~net ?debug host : t =
+let create ~sw ~net ?debug host : t * (unit -> unit) =
   let uri = Uri.of_string host in
   let scheme = Uri.scheme uri |> Option.value ~default:"http" in
   let host =
@@ -227,15 +228,13 @@ let create ~sw ~net ?debug host : t =
   let socket = Eio.Net.connect ~sw net addr in
 
   let req_stream = Eio.Stream.create 0 in
-  let request_writer () =
-    let res = Eio.Stream.take req_stream in
-    Printf.printf "Got a request from req_stream\n%!";
-    Some res
-  in
+  let request_writer () = Eio.Stream.take req_stream in
+
+  let write_end () = Eio.Stream.add req_stream None in
 
   let conn_err_t, conn_err_u = Eio.Promise.create () in
 
-  Eio.Fiber.fork ~sw (fun () ->
+  Eio.Fiber.fork_daemon ~sw (fun () ->
       Haha.Client.run ?debug
         ~error_handler:(function
           | ConnectionError err ->
@@ -244,13 +243,14 @@ let create ~sw ~net ?debug host : t =
           | _ ->
               (* WARN: skill issue *)
               Printf.printf "gRPC IO stream erra\n%!")
-        ~request_writer Haha.Settings.default socket);
+        ~request_writer Haha.Settings.default socket;
+      `Stop_daemon);
 
   let module Connection : Connection = struct
-    let write_request = Eio.Stream.add req_stream
+    let write_request req = Eio.Stream.add req_stream (Some req)
     let scheme = scheme
     let host = host
     let connection_error = conn_err_t
     let debug = Option.value ~default:false debug
   end in
-  (module MakeHahaIO (Connection))
+  ((module MakeHahaIO (Connection)), write_end)

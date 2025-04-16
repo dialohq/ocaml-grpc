@@ -8,19 +8,28 @@ in {
         super.ocaml-ng.ocamlPackages_5_1.overrideScope'
         (oself: super: let
           ocamlProtocSrc = fetchFromGitHub {
-            owner = "mransan";
+            owner = "dialohq";
             repo = "ocaml-protoc";
-            rev = "292165b0f23f75973ac533ee48bae325544a42a9";
-            sha256 = "sha256-P5Y+Sk9EfIgK1wSoMDImCoYEF/npdWVMTP5/3msDDhM=";
+            rev = "0fb76b6097b922df271cae6943b7b1eb29e4210b";
+            sha256 = "sha256-5GQ/8AbTxUkyrAVTspdoll9CgwwDmWdkf49dEaOcGZU=";
             fetchSubmodules = true;
           };
-          hahaPkgs = callPackage /Users/adam/libs/haha/nix/packages.nix {
-            inherit nix-filter;
-            pkgs = self;
+          hahaPkgsSrc = builtins.fetchGit {
+            url = "https://github.com/dialohq/haha";
+            rev = "f3162c12b7fce9b13d4b8476a9a3d791e41cbf37";
           };
+          mkHahaPkg = pname: buildDeps:
+            super.buildDunePackage {
+              inherit pname;
+              version = "0.0.1";
+              duneVersion = "3";
+              src = hahaPkgsSrc;
+              nativeBuildInputs = [super.git];
+              propagatedBuildInputs = buildDeps;
+            };
         in {
-          haha = hahaPkgs.default;
-          hpackv = hahaPkgs.hpackv;
+          hpackv = mkHahaPkg "hpackv" (with oself; [angstrom faraday]);
+          haha = mkHahaPkg "haha" (with oself; [eio_main angstrom faraday hpackv]);
           h2 = super.h2.overrideAttrs (_: {
             src = fetchFromGitHub {
               owner = "dialohq";

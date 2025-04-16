@@ -77,10 +77,7 @@ let handle_request ?error_handler (type net_request req resp)
               in
               try
                 let request_stream = Io'.Net_request.body request in
-                Printf.printf
-                  "Got the server request stream, running grpc API handler\n%!";
                 let extra = f request_stream write in
-                Printf.printf "gRPC API handler done\n%!";
                 write_trailers
                   (Grpc_server.make_trailers ~extra (Grpc.Status.make OK));
                 close ();

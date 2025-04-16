@@ -9,4 +9,9 @@ type t =
     Haha.Error.connection_error )
   Grpc_client_eio.Io.t
 
-val create : sw:Eio.Switch.t -> net:_ Eio.Net.t -> ?debug:bool -> string -> t
+val create :
+  sw:Eio.Switch.t ->
+  net:_ Eio.Net.t ->
+  ?debug:bool ->
+  string ->
+  t * (unit -> unit)
