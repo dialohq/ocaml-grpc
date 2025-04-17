@@ -15,6 +15,7 @@ module type Connection = sig
   val scheme : string
   val host : string
   val debug : bool
+  val buffer_pool : Grpc_eio_core.Buffer_pool.Bytes_pool.t
 end
 
 let wrap_in_promise _ f =
@@ -106,8 +107,8 @@ module MakeHahaIO (Connection : Connection) :
 
     let on_data = function
       | `Data { Cstruct.buffer = data; len; off } ->
-          Grpc_eio_core.Body_parse.read_message ~data ~len ~off msg_stream
-            msg_state
+          Grpc_eio_core.Body_parse.read_message ~pool:Connection.buffer_pool
+            ~data ~len ~off msg_stream msg_state
       | `End (None, trailers) ->
           Eio.Stream.add msg_stream None;
           Eio.Promise.resolve trailers_u trailers
@@ -252,5 +253,6 @@ let create ~sw ~net ?debug host : t * (unit -> unit) =
     let host = host
     let connection_error = conn_err_t
     let debug = Option.value ~default:false debug
+    let buffer_pool = Grpc_eio_core.Buffer_pool.Bytes_pool.make ()
   end in
   ((module MakeHahaIO (Connection)), write_end)

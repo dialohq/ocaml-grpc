@@ -6,17 +6,23 @@ let wrap_in_promise f =
   f (fun () -> Eio.Promise.resolve r ());
   Eio.Promise.await p
 
+type net_request = {
+  request : Haha.Request.t;
+  msg_stream :
+    Grpc_eio_core.Body_parse.t Grpc_eio_core.Body_parse.consumer option
+    Eio.Stream.t;
+  handler_resolver :
+    (Haha.Types.body_reader * Haha.Response.response_writer) Eio.Promise.u;
+  connection_error : Haha.Error.connection_error Eio.Promise.t;
+  buffer_pool : Grpc_eio_core.Buffer_pool.Bytes_pool.t;
+}
+
 module Io = struct
   type request = Pbrt.Decoder.t Grpc_eio_core.Body_reader.consumer
   type response = Pbrt.Encoder.t -> unit
 
   module Net_request = struct
-    type t =
-      Haha.Request.t
-      * Grpc_eio_core.Body_parse.t Grpc_eio_core.Body_parse.consumer option
-        Eio.Stream.t
-      * (Haha.Types.body_reader * Haha.Response.response_writer) Eio.Promise.u
-      * Haha.Error.connection_error Eio.Promise.t
+    type t = net_request
 
     let to_seq recv =
       let rec loop recv () =
@@ -28,7 +34,7 @@ module Io = struct
       in
       loop recv
 
-    let body ((_, msg_stream, _, _err_p) : t) : request Seq.t =
+    let body ({ msg_stream; _ } : t) : request Seq.t =
       let rec get_next () =
         match Eio.Stream.take msg_stream with
         | Some msg -> Grpc_eio_core.Recv_seq.Next (msg, fun () -> get_next ())
@@ -45,11 +51,11 @@ module Io = struct
              })
       |> to_seq
 
-    let is_post ((req, _, _, _) : t) = Haha.Request.meth req = POST
-    let target ((req, _, _, _) : t) = Haha.Request.path req
+    let is_post ({ request; _ } : t) = Haha.Request.meth request = POST
+    let target ({ request; _ } : t) = Haha.Request.path request
 
-    let get_header ((req, _, _, _) : t) =
-      Haha.Headers.get_string @@ Haha.Request.headers req
+    let get_header ({ request; _ } : t) =
+      Haha.Headers.get_string @@ Haha.Request.headers request
   end
 
   let grpc_trailers_to_headers
@@ -62,8 +68,8 @@ module Io = struct
       | Some msg -> ("grpc-message", msg) :: extra))
 
   let respond_streaming ~(headers : Grpc_server.headers)
-      ((_, msg_stream, handler_resolver, _) : Net_request.t) :
-      response Grpc_server_eio.Io.streaming_writer =
+      ({ msg_stream; handler_resolver; buffer_pool = pool; _ } : Net_request.t)
+      : response Grpc_server_eio.Io.streaming_writer =
     let open Haha in
     let body_writer_stream = Eio.Stream.create 0 in
     let write_body cs =
@@ -80,7 +86,7 @@ module Io = struct
 
     let on_data = function
       | `Data { Cstruct.buffer = data; len; off } ->
-          Grpc_eio_core.Body_parse.read_message ~data ~len ~off msg_stream
+          Grpc_eio_core.Body_parse.read_message ~pool ~data ~len ~off msg_stream
             msg_state
       | `End _ -> Eio.Stream.add msg_stream None
     in
@@ -128,7 +134,7 @@ module Io = struct
     { Grpc_server_eio.Io.write; close; write_trailers; is_closed }
 
   let respond_error ~(status_code : int) ~(headers : (string * string) list)
-      ((_, _, handler_resolver, _) : Net_request.t) : unit =
+      ({ handler_resolver; _ } : Net_request.t) : unit =
     let open Haha in
     let handler =
       Request.handle ~on_data:ignore ~response_writer:(fun () ->
@@ -152,6 +158,7 @@ let io =
 let connection_handler ~sw ?debug ?config ?h2_error_handler ?grpc_error_handler
     server =
   let error_p, error_r = Eio.Promise.create () in
+  let buffer_pool = Grpc_eio_core.Buffer_pool.Bytes_pool.make () in
 
   let request_handler (request : Haha.Request.t) =
     let handler_promise, handler_resolver = Eio.Promise.create () in
@@ -160,7 +167,13 @@ let connection_handler ~sw ?debug ?config ?h2_error_handler ?grpc_error_handler
     Eio.Fiber.fork ~sw (fun () ->
         Grpc_server_eio.handle_request ~io ?error_handler:grpc_error_handler
           server
-          (request, msg_stream, handler_resolver, error_p));
+          {
+            request;
+            msg_stream;
+            handler_resolver;
+            connection_error = error_p;
+            buffer_pool;
+          });
 
     Eio.Promise.await handler_promise
   in

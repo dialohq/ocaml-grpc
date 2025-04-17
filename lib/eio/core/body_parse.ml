@@ -3,16 +3,15 @@ open Buffer_pool
 type t = { bytes : Bytes.t; len : int }
 type 'a consumer = { consume : 'b. ('a -> 'b) -> 'b }
 
-let buffer_pool = Bytes_pool.make ()
-let take_buffer len = Bytes_pool.alloc buffer_pool len
-let free_buffer bytes = Bytes_pool.release buffer_pool bytes
+let take_buffer ~pool len = Bytes_pool.alloc pool len
+let free_buffer ~pool bytes = Bytes_pool.release pool bytes
 
-let to_consumer (t : t) =
+let to_consumer ~pool (t : t) =
   {
     consume =
       (fun f ->
         let res = f t in
-        free_buffer t.bytes;
+        free_buffer ~pool t.bytes;
         res);
   }
 
@@ -35,8 +34,12 @@ let extract_msg_len ~data ~off =
   let low = Bigstringaf.get_int16_be data (off + 2) in
   (high lsl 16) lor low
 
-let rec read_message ~(data : Bigstringaf.t) ~len ~off msg_stream
+let rec read_message ~pool ~(data : Bigstringaf.t) ~len ~off msg_stream
     (state : msg_state ref) : unit =
+  let take_buffer = take_buffer ~pool in
+  let to_consumer = to_consumer ~pool in
+  let read_message = read_message ~pool in
+
   match !state with
   | Idle ->
       if len >= 5 then (
