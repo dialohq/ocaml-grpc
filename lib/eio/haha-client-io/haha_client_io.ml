@@ -175,7 +175,8 @@ module MakeHahaIO (Connection : Connection) :
          {
            write =
              (let header_buffer = Cstruct.create 5 in
-              let body_buffer = Cstruct.create 1_000 in
+              (* TODO: should use some small buffer pool for body_buffer here *)
+              let body_buffer = Cstruct.create 500_000 in
               fun (input : request) ->
                 Pbrt.Encoder.clear encoder;
                 input encoder;
@@ -187,7 +188,6 @@ module MakeHahaIO (Connection : Connection) :
                 in
                 fill_header_cs ~length header_buffer;
 
-                (* Cstruct.blit_from_bytes msg 0 body_buffer 0 length; *)
                 let css = [ header_buffer; Cstruct.sub body_buffer 0 length ] in
 
                 write_body css);
