@@ -123,6 +123,7 @@ module MakeHahaIO (Connection : Connection) :
       let trailers =
         match grpc_status_header with
         | Some status ->
+            Eio.Stream.add msg_stream None;
             Eio.Promise.create_resolved
             @@ Haha.Headers.of_list [ ("grpc-status", status) ]
         | None -> trailers_t
