@@ -112,7 +112,11 @@ module MakeHahaIO (Connection : Connection) :
       | `End (None, trailers) ->
           Eio.Stream.add msg_stream None;
           Eio.Promise.resolve trailers_u trailers
-      | `End (Some _, _) -> failwith "handle END_STREAM on data"
+      | `End (Some { Cstruct.buffer = data; len; off }, trailers) ->
+          Grpc_eio_core.Body_parse.read_message ~pool:Connection.buffer_pool
+            ~data ~len ~off msg_stream msg_state;
+          Eio.Stream.add msg_stream None;
+          Eio.Promise.resolve trailers_u trailers
     in
 
     let result_t, result_u = Eio.Promise.create () in
