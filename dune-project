@@ -69,42 +69,6 @@
    (= :version))))
 
 (package
- (name grpc-lwt)
- (synopsis "An Lwt implementation of gRPC")
- (description
-  "Functionality for building gRPC services and rpcs with `lwt`.")
- (tags
-  (network rpc serialisation))
- (depends
-  (grpc-server
-   (= :version))
-  (h2
-   (>= 0.9.0))
-  (lwt
-   (>= 5.3.0))
-  stringext))
-
-(package
- (name grpc-async)
- (synopsis "An Async implementation of gRPC")
- (description
-  "Functionality for building gRPC services and rpcs with `async`.")
- (tags
-  (network rpc serialisation))
- (depends
-  (ocaml
-   (>= 4.11))
-  (async
-   (>= v0.16))
-  (grpc-server
-   (= :version))
-  (h2
-   (>= 0.9.0))
-  (ppx_jane
-   (>= v0.16.0))
-  stringext))
-
-(package
  (name grpc-server-eio)
  (deprecated_package_names grpc-eio)
  (synopsis "An Eio implementation of gRPC server")

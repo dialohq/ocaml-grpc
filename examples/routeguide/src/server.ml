@@ -1,29 +1,10 @@
-open Routeguide
-module Server = Grpc_server_eio
-module R = Route_guide
+open Routeguide_proto
+module Pb = Route_guide
 
-(* Derived data types to make reading JSON data easier. *)
-type location = R.point = { latitude : int; longitude : int }
-[@@deriving yojson]
+type feature_list = Pb.feature list [@@deriving of_yojson { exn = true }]
+type trailers = (string * string) list
 
-type feature = { name : string; location : location } [@@deriving yojson]
-type feature_list = feature list [@@deriving yojson]
-
-let features : feature list ref = ref []
-
-module RouteNotesMap = Hashtbl.Make (struct
-  type t = Route_guide.point
-
-  let equal = ( = )
-  let hash s = Hashtbl.hash s
-end)
-
-(** Load route_guide data from a JSON file. *)
-let load path : feature list =
-  let json = Yojson.Safe.from_file path in
-  match feature_list_of_yojson json with Ok v -> v | Error err -> failwith err
-
-let in_range (point : R.point) (rect : R.rectangle) : bool =
+let in_range (point : Pb.point) (rect : Pb.rectangle) : bool =
   let lo = Option.get rect.lo in
   let hi = Option.get rect.hi in
 
@@ -38,9 +19,7 @@ let in_range (point : R.point) (rect : R.rectangle) : bool =
 let pi = 4. *. atan 1.
 let radians_of_degrees = ( *. ) (pi /. 180.)
 
-(* Calculates the distance between two points using the "haversine" formula. *)
-(* This code was taken from http://www.movable-type.co.uk/scripts/latlong.html. *)
-let calc_distance (p1 : R.point) (p2 : R.point) : int =
+let calc_distance (p1 : Pb.point) (p2 : Pb.point) : int =
   let cord_factor = 1e7 in
   let r = 6_371_000.0 in
   (* meters *)
@@ -64,170 +43,115 @@ let calc_distance (p1 : R.point) (p2 : R.point) : int =
   let c = 2.0 *. atan2 (sqrt a) (sqrt (1.0 -. a)) in
   Float.to_int (r *. c)
 
-(* $MDX part-begin=server-get-feature *)
+let get_server (features : feature_list) clock =
+  let _ = clock in
+  let module RouteGuideServerImplementation = struct
+    (* underlaying protocol request (HTTP/2 in this case, and most cases) *)
+    type net_request = Haha_server_io.Net_request.t
 
-let get_feature _ point =
-  Format.printf "%a" Route_guide.pp_point point;
-  Eio.traceln "GetFeature = {:%s}" (R.show_point point);
-  let feature =
-    List.find_opt (fun (f : feature) -> f.location = point) !features
-    |> Option.map (fun { location; name } : R.feature ->
-           { R.name; location = Some location })
-  in
-  Eio.traceln "Found feature %s"
-    (feature |> Option.map R.show_feature |> Option.value ~default:"Missing");
-  match feature with
-  | Some feature -> (feature, [])
-  | None ->
-      (* No feature was found, return an unnamed feature. *)
-      (R.default_feature ~location:(Some point) (), [])
+    let get_feature : net_request -> Pb.point -> Pb.feature * trailers =
+     fun _ point ->
+      Printf.printf "[UNARY] /GetFeature\n%!";
 
-let get_feature =
-  Grpc_server_eio.Rpc.unary (fun req ->
-      let feature, headers =
-        get_feature ()
-          (req.Grpc_eio_core.Body_reader.consume Route_guide.decode_pb_point)
-      in
-      ((fun encoder -> R.encode_pb_feature feature encoder), headers))
+      match
+        List.find_opt (fun (f : Pb.feature) -> f.location = Some point) features
+      with
+      | Some feature ->
+          Format.printf "[UNARY] Feature found: %a@." Pb.pp_feature feature;
+          (feature, [])
+      | None ->
+          Format.printf "[UNARY] Feature not found.";
+          ({ Pb.location = None; name = "" }, [])
 
-(* $MDX part-end *)
-(* $MDX part-begin=server-grpc *)
+    let list_features :
+        net_request -> Pb.rectangle -> (Pb.feature -> unit) -> trailers =
+     fun _ rectangle write ->
+      Printf.printf "[S_STREAMING] /ListFeatures\n%!";
 
-let mk_handler f _req rpc =
-  rpc.Grpc_server_eio.Rpc.accept (Grpc_server.headers `Proto) f
+      List.iter
+        (fun (feature : Pb.feature) ->
+          if in_range (Option.get feature.location) rectangle then (
+            write feature;
+            Format.printf "[S_STREAMING] Sent a feature: %a@." Pb.pp_feature
+              feature)
+          else ())
+        features;
+      []
 
-(*
-let route_guide_service clock =
-  let add_rpc = Server.Service.add_rpc in
-  let open Server.Rpc in
-  Server.Service.v ()
-  |> add_rpc ~name:"GetFeature" ~rpc:(mk_handler (unary get_feature))
-  |> add_rpc ~name:"ListFeatures"
-       ~rpc:(mk_handler (server_streaming list_features))
-  |> add_rpc ~name:"RecordRoute"
-       ~rpc:(mk_handler (client_streaming (record_route clock)))
-  |> add_rpc ~name:"RouteChat" ~rpc:(mk_handler route_chat)
-
-let server clock =
-  Server.(
-    make ()
-    |> add_service ~name:"routeguide.RouteGuide"
-         ~service:(route_guide_service clock))
-*)
-
-(* $MDX part-end *)
-
-let list_features =
-  Grpc_server_eio.Rpc.server_streaming (fun req write ->
-      let rectangle =
-        req.Grpc_eio_core.Body_reader.consume Route_guide.decode_pb_rectangle
-      in
-
-      let () =
-        List.iter
-          (fun feature ->
-            if in_range feature.location rectangle then
-              write (fun encoder ->
-                  R.encode_pb_feature
-                    { R.location = Some feature.location; name = feature.name }
-                    encoder)
-            else ())
-          !features
-      in
-      [])
-
-(* $MDX part-end *)
-(* $MDX part-begin=server-route-chat *)
-let route_chat =
- fun read write ->
-  Printf.printf "RouteChat\n%!";
-
-  Seq.iter
-    (fun i ->
-      let note =
-        i.Grpc_eio_core.Body_reader.consume Route_guide.decode_pb_route_note
-      in
-      Printf.printf "  ==> Note = {%s}\n%!" (Route_guide.show_route_note note);
-      write (Route_guide.encode_pb_route_note note))
-    read;
-  Printf.printf "RouteChat exit\n%!";
-  []
-
-(* $MDX part-end *)
-(* $MDX part-begin=server-record-route *)
-
-(* $MDX part-end *)
-(* $MDX part-begin=server-record-route *)
-let record_route clock =
-  Grpc_server_eio.Rpc.client_streaming (fun stream ->
-      Eio.traceln "RecordRoute";
-      let last_point = ref None in
+    let record_route :
+        net_request -> Pb.point Seq.t -> Pb.route_summary * trailers =
+     fun _ read ->
+      Printf.printf "[C_STREAMING] /RecordRoute\n%!";
       let start = Eio.Time.now clock in
 
       let point_count, feature_count, distance =
-        Seq.fold_left
-          (fun (point_count, feature_count, distance) point ->
-            let point =
-              point.Grpc_eio_core.Body_reader.consume
-                Route_guide.decode_pb_point
-            in
-            Eio.traceln "  ==> Point = {%s}" (Route_guide.show_point point);
+        let rec loop_seq :
+            int * int * int ->
+            Pb.point option ->
+            Pb.point Seq.t ->
+            int * int * int =
+         fun (point_count, feature_count, distance) last_point read ->
+          match read () with
+          | Seq.Nil -> (point_count, feature_count, distance)
+          | Cons (point, rest) ->
+              Format.printf "[C_STREAMING] Received a point: %a@." Pb.pp_point
+                point;
 
-            (* Increment the point count *)
-            let point_count = point_count + 1 in
+              let point_count = point_count + 1 in
 
-            (* Find features *)
-            let feature_count =
-              List.find_all
-                (fun (feature : feature) -> feature.location = point)
-                !features
-              |> fun x -> List.length x + feature_count
-            in
+              let feature_count =
+                List.find_all
+                  (fun (feature : Pb.feature) -> feature.location = Some point)
+                  features
+                |> fun x -> List.length x + feature_count
+              in
 
-            (* Calculate the distance *)
-            let distance =
-              match !last_point with
-              | Some last_point -> calc_distance last_point point
-              | None -> distance
-            in
-            last_point := Some point;
-            (point_count, feature_count, distance))
-          (0, 0, 0) stream
+              let distance =
+                match last_point with
+                | Some last_point -> calc_distance last_point point
+                | None -> distance
+              in
+              loop_seq (point_count, feature_count, distance) (Some point) rest
+        in
+        loop_seq (0, 0, 0) None read
       in
-      ( Route_guide.encode_pb_route_summary
-          {
-            point_count;
-            feature_count;
-            distance;
-            elapsed_time = Eio.Time.now clock -. start |> Float.to_int;
-          },
-        [] ))
 
-(* $MDX part-end *)
+      ( {
+          Pb.point_count;
+          feature_count;
+          distance;
+          elapsed_time = Eio.Time.now clock -. start |> Float.to_int;
+        },
+        [] )
 
-let server clock ~service ~meth =
-  match (service, meth) with
-  | "routeguide.RouteGuide", "GetFeature" -> mk_handler get_feature
-  | "routeguide.RouteGuide", "ListFeatures" -> mk_handler list_features
-  | "routeguide.RouteGuide", "RecordRoute" -> mk_handler (record_route clock)
-  | "routeguide.RouteGuide", "RouteChat" -> mk_handler route_chat
-  | _ ->
-      raise (Grpc_server_eio.Server_error (Grpc.Status.make Unimplemented, []))
+    let route_chat :
+        net_request ->
+        Pb.route_note Seq.t ->
+        (Pb.route_note -> unit) ->
+        trailers =
+     fun _ read write ->
+      Printf.printf "[BI_STREAMING] /RouteChat\n%!";
 
-(* $MDX part-begin=server-main *)
-let serve server env : unit =
-  let port = 8080 in
-  let net = Eio.Stdenv.net env in
-  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
+      Seq.iter
+        (fun (note : Pb.route_note) ->
+          Format.printf "[BI_STREAMING] Received a note: %a@." Pb.pp_route_note
+            note;
+          write note;
+          Format.printf "[BI_STREAMING] Sent the note back")
+        read;
+
+      Printf.printf "[BI_STREAMING] Done.\n%!";
+
+      []
+  end in
+  (module RouteGuideServerImplementation : RouteGuideServer.Implementation
+    with type net_request = Haha_server_io.Net_request.t)
+
+let serve env addr server : unit =
   Eio.Switch.run @@ fun sw ->
-  let server_socket =
-    Eio.Net.listen net ~sw ~reuse_addr:true ~backlog:10 addr
-  in
-  let connection_handler client_addr socket =
-    Eio.Switch.run (fun sw ->
-        Io_server_h2_ocaml_protoc.connection_handler ~sw server client_addr
-          socket)
-  in
+  let server_socket = Eio.Net.listen env#net ~sw ~backlog:10 addr in
+  let connection_handler = Haha_server_io.connection_handler ~sw server in
+
   Eio.Net.run_server
     ~on_error:(fun exn -> Eio.traceln "%s" (Printexc.to_string exn))
     server_socket connection_handler
@@ -235,11 +159,14 @@ let serve server env : unit =
 let () =
   let path =
     if Array.length Sys.argv > 1 then Sys.argv.(1)
-    else failwith "Path to datafile required."
+    else failwith "Path to datafile required as the first argument."
   in
 
-  (* Load features. *)
-  features := load path;
+  let port = 8080 in
+  let addr = `Tcp (Eio.Net.Ipaddr.V4.loopback, port) in
 
-  Eio_main.run (fun env -> serve (server (Eio.Stdenv.clock env)) env)
-(* $MDX part-end *)
+  let features = feature_list_of_yojson_exn (Yojson.Safe.from_file path) in
+
+  Eio_main.run (fun env ->
+      serve env addr
+        (RouteGuideServer.create_server (get_server features env#clock)))

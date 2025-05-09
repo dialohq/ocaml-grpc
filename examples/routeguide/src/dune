@@ -1,16 +1,7 @@
 (executables
- (names server client)
+ (names server_raw client_raw client server)
  (package grpc-examples)
- (public_names routeguide-server routeguide-client)
- (libraries
-  grpc-server-eio
-  grpc-client-eio
-  eio_main
-  ocaml-protoc-plugin
-  routeguide
-  yojson
-  ppx_deriving_yojson.runtime
-  io_server_h2_ocaml_protoc
-  io_client_h2_ocaml_protoc)
+ (public_names rg-server-raw rg-client-raw rg-client rg-server)
+ (libraries routeguide_proto grpc-eio-haha-client-io grpc-eio-haha-server-io)
  (preprocess
-  (pps ppx_deriving_yojson ppx_deriving.eq)))
+  (pps ppx_deriving_yojson)))

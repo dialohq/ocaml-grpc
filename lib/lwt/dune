@@ -1,4 +1,0 @@
-(library
- (name grpc_lwt)
- (public_name grpc-lwt)
- (libraries grpc h2 stringext lwt))

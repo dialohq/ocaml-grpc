@@ -1,6 +1,0 @@
-(library
- (name grpc_async)
- (public_name grpc-async)
- (libraries grpc h2 stringext async)
- (preprocess
-  (pps ppx_jane)))

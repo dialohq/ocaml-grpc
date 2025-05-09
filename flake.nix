@@ -1,5 +1,5 @@
 {
-  description = "Description for the project";
+  description = "OCaml gRPC library";
 
   inputs = {
     nixpkgs = {
@@ -75,8 +75,6 @@
         devShells.default = pkgs.mkShell {
           inputsFrom = [
             self'.packages.grpc
-            self'.packages.grpc-lwt
-            self'.packages.grpc-async
             self'.packages.grpc-eio
             self'.packages.grpc-examples
             self'.packages.grpc-bench
@@ -97,8 +95,6 @@
             duneVersion = "3";
             buildInputs = with camlPkgs; [
               self'.packages.grpc
-              self'.packages.grpc-lwt
-              self'.packages.grpc-async
               self'.packages.grpc-eio
               bechamel-notty
               bigstringaf
@@ -128,8 +124,6 @@
               camlPkgs.h2-async
               tls-async
               self'.packages.grpc
-              self'.packages.grpc-lwt
-              self'.packages.grpc-async
               self'.packages.grpc-eio
             ];
             src = nix-filter.lib.filter {
@@ -147,26 +141,6 @@
             src = nix-filter.lib.filter {
               root = ./.;
               include = ["dune-project" "lib/grpc"];
-            };
-          };
-          grpc-lwt = camlPkgs.buildDunePackage {
-            pname = "grpc-lwt";
-            version = "0.1.0";
-            duneVersion = "3";
-            buildInputs = with camlPkgs; [self'.packages.grpc lwt];
-            src = nix-filter.lib.filter {
-              root = ./.;
-              include = ["dune-project" "lib/grpc-lwt"];
-            };
-          };
-          grpc-async = camlPkgs.buildDunePackage {
-            pname = "grpc-async";
-            version = "0.1.0";
-            duneVersion = "3";
-            buildInputs = with camlPkgs; [self'.packages.grpc async];
-            src = nix-filter.lib.filter {
-              root = ./.;
-              include = ["dune-project" "lib/grpc-async"];
             };
           };
           grpc-eio = camlPkgs.buildDunePackage {
