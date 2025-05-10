@@ -14,9 +14,11 @@ in {
             sha256 = "sha256-5GQ/8AbTxUkyrAVTspdoll9CgwwDmWdkf49dEaOcGZU=";
             fetchSubmodules = true;
           };
-          hahaPkgsSrc = builtins.fetchGit {
-            url = "https://github.com/dialohq/haha";
-            rev = "f3162c12b7fce9b13d4b8476a9a3d791e41cbf37";
+          hahaPkgsSrc = fetchFromGitHub {
+            owner = "dialohq";
+            repo = "haha";
+            rev = "b0af4c1d6ba17f221e4a4fad916cce61b9063f7e";
+            sha256 = "sha256-1AcUWCVcO+2KpzJraqXbF+G7yJBSXCPuPM8+By/FwjA=";
           };
           mkHahaPkg = pname: buildDeps:
             super.buildDunePackage {
@@ -24,7 +26,7 @@ in {
               version = "0.0.1";
               duneVersion = "3";
               src = hahaPkgsSrc;
-              nativeBuildInputs = [super.git];
+              nativeBuildInputs = [self.git];
               propagatedBuildInputs = buildDeps;
             };
         in {

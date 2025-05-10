@@ -4,7 +4,10 @@ type net_request = {
     Grpc_eio_core.Body_parse.t Grpc_eio_core.Body_parse.consumer option
     Eio.Stream.t;
   handler_resolver :
-    (Haha.Types.body_reader * Haha.Response.response_writer) Eio.Promise.u;
+    (Haha.Types.body_reader
+    * Haha.Response.response_writer
+    * (Haha.Error.stream_error -> unit))
+    Eio.Promise.u;
   connection_error : Haha.Error.connection_error Eio.Promise.t;
   buffer_pool : Grpc_eio_core.Buffer_pool.Bytes_pool.t;
 }
@@ -19,7 +22,6 @@ val connection_handler :
   sw:Eio.Switch.t ->
   ?debug:bool ->
   ?config:Haha.Settings.t ->
-  ?h2_error_handler:(Haha.Error.t -> unit) ->
   ?grpc_error_handler:(exn -> (string * string) list) ->
   (Net_request.t, request, response) Grpc_server_eio.t ->
   'a Eio.Net.connection_handler

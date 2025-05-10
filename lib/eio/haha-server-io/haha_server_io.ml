@@ -12,7 +12,10 @@ type net_request = {
     Grpc_eio_core.Body_parse.t Grpc_eio_core.Body_parse.consumer option
     Eio.Stream.t;
   handler_resolver :
-    (Haha.Types.body_reader * Haha.Response.response_writer) Eio.Promise.u;
+    (Haha.Types.body_reader
+    * Haha.Response.response_writer
+    * (Haha.Error.stream_error -> unit))
+    Eio.Promise.u;
   connection_error : Haha.Error.connection_error Eio.Promise.t;
   buffer_pool : Grpc_eio_core.Buffer_pool.Bytes_pool.t;
 }
@@ -91,8 +94,14 @@ module Io = struct
       | `End _ -> Eio.Stream.add msg_stream None
     in
 
+    let error_handler =
+     fun (stream_id, code) ->
+      Format.printf "[GRPC_IO] H2 stream error: %li, %a@." stream_id
+        Haha.Error_code.pp_hum code
+    in
+
     let handler =
-      Request.handle ~on_data ~response_writer:(fun () ->
+      Request.handle ~error_handler ~on_data ~response_writer:(fun () ->
           `Final
             (Response.create_with_streaming ~body_writer `OK
                (Headers.of_list
@@ -136,8 +145,13 @@ module Io = struct
   let respond_error ~(status_code : int) ~(headers : (string * string) list)
       ({ handler_resolver; _ } : Net_request.t) : unit =
     let open Haha in
+    let error_handler =
+     fun (stream_id, code) ->
+      Format.printf "[GRPC_IO] H2 stream error: %li, %a@." stream_id
+        Haha.Error_code.pp_hum code
+    in
     let handler =
-      Request.handle ~on_data:ignore ~response_writer:(fun () ->
+      Request.handle ~error_handler ~on_data:ignore ~response_writer:(fun () ->
           `Final
             (Response.create
                (Status.of_code status_code)
@@ -155,8 +169,7 @@ let io =
      and type request = Pbrt.Decoder.t Grpc_eio_core.Body_reader.consumer
      and type response = Pbrt.Encoder.t -> unit)
 
-let connection_handler ~sw ?debug ?config ?h2_error_handler ?grpc_error_handler
-    server =
+let connection_handler ~sw ?debug ?config ?grpc_error_handler server =
   let error_p, error_r = Eio.Promise.create () in
   let buffer_pool = Grpc_eio_core.Buffer_pool.Bytes_pool.make () in
 
@@ -178,16 +191,14 @@ let connection_handler ~sw ?debug ?config ?h2_error_handler ?grpc_error_handler
     Eio.Promise.await handler_promise
   in
 
-  Haha.Server.connection_handler ?debug
-    ~error_handler:(fun err ->
-      (match err with
-      | ConnectionError ((code, msg) as conn_err) ->
-          Format.printf "Server connection error: %a, %s@."
-            Haha.Error_code.pp_hum code msg;
-          Eio.Promise.resolve error_r conn_err
-      | StreamError (id, code) ->
-          Format.printf "Server stream error on id %li: %a@." id
-            Haha.Error_code.pp_hum code);
-      match h2_error_handler with None -> () | Some handler -> handler err)
-    (Option.value ~default:Haha.Settings.default config)
-    request_handler
+  let error_handler = function
+    | Haha.Error.ProtocolError (code, msg) as err ->
+        Format.printf "[GPRC_IO] H2 protocol error: %a, %s@."
+          Haha.Error_code.pp_hum code msg;
+        Eio.Promise.try_resolve error_r err |> ignore
+    | Exn exn as err ->
+        Printf.printf "[GRPC_IO] H2 exception: %s\n%!" @@ Printexc.to_string exn;
+        Eio.Promise.try_resolve error_r err |> ignore
+  in
+
+  Haha.Server.connection_handler ?debug ~error_handler ?config request_handler

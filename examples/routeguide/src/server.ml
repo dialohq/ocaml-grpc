@@ -19,6 +19,13 @@ let in_range (point : Pb.point) (rect : Pb.rectangle) : bool =
 let pi = 4. *. atan 1.
 let radians_of_degrees = ( *. ) (pi /. 180.)
 
+let list_take n l =
+  let[@tail_mod_cons] rec aux n l =
+    match (n, l) with 0, _ | _, [] -> [] | n, x :: l -> x :: aux (n - 1) l
+  in
+  if n < 0 then invalid_arg "List.take";
+  aux n l
+
 let calc_distance (p1 : Pb.point) (p2 : Pb.point) : int =
   let cord_factor = 1e7 in
   let r = 6_371_000.0 in
@@ -60,7 +67,7 @@ let get_server (features : feature_list) clock =
           Format.printf "[UNARY] Feature found: %a@." Pb.pp_feature feature;
           (feature, [])
       | None ->
-          Format.printf "[UNARY] Feature not found.";
+          Format.printf "[UNARY] Feature not found.@.";
           ({ Pb.location = None; name = "" }, [])
 
     let list_features :
@@ -73,9 +80,10 @@ let get_server (features : feature_list) clock =
           if in_range (Option.get feature.location) rectangle then (
             write feature;
             Format.printf "[S_STREAMING] Sent a feature: %a@." Pb.pp_feature
-              feature)
+              feature;
+            Eio.Time.sleep clock 0.1)
           else ())
-        features;
+        (list_take 10 features);
       []
 
     let record_route :
@@ -137,7 +145,7 @@ let get_server (features : feature_list) clock =
           Format.printf "[BI_STREAMING] Received a note: %a@." Pb.pp_route_note
             note;
           write note;
-          Format.printf "[BI_STREAMING] Sent the note back")
+          Format.printf "[BI_STREAMING] Sent the note back.@.")
         read;
 
       Printf.printf "[BI_STREAMING] Done.\n%!";
@@ -150,7 +158,11 @@ let get_server (features : feature_list) clock =
 let serve env addr server : unit =
   Eio.Switch.run @@ fun sw ->
   let server_socket = Eio.Net.listen env#net ~sw ~backlog:10 addr in
-  let connection_handler = Haha_server_io.connection_handler ~sw server in
+  let connection_handler a b =
+    Haha_server_io.connection_handler ~sw server a b;
+
+    Printf.printf "Ending connection handler\n%!"
+  in
 
   Eio.Net.run_server
     ~on_error:(fun exn -> Eio.traceln "%s" (Printexc.to_string exn))

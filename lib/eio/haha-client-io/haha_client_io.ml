@@ -157,9 +157,15 @@ module MakeHahaIO (Connection : Connection) :
       Haha.Response.handle ~on_data
     in
 
+    let error_handler =
+     fun (stream_id, code) ->
+      Format.printf "[GRPC_IO] H2 stream error: %li, %a@." stream_id
+        Haha.Error_code.pp_hum code
+    in
+
     let request =
-      Haha.Request.create_with_streaming ~response_handler ~body_writer
-        ~scheme:Connection.scheme ~authority:Connection.host
+      Haha.Request.create_with_streaming ~error_handler ~response_handler
+        ~body_writer ~scheme:Connection.scheme ~authority:Connection.host
         ~headers:
           (Haha.Headers.of_list
              [ ("te", headers.te); ("content-type", headers.content_type) ])
@@ -240,17 +246,18 @@ let create ~sw ~net ?debug host : t * (unit -> unit) =
 
   let conn_err_t, conn_err_u = Eio.Promise.create () in
 
-  Eio.Fiber.fork_daemon ~sw (fun () ->
-      Haha.Client.run ?debug
-        ~error_handler:(function
-          | ConnectionError err ->
-              Printf.printf "gRPC IO connection erra\n%!";
-              Eio.Promise.resolve conn_err_u err
-          | _ ->
-              (* WARN: skill issue *)
-              Printf.printf "gRPC IO stream erra\n%!")
-        ~request_writer Haha.Settings.default socket;
-      `Stop_daemon);
+  let error_handler = function
+    | Haha.Error.ProtocolError (code, msg) as err ->
+        Format.printf "[GPRC_IO] H2 protocol error: %a, %s@."
+          Haha.Error_code.pp_hum code msg;
+        Eio.Promise.try_resolve conn_err_u err |> ignore
+    | Exn exn as err ->
+        Printf.printf "[GRPC_IO] H2 exception: %s\n%!" @@ Printexc.to_string exn;
+        Eio.Promise.try_resolve conn_err_u err |> ignore
+  in
+
+  Eio.Fiber.fork ~sw (fun () ->
+      Haha.Client.run ?debug ~error_handler ~request_writer socket);
 
   let module Connection : Connection = struct
     let write_request req = Eio.Stream.add req_stream (Some req)

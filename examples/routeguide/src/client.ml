@@ -50,7 +50,7 @@ let run_record_route sw io clock =
       (fun point ->
         writer point |> ignore;
         Format.printf "[C_STREAMING] Sent point: %a@." Pb.pp_point point;
-        Eio.Time.sleep clock 0.2)
+        Eio.Time.sleep clock 0.1)
       points
   in
 
@@ -108,7 +108,7 @@ let main env =
 
   let run sw =
     let io, disconnect =
-      Haha_client_io.create ~net:network ~sw "http://localhost:8080"
+      Haha_client_io.create ~debug:true ~net:network ~sw "http://localhost:8080"
     in
 
     Printf.printf "*** SIMPLE RPC ***\n%!";
@@ -124,6 +124,7 @@ let main env =
     Printf.printf "\n*** BIDIRECTIONAL STREAMING ***\n%!";
     run_route_chat sw io env#clock;
 
+    Printf.printf "Disconnecting\n%!";
     disconnect ()
   in
 
