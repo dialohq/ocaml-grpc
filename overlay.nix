@@ -14,12 +14,13 @@ in {
             sha256 = "sha256-5GQ/8AbTxUkyrAVTspdoll9CgwwDmWdkf49dEaOcGZU=";
             fetchSubmodules = true;
           };
-          hahaPkgsSrc = fetchFromGitHub {
-            owner = "dialohq";
-            repo = "haha";
-            rev = "b0af4c1d6ba17f221e4a4fad916cce61b9063f7e";
-            sha256 = "sha256-1AcUWCVcO+2KpzJraqXbF+G7yJBSXCPuPM8+By/FwjA=";
-          };
+          # hahaPkgsSrc = fetchFromGitHub {
+          #   owner = "dialohq";
+          #   repo = "haha";
+          #   rev = "b0af4c1d6ba17f221e4a4fad916cce61b9063f7e";
+          #   sha256 = "sha256-1AcUWCVcO+2KpzJraqXbF+G7yJBSXCPuPM8+By/FwjA=";
+          # };
+          hahaPkgsSrc = /Users/adam/libs/haha;
           mkHahaPkg = pname: buildDeps:
             super.buildDunePackage {
               inherit pname;

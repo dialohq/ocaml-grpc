@@ -207,22 +207,17 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     match rpc_kind rpc.rpc_req rpc.rpc_res with
     | `Unary ->
         F.linep sc
-          {|let %s ~sw ~io request =
+          {|let %s ~sw ~channel request =
   let response =
-    Grpc_client_eio.Client.Unary.call ~sw ~io ~service:"%s"
+    Grpc_client_eio.Client_new.Unary.call ~sw ~channel ~service:"%s"
       ~method_name:%S
       ~headers:(Grpc_client.make_request_headers `Proto)
       (%s.%s request)
   in
   match response with
-  | `Success ({ response = res; _ } as result) ->
-      Ok
-        {
-          result with
-          response =
-            res.Grpc_eio_core.Body_reader.consume %s.%s;
-        }
-  | #Grpc_client_eio.Rpc_error.Unary.error' as rest -> Error rest|}
+  | Ok res ->
+      Ok (res.Grpc_eio_core.Body_parse.consume %s.%s)
+  | Error status -> Error status|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
           (service_name_of_package service.service_packages service.service_name)
           rpc.rpc_name typ_mod_name

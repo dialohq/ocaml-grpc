@@ -1,20 +1,22 @@
 open Routeguide_proto
 module Pb = Route_guide
 
+[@@@warning "-32-26"]
+
 let random_point () =
   let latitude = (Random.int 180 - 90) * 10000000 in
   let longitude = (Random.int 360 - 180) * 10000000 in
   Pb.default_point ~latitude ~longitude ()
 
-let get_feature sw io =
+let get_feature sw channel =
   let request =
     Pb.default_point ~latitude:409146138 ~longitude:(-746188906) ()
   in
 
   Printf.printf "[UNARY] Getting a feature...\n%!";
-  match RouteGuideClient.Result.get_feature ~sw ~io request with
+  match RouteGuideClient.Result.get_feature ~sw ~channel request with
   | Error _ -> Printf.printf "[UNARY] Error getting a feature\n%!"
-  | Ok { response = feature; _ } ->
+  | Ok feature ->
       Format.printf "[UNARY] Received a feature: %a@." Pb.pp_feature feature
 
 let list_features sw io =
@@ -107,25 +109,25 @@ let main env =
   let () = Random.self_init () in
 
   let run sw =
-    let io, disconnect =
-      Haha_client_io.create ~debug:true ~net:network ~sw "http://localhost:8080"
+    (* let io, disconnect = *)
+    (*   Haha_client_io.create ~debug:true ~net:network ~sw "http://localhost:8080" *)
+    (* in *)
+    let channel =
+      Grpc_client_eio.Channel.create ~sw ~net:env#net "http://127.0.0.1:8080"
     in
 
     Printf.printf "*** SIMPLE RPC ***\n%!";
 
-    get_feature sw io;
-
-    Printf.printf "\n*** SERVER STREAMING ***\n%!";
-    list_features sw io;
-
-    Printf.printf "\n*** CLIENT STREAMING ***\n%!";
-    run_record_route sw io env#clock;
-
-    Printf.printf "\n*** BIDIRECTIONAL STREAMING ***\n%!";
-    run_route_chat sw io env#clock;
-
-    Printf.printf "Disconnecting\n%!";
-    disconnect ()
+    get_feature sw channel;
+    (* Printf.printf "\n*** SERVER STREAMING ***\n%!"; *)
+    (* list_features sw io; *)
+    (* Printf.printf "\n*** CLIENT STREAMING ***\n%!"; *)
+    (* run_record_route sw io env#clock; *)
+    (* Printf.printf "\n*** BIDIRECTIONAL STREAMING ***\n%!"; *)
+    (* run_route_chat sw io env#clock; *)
+    (* Printf.printf "Disconnecting\n%!"; *)
+    (* disconnect () *)
+    channel.shutdown ()
   in
 
   Eio.Switch.run run

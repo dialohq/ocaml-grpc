@@ -257,7 +257,8 @@ let create ~sw ~net ?debug host : t * (unit -> unit) =
   in
 
   Eio.Fiber.fork ~sw (fun () ->
-      Haha.Client.run ?debug ~error_handler ~request_writer socket);
+      Haha.Client.run ?debug ~request_writer socket
+      |> Result.iter_error error_handler);
 
   let module Connection : Connection = struct
     let write_request req = Eio.Stream.add req_stream (Some req)
