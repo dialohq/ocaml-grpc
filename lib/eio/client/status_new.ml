@@ -16,6 +16,7 @@ type code =
   | Unavailable
   | Data_loss
   | Unauthenticated
+[@@deriving show]
 
 let int_of_code = function
   | OK -> 0
@@ -56,5 +57,5 @@ let code_of_int = function
   | 16 -> Unauthenticated
   | _ -> Unknown
 
-type info = Message of string | Exn of exn
+type info = Message of string | Exn of (exn[@opaque]) [@@deriving show]
 type t = { code : code; info : info option } [@@deriving show]

@@ -67,15 +67,16 @@ module Unary = struct
                       f (Pbrt.Decoder.of_subbytes bytes 0 len)));
             }
     in
-
-    let stream_request : Channel.stream_request =
-      { headers; data_writer; data_receiver; path }
-    in
     (* ****************** *)
 
-    match Eio.Promise.await @@ channel.start_request stream_request with
-    | Ok () -> Ok (Eio.Promise.await response_promise)
-    | Error status -> Error status
+    let status_promise =
+      Channel.start_request channel ~headers ~data_writer ~data_receiver ~path
+    in
+
+    (* Format.printf "Channel state: %a@." Channel.pp channel; *)
+    match Eio.Promise.await status_promise with
+    | { code = OK; _ } -> Ok (Eio.Promise.await response_promise)
+    | status -> Error status
 
   (*
     match call ~sw ~io ~service ~method_name ~headers () with

@@ -50,16 +50,19 @@ let calc_distance (p1 : Pb.point) (p2 : Pb.point) : int =
   let c = 2.0 *. atan2 (sqrt a) (sqrt (1.0 -. a)) in
   Float.to_int (r *. c)
 
+let unary_counter = ref 0
+
 let get_server (features : feature_list) clock =
-  let _ = clock in
   let module RouteGuideServerImplementation = struct
     (* underlaying protocol request (HTTP/2 in this case, and most cases) *)
     type net_request = Haha_server_io.Net_request.t
 
     let get_feature : net_request -> Pb.point -> Pb.feature * trailers =
      fun _ point ->
-      Printf.printf "[UNARY] /GetFeature\n%!";
+      incr unary_counter;
+      Printf.printf "[UNARY] /GetFeature #%i\n%!" !unary_counter;
 
+      if !unary_counter <> 6 then Eio.Time.sleep clock 3.;
       match
         List.find_opt (fun (f : Pb.feature) -> f.location = Some point) features
       with
@@ -157,7 +160,9 @@ let get_server (features : feature_list) clock =
 
 let serve env addr server : unit =
   Eio.Switch.run @@ fun sw ->
-  let server_socket = Eio.Net.listen env#net ~sw ~backlog:10 addr in
+  let server_socket =
+    Eio.Net.listen env#net ~reuse_addr:true ~sw ~backlog:10 addr
+  in
   let connection_handler a b =
     Haha_server_io.connection_handler ~sw server a b;
 

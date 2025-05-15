@@ -6,16 +6,12 @@ let wrap_in_promise f =
   f (fun () -> Eio.Promise.resolve r ());
   Eio.Promise.await p
 
-type net_request = {
-  request : Haha.Request.t;
+type 'context net_request = {
+  request : Haha.Reqd.t;
   msg_stream :
     Grpc_eio_core.Body_parse.t Grpc_eio_core.Body_parse.consumer option
     Eio.Stream.t;
-  handler_resolver :
-    (Haha.Types.body_reader
-    * Haha.Response.response_writer
-    * (Haha.Error.stream_error -> unit))
-    Eio.Promise.u;
+  handler_resolver : 'context Haha.Reqd.handler Eio.Promise.u;
   connection_error : Haha.Error.connection_error Eio.Promise.t;
   buffer_pool : Grpc_eio_core.Buffer_pool.Bytes_pool.t;
 }
@@ -25,7 +21,7 @@ module Io = struct
   type response = Pbrt.Encoder.t -> unit
 
   module Net_request = struct
-    type t = net_request
+    type t = unit net_request
 
     let to_seq recv =
       let rec loop recv () =
@@ -54,16 +50,16 @@ module Io = struct
              })
       |> to_seq
 
-    let is_post ({ request; _ } : t) = Haha.Request.meth request = POST
-    let target ({ request; _ } : t) = Haha.Request.path request
+    let is_post ({ request; _ } : t) = Haha.Reqd.meth request = POST
+    let target ({ request; _ } : t) = Haha.Reqd.path request
 
-    let get_header ({ request; _ } : t) =
-      Haha.Headers.get_string @@ Haha.Request.headers request
+    let get_header ({ request; _ } : t) s =
+      Haha.Header.find_opt s @@ Haha.Reqd.headers request
   end
 
   let grpc_trailers_to_headers
       ({ grpc_status; grpc_message; extra } : Grpc_server.trailers) =
-    Haha.Headers.of_list
+    Haha.Header.of_list
       (("grpc-status", string_of_int grpc_status)
       ::
       (match grpc_message with
@@ -79,7 +75,11 @@ module Io = struct
       wrap_in_promise @@ fun resolve ->
       Eio.Stream.add body_writer_stream (`Data cs, resolve)
     in
-    let body_writer ~window_size:_ = Eio.Stream.take body_writer_stream in
+    let body_writer () ~window_size:_ =
+      let took = Eio.Stream.take body_writer_stream in
+
+      (fst took, snd took, ())
+    in
     let write_end ?(trailers = []) () =
       wrap_in_promise (fun resolve ->
           Eio.Stream.add body_writer_stream (`End (None, trailers), resolve))
@@ -87,7 +87,7 @@ module Io = struct
 
     let msg_state = ref Grpc_eio_core.Body_parse.Idle in
 
-    let on_data = function
+    let on_data () = function
       | `Data { Cstruct.buffer = data; len; off } ->
           Grpc_eio_core.Body_parse.read_message ~pool ~data ~len ~off msg_stream
             msg_state
@@ -95,16 +95,17 @@ module Io = struct
     in
 
     let error_handler =
-     fun (stream_id, code) ->
-      Format.printf "[GRPC_IO] H2 stream error: %li, %a@." stream_id
-        Haha.Error_code.pp_hum code
+     fun () code ->
+      Format.printf "[GRPC_IO] H2 stream error: %a@." Haha.Error_code.pp_hum
+        code
     in
 
     let handler =
-      Request.handle ~error_handler ~on_data ~response_writer:(fun () ->
+      Reqd.handle ~context:() ~error_handler ~on_data
+        ~response_writer:(fun () ->
           `Final
             (Response.create_with_streaming ~body_writer `OK
-               (Headers.of_list
+               (Header.of_list
                   (("content-type", headers.Grpc_server.content_type)
                   :: headers.extra))))
     in
@@ -146,16 +147,18 @@ module Io = struct
       ({ handler_resolver; _ } : Net_request.t) : unit =
     let open Haha in
     let error_handler =
-     fun (stream_id, code) ->
-      Format.printf "[GRPC_IO] H2 stream error: %li, %a@." stream_id
-        Haha.Error_code.pp_hum code
+     fun () code ->
+      Format.printf "[GRPC_IO] H2 stream error: %a@." Haha.Error_code.pp_hum
+        code
     in
     let handler =
-      Request.handle ~error_handler ~on_data:ignore ~response_writer:(fun () ->
+      Reqd.handle ~context:() ~error_handler
+        ~on_data:(fun _ _ -> ())
+        ~response_writer:(fun () ->
           `Final
             (Response.create
                (Status.of_code status_code)
-               (Headers.of_list headers)))
+               (Header.of_list headers)))
     in
 
     Eio.Promise.resolve handler_resolver handler
@@ -173,7 +176,7 @@ let connection_handler ~sw ?debug ?config ?grpc_error_handler server =
   let error_p, error_r = Eio.Promise.create () in
   let buffer_pool = Grpc_eio_core.Buffer_pool.Bytes_pool.make () in
 
-  let request_handler (request : Haha.Request.t) =
+  let request_handler (request : Haha.Reqd.t) =
     let handler_promise, handler_resolver = Eio.Promise.create () in
     let msg_stream = Eio.Stream.create Int.max_int in
 

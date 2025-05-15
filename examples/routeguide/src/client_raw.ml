@@ -373,8 +373,9 @@ let main env =
   let () = Random.self_init () in
 
   let run sw =
-    let io, disconnect =
-      Haha_client_io.create ~net:network ~sw "http://localhost:8080"
+    let io =
+      Io_client_h2_ocaml_protoc.create_client ~net:network ~sw
+        "http://localhost:8080"
     in
 
     Printf.printf "*** SIMPLE RPC ***\n%!";
@@ -399,9 +400,8 @@ let main env =
     Printf.printf "\n*** BIDIRECTIONAL STREAMING ***\n%!";
     run_route_chat clock io sw |> ignore;
     Expert.run_route_chat clock io sw |> ignore;
-    Result.run_route_chat clock io sw |> ignore;
-
-    disconnect ()
+    Result.run_route_chat clock io sw |> ignore
+    (* disconnect () *)
   in
 
   Eio.Switch.run run

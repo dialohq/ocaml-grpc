@@ -1,4 +1,6 @@
 (library
  (name grpc_client_eio)
  (public_name grpc-client-eio)
- (libraries grpc eio grpc-client grpc-eio-core haha pbrt))
+ (libraries grpc eio grpc-client grpc-eio-core haha pbrt)
+ (preprocess
+  (pps ppx_deriving.show)))

@@ -109,16 +109,17 @@ let main env =
   let () = Random.self_init () in
 
   let run sw =
-    (* let io, disconnect = *)
-    (*   Haha_client_io.create ~debug:true ~net:network ~sw "http://localhost:8080" *)
-    (* in *)
     let channel =
-      Grpc_client_eio.Channel.create ~sw ~net:env#net "http://127.0.0.1:8080"
+      Grpc_client_eio.Channel.create ~max_streams:5 ~sw ~net:env#net
+        "http://127.0.0.1:8080"
     in
 
     Printf.printf "*** SIMPLE RPC ***\n%!";
 
-    get_feature sw channel;
+    Eio.Fiber.all
+    @@ List.init 11 (fun i () ->
+           Eio.Time.sleep env#clock (float_of_int i *. 0.1);
+           get_feature sw channel);
     (* Printf.printf "\n*** SERVER STREAMING ***\n%!"; *)
     (* list_features sw io; *)
     (* Printf.printf "\n*** CLIENT STREAMING ***\n%!"; *)
@@ -126,8 +127,7 @@ let main env =
     (* Printf.printf "\n*** BIDIRECTIONAL STREAMING ***\n%!"; *)
     (* run_route_chat sw io env#clock; *)
     (* Printf.printf "Disconnecting\n%!"; *)
-    (* disconnect () *)
-    channel.shutdown ()
+    Grpc_client_eio.Channel.shutdown channel
   in
 
   Eio.Switch.run run

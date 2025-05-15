@@ -1,20 +1,16 @@
-type net_request = {
-  request : Haha.Request.t;
+type 'context net_request = {
+  request : Haha.Reqd.t;
   msg_stream :
     Grpc_eio_core.Body_parse.t Grpc_eio_core.Body_parse.consumer option
     Eio.Stream.t;
-  handler_resolver :
-    (Haha.Types.body_reader
-    * Haha.Response.response_writer
-    * (Haha.Error.stream_error -> unit))
-    Eio.Promise.u;
+  handler_resolver : 'context Haha.Reqd.handler Eio.Promise.u;
   connection_error : Haha.Error.connection_error Eio.Promise.t;
   buffer_pool : Grpc_eio_core.Buffer_pool.Bytes_pool.t;
 }
 
 include
   Grpc_server_eio.Io.S
-    with type Net_request.t = net_request
+    with type Net_request.t = unit net_request
      and type request = Pbrt.Decoder.t Grpc_eio_core.Body_reader.consumer
      and type response = Pbrt.Encoder.t -> unit
 
