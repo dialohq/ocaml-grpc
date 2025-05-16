@@ -16,7 +16,7 @@ let get_feature (type headers net_response stream_error connection_error) sw
         connection_error )
       Grpc_client_eio.Io.t) request =
   let response =
-    Client.Unary.call ~sw ~io ~service:"routeguide.RouteGuide"
+    Client_legacy.Unary.call ~sw ~io ~service:"routeguide.RouteGuide"
       ~method_name:"GetFeature"
       ~headers:(Grpc_client.make_request_headers `Proto) (fun encoder ->
         Route_guide.encode_pb_point request encoder)
@@ -49,7 +49,7 @@ let run_record_route (type headers net_response stream_error connection_error)
   in
 
   let response =
-    Client.Client_streaming.call ~io ~sw ~service:"routeguide.RouteGuide"
+    Client_legacy.Client_streaming.call ~io ~sw ~service:"routeguide.RouteGuide"
       ~headers:(Grpc_client.make_request_headers `Proto)
       ~method_name:"RecordRoute" (fun _ ~writer ->
         Seq.iter
@@ -87,7 +87,7 @@ let print_features (type headers net_response stream_error connection_error) sw
   in
 
   let stream =
-    Client.Server_streaming.call ~sw ~io ~service:"routeguide.RouteGuide"
+    Client_legacy.Server_streaming.call ~sw ~io ~service:"routeguide.RouteGuide"
       ~method_name:"ListFeatures"
       ~headers:(Grpc_client.make_request_headers `Proto)
       (Route_guide.encode_pb_rectangle rectangle) (fun _ ~read ->
@@ -150,7 +150,7 @@ let run_route_chat (type headers net_response stream_error connection_error)
             go ~send ~close reader' xs)
   in
   let result =
-    Client.Bidirectional_streaming.call ~service:"routeguide.RouteGuide"
+    Client_legacy.Bidirectional_streaming.call ~service:"routeguide.RouteGuide"
       ~method_name:"RouteChat" ~io ~sw
       ~headers:(Grpc_client.make_request_headers `Proto) (fun _ ~writer ~read ->
         go ~send:writer.write ~close:writer.close read route_notes;
@@ -198,7 +198,7 @@ module Expert = struct
                       Route_guide.decode_pb_route_note));
               go ~send ~close reader' xs)
     in
-    Client.Bidirectional_streaming.call ~service:"routeguide.RouteGuide"
+    Client_legacy.Bidirectional_streaming.call ~service:"routeguide.RouteGuide"
       ~method_name:"RouteChat" ~io ~sw
       ~headers:(Grpc_client.make_request_headers `Proto) (fun _ ~writer ~read ->
         go ~send:writer.write ~close:writer.close read route_notes;
@@ -218,7 +218,7 @@ module Expert = struct
         ()
     in
 
-    Client.Server_streaming.call ~sw ~io ~service:"routeguide.RouteGuide"
+    Client_legacy.Server_streaming.call ~sw ~io ~service:"routeguide.RouteGuide"
       ~method_name:"ListFeatures"
       ~headers:(Grpc_client.make_request_headers `Proto)
       (Route_guide.encode_pb_rectangle rectangle) (fun _ ~read ->
@@ -231,7 +231,7 @@ module Expert = struct
           read)
 
   let get_feature sw io request =
-    Client.Unary.call ~sw ~io ~service:"routeguide.RouteGuide"
+    Client_legacy.Unary.call ~sw ~io ~service:"routeguide.RouteGuide"
       ~method_name:"GetFeature"
       ~headers:(Grpc_client.make_request_headers `Proto) (fun encoder ->
         Route_guide.encode_pb_point request encoder)
@@ -244,7 +244,7 @@ module Expert = struct
       |> Seq.unfold (function 0 -> None | x -> Some (random_point (), x - 1))
     in
 
-    Client.Client_streaming.call ~io ~sw ~service:"routeguide.RouteGuide"
+    Client_legacy.Client_streaming.call ~io ~sw ~service:"routeguide.RouteGuide"
       ~headers:(Grpc_client.make_request_headers `Proto)
       ~method_name:"RecordRoute" (fun _ ~writer ->
         Seq.iter
@@ -291,8 +291,8 @@ module Result = struct
               go ~send ~close reader' xs)
     in
     let result =
-      Client.Bidirectional_streaming.call ~service:"routeguide.RouteGuide"
-        ~method_name:"RouteChat" ~io ~sw
+      Client_legacy.Bidirectional_streaming.call
+        ~service:"routeguide.RouteGuide" ~method_name:"RouteChat" ~io ~sw
         ~headers:(Grpc_client.make_request_headers `Proto)
         (fun _ ~writer ~read ->
           go ~send:writer.write ~close:writer.close read route_notes;
@@ -317,8 +317,8 @@ module Result = struct
     in
 
     let stream =
-      Client.Server_streaming.call ~sw ~io ~service:"routeguide.RouteGuide"
-        ~method_name:"ListFeatures"
+      Client_legacy.Server_streaming.call ~sw ~io
+        ~service:"routeguide.RouteGuide" ~method_name:"ListFeatures"
         ~headers:(Grpc_client.make_request_headers `Proto)
         (Route_guide.encode_pb_rectangle rectangle) (fun _ ~read ->
           Seq.iter
@@ -340,7 +340,8 @@ module Result = struct
     in
 
     let response =
-      Client.Client_streaming.call ~io ~sw ~service:"routeguide.RouteGuide"
+      Client_legacy.Client_streaming.call ~io ~sw
+        ~service:"routeguide.RouteGuide"
         ~headers:(Grpc_client.make_request_headers `Proto)
         ~method_name:"RecordRoute" (fun _ ~writer ->
           Seq.iter
@@ -355,7 +356,7 @@ module Result = struct
 
   let get_feature sw io request =
     let response =
-      Client.Unary.call ~sw ~io ~service:"routeguide.RouteGuide"
+      Client_legacy.Unary.call ~sw ~io ~service:"routeguide.RouteGuide"
         ~method_name:"GetFeature"
         ~headers:(Grpc_client.make_request_headers `Proto) (fun encoder ->
           Route_guide.encode_pb_point request encoder)
@@ -411,7 +412,7 @@ let () = Eio_main.run main
 (* $MDX part-end *)
 
 let _list_features ~sw ~io request handler =
-  Client.Server_streaming.call ~sw ~io ~service:"routeguide.RouteGuide"
+  Client_legacy.Server_streaming.call ~sw ~io ~service:"routeguide.RouteGuide"
     ~method_name:"ListFeatures"
     ~headers:(Grpc_client.make_request_headers `Proto)
     (Route_guide.encode_pb_rectangle request) (fun net_response ~read ->

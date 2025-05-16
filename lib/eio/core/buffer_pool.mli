@@ -31,3 +31,12 @@ module Bytes_pool : sig
   val alloc : t -> int -> buffer
   val release : t -> buffer -> unit
 end
+
+module Cstruct_pool : sig
+  type buffer = Cstruct.t
+  type t
+
+  val make : unit -> t
+  val alloc : t -> int -> buffer
+  val release : t -> buffer -> unit
+end

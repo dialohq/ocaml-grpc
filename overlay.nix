@@ -10,17 +10,16 @@ in {
           ocamlProtocSrc = fetchFromGitHub {
             owner = "dialohq";
             repo = "ocaml-protoc";
-            rev = "0fb76b6097b922df271cae6943b7b1eb29e4210b";
-            sha256 = "sha256-5GQ/8AbTxUkyrAVTspdoll9CgwwDmWdkf49dEaOcGZU=";
+            rev = "edf1ef344ef4b6968678ebe1852e2f0d1c564eb1";
+            sha256 = "sha256-jCpxWSTxgDOZ3jNsHNs8/eLIovroUR/lQVcEqXg+je0=";
             fetchSubmodules = true;
           };
-          # hahaPkgsSrc = fetchFromGitHub {
-          #   owner = "dialohq";
-          #   repo = "haha";
-          #   rev = "b0af4c1d6ba17f221e4a4fad916cce61b9063f7e";
-          #   sha256 = "sha256-1AcUWCVcO+2KpzJraqXbF+G7yJBSXCPuPM8+By/FwjA=";
-          # };
-          hahaPkgsSrc = /Users/adam/libs/haha;
+          hahaPkgsSrc = fetchFromGitHub {
+            owner = "dialohq";
+            repo = "haha";
+            rev = "40cadfe0141d8032cab8408a68e7b1606e80a153";
+            sha256 = "sha256-SCTDbkWh2tAGYeIGbBg1BWkTJM4LhDp9f3z8EMABRaQ=";
+          };
           mkHahaPkg = pname: buildDeps:
             super.buildDunePackage {
               inherit pname;

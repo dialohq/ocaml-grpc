@@ -60,7 +60,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     =
   let typ_mod_name = String.capitalize_ascii proto_gen_module in
   let service_name = service.service_name in
-  let gen_exn_rpc sc i (rpc : Ot.rpc) =
+  let _gen_exn_rpc sc i (rpc : Ot.rpc) =
     if i > 0 then F.empty_line sc;
     let rpc_name = rpc.rpc_name in
     match rpc_kind rpc.rpc_req rpc.rpc_res with
@@ -207,16 +207,16 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     match rpc_kind rpc.rpc_req rpc.rpc_res with
     | `Unary ->
         F.linep sc
-          {|let %s ~sw ~channel request =
+          {|let %s ~channel request =
   let response =
-    Grpc_client_eio.Client_new.Unary.call ~sw ~channel ~service:"%s"
+    Grpc_client_eio.Client.Unary.call ~channel ~service:"%s"
       ~method_name:%S
       ~headers:(Grpc_client.make_request_headers `Proto)
       (%s.%s request)
   in
   match response with
-  | Ok res ->
-      Ok (res.Grpc_eio_core.Body_parse.consume %s.%s)
+  | Ok decoder ->
+      Ok (%s.%s decoder)
   | Error status -> Error status|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
           (service_name_of_package service.service_packages service.service_name)
@@ -228,7 +228,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
         F.linep sc
           {|let %s ~sw ~io request handler =
     let stream =
-      Grpc_client_eio.Client.Server_streaming.call ~sw ~io ~service:"%s"
+      Grpc_client_eio.Client_legacy.Server_streaming.call ~sw ~io ~service:"%s"
         ~method_name:"%s"
         ~headers:(Grpc_client.make_request_headers `Proto)
         (%s.%s request) (fun net_response ~read ->
@@ -254,7 +254,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
         F.linep sc
           {|let %s ~sw ~io handler =
   let response =
-    Grpc_client_eio.Client.Client_streaming.call ~sw ~io ~service:"%s"
+    Grpc_client_eio.Client_legacy.Client_streaming.call ~sw ~io ~service:"%s"
       ~method_name:"%s"
       ~headers:(Grpc_client.make_request_headers `Proto)
       (fun net_response ~writer ->
@@ -281,7 +281,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
         F.linep sc
           {|let %s ~sw ~io handler =
     let stream =
-      Grpc_client_eio.Client.Bidirectional_streaming.call ~sw ~io ~service:"%s"
+      Grpc_client_eio.Client_legacy.Bidirectional_streaming.call ~sw ~io ~service:"%s"
         ~method_name:"%s"
         ~headers:(Grpc_client.make_request_headers `Proto)
         (fun net_response ~writer ~read ->
@@ -305,7 +305,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
           typ_mod_name
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
   in
-  let gen_expert_rpc sc i (rpc : Ot.rpc) =
+  let _gen_expert_rpc sc i (rpc : Ot.rpc) =
     if i > 0 then F.empty_line sc;
     let rpc_name = rpc.rpc_name in
     match rpc_kind rpc.rpc_req rpc.rpc_res with
@@ -406,17 +406,17 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
           typ_mod_name
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
   in
-  List.iteri (gen_exn_rpc sc) service.service_body;
-  F.empty_line sc;
-  F.linep sc "module Result = struct";
-  F.empty_line sc;
-  List.iteri (gen_result_rpc sc) service.service_body;
-  F.linep sc "end";
-  F.empty_line sc;
-  F.linep sc "module Expert = struct";
-  F.empty_line sc;
-  List.iteri (gen_expert_rpc sc) service.service_body;
-  F.linep sc "end"
+  (* List.iteri (gen_exn_rpc sc) service.service_body; *)
+  (* F.empty_line sc; *)
+  (* F.linep sc "module Result = struct"; *)
+  (* F.empty_line sc; *)
+  List.iteri (gen_result_rpc sc) service.service_body
+(* F.linep sc "end"; *)
+(* F.empty_line sc; *)
+(* F.linep sc "module Expert = struct"; *)
+(* F.empty_line sc; *)
+(* List.iteri (gen_expert_rpc sc) service.service_body; *)
+(* F.linep sc "end" *)
 
 let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
     : unit =

@@ -88,9 +88,18 @@ module Io = struct
     let msg_state = ref Grpc_eio_core.Body_parse.Idle in
 
     let on_data () = function
-      | `Data { Cstruct.buffer = data; len; off } ->
-          Grpc_eio_core.Body_parse.read_message ~pool ~data ~len ~off msg_stream
-            msg_state
+      | `Data data ->
+          let new_state, parsed =
+            Grpc_eio_core.Body_parse.read_messages ~pool data !msg_state
+          in
+          List.iter
+            (fun b ->
+              Eio.Stream.add msg_stream
+                (Some
+                   (Grpc_eio_core.Body_parse.to_consumer ~pool
+                      { bytes = b; len = Bytes.length b })))
+            parsed;
+          msg_state := new_state
       | `End _ -> Eio.Stream.add msg_stream None
     in
 

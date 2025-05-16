@@ -19,6 +19,13 @@ module Bytes_buffer = struct
   let len t = Bytes.length t
 end
 
+module Cstruct_buffer = struct
+  type t = Cstruct.t
+
+  let create = Cstruct.create
+  let len = Cstruct.length
+end
+
 module M = Map.Make (struct
   type t = int
 
@@ -70,3 +77,4 @@ end
 
 module Bigstring_pool = MakePool (Bigstring_buffer)
 module Bytes_pool = MakePool (Bytes_buffer)
+module Cstruct_pool = MakePool (Cstruct_buffer)

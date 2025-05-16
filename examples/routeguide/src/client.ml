@@ -8,13 +8,13 @@ let random_point () =
   let longitude = (Random.int 360 - 180) * 10000000 in
   Pb.default_point ~latitude ~longitude ()
 
-let get_feature sw channel =
+let get_feature _ channel =
   let request =
     Pb.default_point ~latitude:409146138 ~longitude:(-746188906) ()
   in
 
   Printf.printf "[UNARY] Getting a feature...\n%!";
-  match RouteGuideClient.Result.get_feature ~sw ~channel request with
+  match RouteGuideClient.get_feature ~channel request with
   | Error _ -> Printf.printf "[UNARY] Error getting a feature\n%!"
   | Ok feature ->
       Format.printf "[UNARY] Received a feature: %a@." Pb.pp_feature feature
@@ -39,7 +39,7 @@ let list_features sw io =
   in
 
   Printf.printf "[S_STREAMING] Listing features...\n%!";
-  match RouteGuideClient.Result.list_features ~sw ~io rectangle handler with
+  match RouteGuideClient.list_features ~sw ~io rectangle handler with
   | Error _ -> Printf.printf "[S_STREAMING] Error listing features\n%!"
   | Ok _ -> ()
 
@@ -57,7 +57,7 @@ let run_record_route sw io clock =
   in
 
   Printf.printf "[C_STREAMING] Sending points...\n%!";
-  match RouteGuideClient.Result.record_route ~sw ~io handler with
+  match RouteGuideClient.record_route ~sw ~io handler with
   | Error _ -> Printf.printf "[C_STREAMING] Error listing features\n%!"
   | Ok _ -> ()
 
@@ -100,7 +100,7 @@ let run_route_chat sw io clock =
   in
 
   Printf.printf "[BI_STREAMING] Exchanging notes...\n%!";
-  match RouteGuideClient.Result.route_chat ~sw ~io handler with
+  match RouteGuideClient.route_chat ~sw ~io handler with
   | Error _ -> Printf.printf "[BI_STREAMING] Error listing features\n%!"
   | Ok _ -> ()
 

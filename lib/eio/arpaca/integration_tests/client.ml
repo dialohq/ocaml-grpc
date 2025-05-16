@@ -13,13 +13,13 @@ let print_features sw io =
   in
 
   let stream =
-    RouteGuide_client.Expert.list_features ~sw ~io rectangle (fun _ read ->
+    RouteGuide_client.list_features ~sw ~io rectangle (fun _ read ->
         Seq.iter
           (fun f ->
             Printf.printf "RESPONSE = {%s}%!" (Route_guide.show_feature f))
           read)
   in
-  match stream with `Stream_result_success _ -> () | _ -> failwith "an erra"
+  match stream with Ok _ -> () | _ -> failwith "an erra"
 
 let random_point () =
   let latitude = (Random.int 180 - 90) * 10000000 in
@@ -33,7 +33,7 @@ let run_record_route sw io =
   in
 
   let response =
-    RouteGuide_client.Expert.record_route ~io ~sw (fun _ ~writer ->
+    RouteGuide_client.record_route ~io ~sw (fun _ ~writer ->
         Seq.iter
           (fun point ->
             writer point |> ignore;
@@ -41,7 +41,7 @@ let run_record_route sw io =
           points)
   in
   match response with
-  | `Success { response; _ } ->
+  | Ok { response; _ } ->
       Printf.printf "SUMMARY = {%s}\n%!"
         (Route_guide.show_route_summary response)
   | _ -> failwith "Error occured"
@@ -80,11 +80,11 @@ let run_route_chat clock io sw =
             go ~send reader' xs)
   in
   let result =
-    RouteGuide_client.Expert.route_chat ~io ~sw (fun _ ~writer ~read ->
+    RouteGuide_client.route_chat ~io ~sw (fun _ ~writer ~read ->
         go ~send:writer read route_notes;
         [])
   in
-  match result with `Stream_result_success _ -> () | _e -> failwith "Error"
+  match result with Ok _ -> () | _e -> failwith "Error"
 
 let main env =
   let clock = Eio.Stdenv.clock env in
@@ -96,17 +96,20 @@ let main env =
       Io_client_h2_ocaml_protoc.create_client ~net:network ~sw
         "http://localhost:8080"
     in
+    let channel =
+      Grpc_client_eio.Channel.create ~sw ~net:network "http://localhost:8080"
+    in
 
     Printf.printf "*** SIMPLE RPC ***\n%!";
 
     let result =
-      RouteGuide_client.Expert.get_feature ~sw ~io
+      RouteGuide_client.get_feature ~channel
         (Route_guide.default_point ~latitude:409146138 ~longitude:(-746188906)
            ())
     in
     Printf.printf "RESPONSE = {%s}\n%!"
       (match result with
-      | `Success { response; _ } -> Route_guide.show_feature response
+      | Ok response -> Route_guide.show_feature response
       | _ -> failwith "Error occured");
 
     Printf.printf "\n*** SERVER STREAMING ***\n%!";
