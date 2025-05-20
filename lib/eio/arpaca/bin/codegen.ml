@@ -226,24 +226,17 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
     | `Server_streaming ->
         F.linep sc
-          {|let %s ~sw ~io request handler =
-    let stream =
-      Grpc_client_eio.Client_legacy.Server_streaming.call ~sw ~io ~service:"%s"
+          {|let %s ~channel request handler =
+    let status =
+      Grpc_client_eio.Client.Server_streaming.call ~channel ~service:"%s"
         ~method_name:"%s"
         ~headers:(Grpc_client.make_request_headers `Proto)
-        (%s.%s request) (fun net_response ~read ->
-          let responses =
-            Seq.map
-              (fun response ->
-                response.Grpc_eio_core.Body_reader.consume
-                  %s.%s)
-              read
-          in
-          handler net_response responses)
+        (%s.%s request) 
+        (fun decoder -> handler (%s.%s decoder))
     in 
-    match stream with
-    | `Stream_result_success result -> Ok result
-    | #Grpc_client_eio.Rpc_error.Server_streaming.error' as rest -> Error rest|}
+    match status with
+    | Ok () -> Ok ()
+    | Error () -> Error ()|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
           (service_name_of_package service.service_packages service.service_name)
           rpc.rpc_name typ_mod_name
@@ -252,25 +245,17 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
     | `Client_streaming ->
         F.linep sc
-          {|let %s ~sw ~io handler =
+          {|let %s ~channel handler =
   let response =
-    Grpc_client_eio.Client_legacy.Client_streaming.call ~sw ~io ~service:"%s"
+    Grpc_client_eio.Client.Client_streaming.call ~channel ~service:"%s"
       ~method_name:"%s"
       ~headers:(Grpc_client.make_request_headers `Proto)
-      (fun net_response ~writer ->
-        let writer' req = writer.write (%s.%s req) in
-        handler net_response ~writer:writer')
+      (fun () -> handler () |> Option.map %s.%s)
   in
   match response with
-  | `Success ({ response = res; _ } as result) ->
-      Ok
-        {
-          result with
-          response =
-            res.Grpc_eio_core.Body_reader.consume
-              %s.%s;
-        }
-  | #Grpc_client_eio.Rpc_error.Client_streaming.error' as rest -> Error rest|}
+  | Ok decoder ->
+      Ok (%s.%s decoder)
+  | Error status -> Error status|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
           (service_name_of_package service.service_packages service.service_name)
           rpc.rpc_name typ_mod_name
@@ -279,25 +264,17 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
     | `Bidirectional_streaming ->
         F.linep sc
-          {|let %s ~sw ~io handler =
-    let stream =
-      Grpc_client_eio.Client_legacy.Bidirectional_streaming.call ~sw ~io ~service:"%s"
+          {|let %s ~channel writer reader =
+    let status =
+      Grpc_client_eio.Client.Bidirectional_streaming.call ~channel ~service:"%s"
         ~method_name:"%s"
         ~headers:(Grpc_client.make_request_headers `Proto)
-        (fun net_response ~writer ~read ->
-          let writer' req = writer.write (%s.%s req) in
-          let read' =
-            Seq.map
-              (fun response ->
-                response.Grpc_eio_core.Body_reader.consume
-                  %s.%s)
-              read
-          in
-          handler net_response ~writer:writer' ~read:read')
+        (fun () -> writer () |> Option.map %s.%s)
+        (fun decoder -> reader (%s.%s decoder))
     in
-    match stream with
-    | `Stream_result_success result -> Ok result
-    | #Grpc_client_eio.Rpc_error.Bidirectional_streaming.error' as rest -> Error rest|}
+    match status with
+    | Ok () -> Ok ()
+    | Error () -> Error ()|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
           (service_name_of_package service.service_packages service.service_name)
           rpc.rpc_name typ_mod_name

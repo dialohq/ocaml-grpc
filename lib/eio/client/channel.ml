@@ -24,28 +24,36 @@ let status_of_h2_error : Error_code.t -> Status_new.code = function
 
 let connection_error_to_status : Error.connection_error -> Status_new.t =
   function
-  | ProtocolError (code, msg) ->
+  | ProtocolViolation (code, msg) | PeerError (code, msg) ->
       { Status_new.code = status_of_h2_error code; info = Some (Message msg) }
   | Exn exn -> { Status_new.code = Internal; info = Some (Exn exn) }
 
-type 'c stream_context = {
-  result : Status_new.t option;
-  resolver : Status_new.t Promise.u; [@opaque]
-  grpc_context : 'c;
+type 'context data_receiver_result = {
+  action : [ `Continue | `Reset ];
+  context : 'context;
 }
-[@@deriving show]
+
+type 'context data_receiver =
+  'context -> Cstruct.t -> 'context data_receiver_result
 
 type 'context data_writer = 'context -> Cstruct.t list option * 'context
-type 'context data_receiver = 'context -> Cstruct.t option -> 'context
+type 'c stream_result = { status : Status_new.t; grpc_context : 'c }
 
 type 'c stream_request = {
   headers : Grpc_client.request_headers;
   data_writer : 'c data_writer;
   data_receiver : 'c data_receiver;
   path : string;
-  result_resolver : Status_new.t Promise.u;
+  result_resolver : 'c stream_result Promise.u;
   initial_grpc_context : 'c;
 }
+
+type 'c stream_context = {
+  result : Status_new.t option;
+  resolver : 'c stream_result Promise.u; [@opaque]
+  grpc_context : 'c; [@opaque]
+}
+[@@deriving show]
 
 type 'c connection = {
   next_iter : unit -> 'c stream_context Client.iteration;
@@ -84,29 +92,38 @@ let resolve_streams :
     ?err:Error.connection_error -> (int32 * _ stream_context) list -> unit =
  fun ?err closed_ctxs ->
   List.iter
-    (fun (_, context) ->
-      (match (context.result, err) with
+    (fun (_, { grpc_context; result; resolver }) ->
+      (match (result, err) with
       | None, None ->
           {
-            code = Unknown;
-            info =
-              Some
-                (Message
-                   "gRPC protocol error: No gRPC status found in the HTTP/2 \
-                    response trailers");
+            grpc_context;
+            status =
+              {
+                code = Unknown;
+                info =
+                  Some
+                    (Message
+                       "gRPC protocol error: No gRPC status found in the \
+                        HTTP/2 response trailers");
+              };
           }
-      | Some status, _ -> status
-      | None, Some (ProtocolError (code, msg)) ->
+      | Some status, _ -> { status; grpc_context }
+      | None, Some (ProtocolViolation (code, msg) | PeerError (code, msg)) ->
           {
-            code = status_of_h2_error code;
-            info =
-              Some
-                (Message
-                   (Format.asprintf "HTTP/2 connection error, code %a: %s"
-                      Error_code.pp_hum code msg));
+            grpc_context;
+            status =
+              {
+                code = status_of_h2_error code;
+                info =
+                  Some
+                    (Message
+                       (Format.asprintf "HTTP/2 connection error, code %a: %s"
+                          Error_code.pp_hum code msg));
+              };
           }
-      | None, Some (Exn exn) -> { code = Internal; info = Some (Exn exn) })
-      |> Promise.resolve context.resolver)
+      | None, Some (Exn exn) ->
+          { grpc_context; status = { code = Internal; info = Some (Exn exn) } })
+      |> Promise.resolve resolver)
     closed_ctxs
 
 let make_connections_events :
@@ -175,14 +192,30 @@ let make_request : Uri.t -> _ stream_request -> _ stream_context Request.t =
   let on_data : _ stream_context Types.body_reader =
    fun context -> function
     | `Data cs ->
-        let grpc_context = data_receiver context.grpc_context (Some cs) in
-        { context with grpc_context }
-    | `End (cs_opt, trailers) -> (
-        let grpc_context = data_receiver context.grpc_context cs_opt in
+        let { context = grpc_context; action } =
+          data_receiver context.grpc_context cs
+        in
+        { action; context = { context with grpc_context } }
+    | `End (Some cs, trailers) -> (
+        let { context = grpc_context; action } =
+          data_receiver context.grpc_context cs
+        in
 
         match find_grpc_status trailers with
-        | Some status -> { context with grpc_context; result = Some status }
-        | None -> { context with grpc_context })
+        | Some status ->
+            {
+              action;
+              context = { context with grpc_context; result = Some status };
+            }
+        | None -> { action; context = { context with grpc_context } })
+    | `End (None, trailers) -> (
+        match find_grpc_status trailers with
+        | Some status ->
+            {
+              action = `Continue;
+              context = { context with result = Some status };
+            }
+        | None -> { action = `Continue; context })
   in
 
   let response_handler : _ stream_context Response.handler =
@@ -193,18 +226,27 @@ let make_request : Uri.t -> _ stream_request -> _ stream_context Request.t =
           { context with result = find_grpc_status (Response.headers response) }
         in
 
-        Response.handle ~context ~on_data
-    | _ ->
+        (Some on_data, context)
+    | h2_status ->
         let context =
           {
             context with
             result =
-              Some { Status_new.code = Internal; info = Some (Message "") };
+              Some
+                {
+                  Status_new.code = Internal;
+                  info =
+                    Some
+                      (Message
+                         (Format.sprintf
+                            "gRPC protocol error: HTTP/2 server responsed with \
+                             %i status code, 200 expected"
+                            (Status.to_code h2_status)));
+                };
           }
         in
 
-        (* TODO: force reject stream with RST_STREAM *)
-        Response.handle ~context ~on_data
+        (None, context)
   in
 
   let initial_stream_state =
@@ -226,7 +268,7 @@ let start_connection :
  fun ~connect_socket ~uri ->
   let socket = connect_socket () in
   let request_stream : _ stream_context Request.t option Stream.t =
-    Stream.create 1
+    Stream.create max_int
   in
 
   let request_writer : unit -> _ stream_context Request.t option =
@@ -239,7 +281,7 @@ let start_connection :
     Stream.add request_stream (Some (make_request uri stream_request))
   in
 
-  let initial_iteration = Client.run ~request_writer socket in
+  let initial_iteration = Client.connect ~request_writer socket in
 
   match initial_iteration with
   | { state = End; _ } as iter ->
@@ -306,7 +348,10 @@ let make_new_stream_event :
               }
         | Error conn_err ->
             Promise.resolve stream_request.result_resolver
-              (connection_error_to_status conn_err);
+              {
+                status = connection_error_to_status conn_err;
+                grpc_context = stream_request.initial_grpc_context;
+              };
             Some state)
 
 let make_shutdown_event :
@@ -367,8 +412,8 @@ let create : ?max_streams:int -> sw:Switch.t -> net:_ Net.t -> string -> _ t =
 
   { request_stream; shutdown_resolver }
 
-let start_request ~headers ~data_writer ~data_receiver ~path ~initial_context
-    (t : _ t) =
+let start_request (t : _ t) ~headers ~data_writer ~data_receiver ~path
+    ~initial_context =
   let result_promise, result_resolver = Promise.create () in
 
   Stream.add t.request_stream

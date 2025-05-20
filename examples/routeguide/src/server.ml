@@ -59,10 +59,10 @@ let get_server (features : feature_list) clock =
 
     let get_feature : net_request -> Pb.point -> Pb.feature * trailers =
      fun _ point ->
-      incr unary_counter;
+      (* incr unary_counter; *)
       Printf.printf "[UNARY] /GetFeature #%i\n%!" !unary_counter;
 
-      if !unary_counter <> 6 then Eio.Time.sleep clock 3.;
+      (* if !unary_counter <> 6 then Eio.Time.sleep clock 3.; *)
       match
         List.find_opt (fun (f : Pb.feature) -> f.location = Some point) features
       with

@@ -90,7 +90,7 @@ module Io = struct
     let on_data () = function
       | `Data data ->
           let new_state, parsed =
-            Grpc_eio_core.Body_parse.read_messages ~pool data !msg_state
+            Grpc_eio_core.Body_parse.read_messages data !msg_state
           in
           List.iter
             (fun b ->
@@ -99,8 +99,11 @@ module Io = struct
                    (Grpc_eio_core.Body_parse.to_consumer ~pool
                       { bytes = b; len = Bytes.length b })))
             parsed;
-          msg_state := new_state
-      | `End _ -> Eio.Stream.add msg_stream None
+          msg_state := new_state;
+          { Types.action = `Continue; context = () }
+      | `End _ ->
+          Eio.Stream.add msg_stream None;
+          { Types.action = `Continue; context = () }
     in
 
     let error_handler =
@@ -162,7 +165,7 @@ module Io = struct
     in
     let handler =
       Reqd.handle ~context:() ~error_handler
-        ~on_data:(fun _ _ -> ())
+        ~on_data:(fun _ _ -> { Types.action = `Continue; context = () })
         ~response_writer:(fun () ->
           `Final
             (Response.create
@@ -204,7 +207,8 @@ let connection_handler ~sw ?debug ?config ?grpc_error_handler server =
   in
 
   let error_handler = function
-    | Haha.Error.ProtocolError (code, msg) as err ->
+    | (Haha.Error.ProtocolViolation (code, msg) | PeerError (code, msg)) as err
+      ->
         Format.printf "[GPRC_IO] H2 protocol error: %a, %s@."
           Haha.Error_code.pp_hum code msg;
         Eio.Promise.try_resolve error_r err |> ignore

@@ -8,18 +8,21 @@ let random_point () =
   let longitude = (Random.int 360 - 180) * 10000000 in
   Pb.default_point ~latitude ~longitude ()
 
-let get_feature _ channel =
+let get_feature channel =
   let request =
     Pb.default_point ~latitude:409146138 ~longitude:(-746188906) ()
   in
 
   Printf.printf "[UNARY] Getting a feature...\n%!";
   match RouteGuideClient.get_feature ~channel request with
-  | Error _ -> Printf.printf "[UNARY] Error getting a feature\n%!"
+  | Error status ->
+      Format.printf "[UNARY] Error getting a feature: %a@."
+        Grpc_client_eio.Status_new.pp status
   | Ok feature ->
-      Format.printf "[UNARY] Received a feature: %a@." Pb.pp_feature feature
+      Format.printf "[UNARY] Done. Received a feature: %a@." Pb.pp_feature
+        feature
 
-let list_features sw io =
+let list_features channel =
   let rectangle =
     Pb.default_rectangle
       ~lo:
@@ -29,39 +32,37 @@ let list_features sw io =
       ()
   in
 
-  let handler : _ -> Pb.feature Seq.t -> unit =
-   fun _h2_response seq ->
-    Seq.iter
-      (fun feature ->
-        Format.printf "[S_STREAMING] Received a feature: %a@." Pb.pp_feature
-          feature)
-      seq
+  let handler : Pb.feature -> unit =
+   fun feature ->
+    Format.printf "[S_STREAMING] Received a feature: %a@." Pb.pp_feature feature
   in
 
   Printf.printf "[S_STREAMING] Listing features...\n%!";
-  match RouteGuideClient.list_features ~sw ~io rectangle handler with
-  | Error _ -> Printf.printf "[S_STREAMING] Error listing features\n%!"
-  | Ok _ -> ()
+  match RouteGuideClient.list_features ~channel rectangle handler with
+  | Error () -> Printf.printf "[S_STREAMING] Error listing features\n%!"
+  | Ok () -> Printf.printf "[S_STREAMING] Done.\n%!"
 
-let run_record_route sw io clock =
-  let points = List.to_seq @@ List.init 10 (fun _ -> random_point ()) in
+let run_record_route channel clock =
+  let points = Array.init 10 (fun _ -> random_point ()) in
+  let i = ref 0 in
 
-  let handler : _ -> writer:(Pb.point -> bool) -> unit =
-   fun _h2_response ~writer ->
-    Seq.iter
-      (fun point ->
-        writer point |> ignore;
-        Format.printf "[C_STREAMING] Sent point: %a@." Pb.pp_point point;
-        Eio.Time.sleep clock 0.1)
-      points
+  let handler : unit -> Pb.point option =
+   fun () ->
+    if !i < Array.length points then (
+      let point = points.(!i) in
+      Eio.Time.sleep clock 0.1;
+      Format.printf "[C_STREAMING] Sending point: %a@." Pb.pp_point point;
+      incr i;
+      Some point)
+    else None
   in
 
   Printf.printf "[C_STREAMING] Sending points...\n%!";
-  match RouteGuideClient.record_route ~sw ~io handler with
+  match RouteGuideClient.record_route ~channel handler with
   | Error _ -> Printf.printf "[C_STREAMING] Error listing features\n%!"
-  | Ok _ -> ()
+  | Ok _ -> Printf.printf "[C_STREAMING] Done.\n%!"
 
-let run_route_chat sw io clock =
+let run_route_chat channel clock =
   let location_count = 5 in
   let route_notes =
     location_count
@@ -75,34 +76,28 @@ let run_route_chat sw io clock =
                    (),
                  x - 1 ))
   in
+  let route_notes = Array.of_seq route_notes in
+  let i = ref 0 in
 
-  let handler :
-      _ -> writer:(Pb.route_note -> bool) -> read:Pb.route_note Seq.t -> unit =
-   fun _h2_response ~writer ~read ->
-    let rec loop notes read =
-      match notes () with
-      | Seq.Nil -> ()
-      | Cons (note, rest_notes) -> (
-          writer note |> ignore;
-          Format.printf "[BI_STREAMING] Sent a note: %a@." Pb.pp_route_note note;
+  let writer : unit -> Pb.route_note option =
+   fun () ->
+    if !i < Array.length route_notes then (
+      let note = route_notes.(!i) in
+      Eio.Time.sleep clock 0.1;
+      Format.printf "[BI_STREAMING] Sent a note: %a@." Pb.pp_route_note note;
+      incr i;
+      Some note)
+    else None
+  in
 
-          Eio.Time.sleep clock 0.2;
-
-          match read () with
-          | Seq.Nil -> failwith "Expecting response"
-          | Cons (note, rest_read) ->
-              Format.printf "[BI_STREAMING] Received a note: %a@."
-                Pb.pp_route_note note;
-
-              (loop [@tailcall]) rest_notes rest_read)
-    in
-    loop route_notes read
+  let reader : Pb.route_note -> unit =
+    Format.printf "[BI_STREAMING] Received a note: %a@." Pb.pp_route_note
   in
 
   Printf.printf "[BI_STREAMING] Exchanging notes...\n%!";
-  match RouteGuideClient.route_chat ~sw ~io handler with
-  | Error _ -> Printf.printf "[BI_STREAMING] Error listing features\n%!"
-  | Ok _ -> ()
+  match RouteGuideClient.route_chat ~channel writer reader with
+  | Error () -> Printf.printf "[BI_STREAMING] Error listing features\n%!"
+  | Ok () -> Printf.printf "[BI_STREAMING] Done.\n%!"
 
 let main env =
   let network = Eio.Stdenv.net env in
@@ -115,18 +110,15 @@ let main env =
     in
 
     Printf.printf "*** SIMPLE RPC ***\n%!";
+    get_feature channel;
+    Printf.printf "\n*** SERVER STREAMING ***\n%!";
+    list_features channel;
+    Printf.printf "\n*** CLIENT STREAMING ***\n%!";
+    run_record_route channel env#clock;
+    Printf.printf "\n*** BIDIRECTIONAL STREAMING ***\n%!";
+    run_route_chat channel env#clock;
 
-    Eio.Fiber.all
-    @@ List.init 11 (fun i () ->
-           Eio.Time.sleep env#clock (float_of_int i *. 0.1);
-           get_feature sw channel);
-    (* Printf.printf "\n*** SERVER STREAMING ***\n%!"; *)
-    (* list_features sw io; *)
-    (* Printf.printf "\n*** CLIENT STREAMING ***\n%!"; *)
-    (* run_record_route sw io env#clock; *)
-    (* Printf.printf "\n*** BIDIRECTIONAL STREAMING ***\n%!"; *)
-    (* run_route_chat sw io env#clock; *)
-    (* Printf.printf "Disconnecting\n%!"; *)
+    Printf.printf "Disconnecting\n%!";
     Grpc_client_eio.Channel.shutdown channel
   in
 

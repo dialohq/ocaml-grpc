@@ -1,4 +1,4 @@
-let print_features sw io =
+let print_features _sw channel =
   let rectangle =
     Route_guide.default_rectangle
       ~lo:
@@ -13,11 +13,8 @@ let print_features sw io =
   in
 
   let stream =
-    RouteGuide_client.list_features ~sw ~io rectangle (fun _ read ->
-        Seq.iter
-          (fun f ->
-            Printf.printf "RESPONSE = {%s}%!" (Route_guide.show_feature f))
-          read)
+    RouteGuide_client.list_features ~channel rectangle (fun f ->
+        Printf.printf "RESPONSE = {%s}%!" (Route_guide.show_feature f))
   in
   match stream with Ok _ -> () | _ -> failwith "an erra"
 
@@ -26,27 +23,31 @@ let random_point () =
   let longitude = (Random.int 360 - 180) * 10000000 in
   Route_guide.default_point ~latitude ~longitude ()
 
-let run_record_route sw io =
+let run_record_route _sw channel =
   let points =
     Random.int 100
     |> Seq.unfold (function 0 -> None | x -> Some (random_point (), x - 1))
   in
 
+  let points = Array.of_seq points in
+  let i = ref 0 in
+
   let response =
-    RouteGuide_client.record_route ~io ~sw (fun _ ~writer ->
-        Seq.iter
-          (fun point ->
-            writer point |> ignore;
-            Printf.printf "SENT = {%s}\n%!" (Route_guide.show_point point))
-          points)
+    RouteGuide_client.record_route ~channel (fun () ->
+        if !i < Array.length points then (
+          let point = points.(!i) in
+          Printf.printf "SENT = {%s}\n%!" (Route_guide.show_point point);
+          incr i;
+          Some point)
+        else None)
   in
   match response with
-  | Ok { response; _ } ->
+  | Ok response ->
       Printf.printf "SUMMARY = {%s}\n%!"
         (Route_guide.show_route_summary response)
   | _ -> failwith "Error occured"
 
-let run_route_chat clock io sw =
+let run_route_chat clock channel =
   (* Generate locations. *)
   let location_count = 5 in
   Printf.printf "Generating %i locations\n" location_count;
@@ -62,28 +63,26 @@ let run_route_chat clock io sw =
                    (),
                  x - 1 ))
   in
+  let route_notes = Array.of_seq route_notes in
+  let i = ref 0 in
+
   (* $MDX part-end *)
   (* $MDX part-begin=client-route-chat-2 *)
-  let rec go ~send reader notes =
-    match Seq.uncons notes with
-    | None -> () (* Signal no more notes from the server. *)
-    | Some (route_note, xs) -> (
-        send route_note |> ignore;
-
-        Eio.Time.sleep clock 1.0;
-
-        match reader () with
-        | Seq.Nil -> failwith "Expecting response"
-        | Seq.Cons (route_note, reader') ->
-            Printf.printf "NOTE = {%s}\n%!"
-              (Route_guide.show_route_note route_note);
-            go ~send reader' xs)
+  let writer : unit -> Route_guide.route_note option =
+   fun () ->
+    if !i < Array.length route_notes then (
+      let note = route_notes.(!i) in
+      Eio.Time.sleep clock 1.0;
+      incr i;
+      Some note)
+    else None
   in
-  let result =
-    RouteGuide_client.route_chat ~io ~sw (fun _ ~writer ~read ->
-        go ~send:writer read route_notes;
-        [])
+
+  let reader : Route_guide.route_note -> unit =
+   fun note ->
+    Printf.printf "NOTE = {%s}\n%!" (Route_guide.show_route_note note)
   in
+  let result = RouteGuide_client.route_chat ~channel writer reader in
   match result with Ok _ -> () | _e -> failwith "Error"
 
 let main env =
@@ -92,10 +91,6 @@ let main env =
   let () = Random.self_init () in
 
   let run sw =
-    let io =
-      Io_client_h2_ocaml_protoc.create_client ~net:network ~sw
-        "http://localhost:8080"
-    in
     let channel =
       Grpc_client_eio.Channel.create ~sw ~net:network "http://localhost:8080"
     in
@@ -113,13 +108,13 @@ let main env =
       | _ -> failwith "Error occured");
 
     Printf.printf "\n*** SERVER STREAMING ***\n%!";
-    print_features sw io;
+    print_features sw channel;
 
     Printf.printf "\n*** CLIENT STREAMING ***\n%!";
-    run_record_route sw io;
+    run_record_route sw channel;
 
     Printf.printf "\n*** BIDIRECTIONAL STREAMING ***\n%!";
-    run_route_chat clock io sw
+    run_route_chat clock channel
   in
 
   Eio.Switch.run run

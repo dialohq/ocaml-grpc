@@ -34,10 +34,9 @@ let extract_msg_len ~data ~off =
   let low = Bigstringaf.get_int16_be data (off + 2) in
   (high lsl 16) lor low
 
-let read_messages :
-    pool:Buffer_pool.Bytes_pool.t -> Cstruct.t -> state -> state * bytes list =
- fun ~pool { Cstruct.buffer = data; off; len } ->
-  let take_buffer = take_buffer ~pool in
+let read_messages : Cstruct.t -> state -> state * bytes list =
+ fun { Cstruct.buffer = data; off; len } ->
+  let take_buffer = Bytes.create in
   let rec parse_many :
       data:Bigstringaf.t ->
       off:int ->
