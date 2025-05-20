@@ -208,16 +208,11 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     | `Unary ->
         F.linep sc
           {|let %s ~channel request =
-  let response =
-    Grpc_client_eio.Client.Unary.call ~channel ~service:"%s"
-      ~method_name:%S
-      ~headers:(Grpc_client.make_request_headers `Proto)
-      (%s.%s request)
-  in
-  match response with
-  | Ok decoder ->
-      Ok (%s.%s decoder)
-  | Error status -> Error status|}
+  Grpc_client_eio.Client.Unary.call ~channel ~service:"%s"
+    ~method_name:%S
+    ~headers:(Grpc_client.make_request_headers `Proto)
+    (%s.%s request)
+  |> Result.map %s.%s|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
           (service_name_of_package service.service_packages service.service_name)
           rpc.rpc_name typ_mod_name
@@ -227,16 +222,11 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     | `Server_streaming ->
         F.linep sc
           {|let %s ~channel request handler =
-    let status =
-      Grpc_client_eio.Client.Server_streaming.call ~channel ~service:"%s"
-        ~method_name:"%s"
-        ~headers:(Grpc_client.make_request_headers `Proto)
-        (%s.%s request) 
-        (fun decoder -> handler (%s.%s decoder))
-    in 
-    match status with
-    | Ok () -> Ok ()
-    | Error () -> Error ()|}
+  Grpc_client_eio.Client.Server_streaming.call ~channel ~service:"%s"
+    ~method_name:"%s"
+    ~headers:(Grpc_client.make_request_headers `Proto)
+    (%s.%s request) 
+    (fun decoder -> handler (%s.%s decoder))|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
           (service_name_of_package service.service_packages service.service_name)
           rpc.rpc_name typ_mod_name
@@ -246,16 +236,11 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     | `Client_streaming ->
         F.linep sc
           {|let %s ~channel handler =
-  let response =
-    Grpc_client_eio.Client.Client_streaming.call ~channel ~service:"%s"
-      ~method_name:"%s"
-      ~headers:(Grpc_client.make_request_headers `Proto)
-      (fun () -> handler () |> Option.map %s.%s)
-  in
-  match response with
-  | Ok decoder ->
-      Ok (%s.%s decoder)
-  | Error status -> Error status|}
+  Grpc_client_eio.Client.Client_streaming.call ~channel ~service:"%s"
+    ~method_name:"%s"
+    ~headers:(Grpc_client.make_request_headers `Proto)
+    (fun () -> handler () |> Option.map %s.%s)
+  |> Result.map %s.%s|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
           (service_name_of_package service.service_packages service.service_name)
           rpc.rpc_name typ_mod_name
@@ -265,16 +250,11 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     | `Bidirectional_streaming ->
         F.linep sc
           {|let %s ~channel writer reader =
-    let status =
-      Grpc_client_eio.Client.Bidirectional_streaming.call ~channel ~service:"%s"
-        ~method_name:"%s"
-        ~headers:(Grpc_client.make_request_headers `Proto)
-        (fun () -> writer () |> Option.map %s.%s)
-        (fun decoder -> reader (%s.%s decoder))
-    in
-    match status with
-    | Ok () -> Ok ()
-    | Error () -> Error ()|}
+  Grpc_client_eio.Client.Bidirectional_streaming.call ~channel ~service:"%s"
+    ~method_name:"%s"
+    ~headers:(Grpc_client.make_request_headers `Proto)
+    (fun () -> writer () |> Option.map %s.%s)
+    (fun decoder -> reader (%s.%s decoder))|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
           (service_name_of_package service.service_packages service.service_name)
           rpc.rpc_name typ_mod_name
