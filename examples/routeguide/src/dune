@@ -2,10 +2,6 @@
  (names client server)
  (package grpc-examples)
  (public_names rg-client rg-server)
- (libraries
-  routeguide_proto
-  grpc-eio-haha-client-io
-  grpc-eio-haha-server-io
-  grpc-eio-io-client-h2-ocaml-protoc)
+ (libraries routeguide_proto grpc)
  (preprocess
   (pps ppx_deriving_yojson)))

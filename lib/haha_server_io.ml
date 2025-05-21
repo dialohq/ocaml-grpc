@@ -8,16 +8,14 @@ let wrap_in_promise f =
 
 type 'context net_request = {
   request : Haha.Reqd.t;
-  msg_stream :
-    Grpc_eio_core.Body_parse.t Grpc_eio_core.Body_parse.consumer option
-    Eio.Stream.t;
+  msg_stream : Body_parse.t Body_parse.consumer option Eio.Stream.t;
   handler_resolver : 'context Haha.Reqd.handler Eio.Promise.u;
   connection_error : Haha.Error.connection_error Eio.Promise.t;
-  buffer_pool : Grpc_eio_core.Buffer_pool.Bytes_pool.t;
+  buffer_pool : Buffer_pool.Bytes_pool.t;
 }
 
 module Io = struct
-  type request = Pbrt.Decoder.t Grpc_eio_core.Body_reader.consumer
+  type request = Pbrt.Decoder.t Legacy_modules.Body_reader.consumer
   type response = Pbrt.Encoder.t -> unit
 
   module Net_request = struct
@@ -26,7 +24,7 @@ module Io = struct
     let to_seq recv =
       let rec loop recv () =
         match recv () with
-        | Grpc_eio_core.Recv_seq.Done -> Seq.Nil
+        | Legacy_modules.Recv_seq.Done -> Seq.Nil
         | Next (x, recv) -> Seq.Cons (x, loop recv)
         | Err `Unexpected_eof -> raise Unexpected_eof
         | Err (`Connection_error error) -> raise (Connection_error error)
@@ -36,16 +34,16 @@ module Io = struct
     let body ({ msg_stream; _ } : t) : request Seq.t =
       let rec get_next () =
         match Eio.Stream.take msg_stream with
-        | Some msg -> Grpc_eio_core.Recv_seq.Next (msg, fun () -> get_next ())
+        | Some msg -> Legacy_modules.Recv_seq.Next (msg, fun () -> get_next ())
         | None -> Done
       in
 
       (fun () -> get_next ())
-      |> Grpc_eio_core.Recv_seq.map (fun { Grpc_eio_core.Body_parse.consume } ->
+      |> Legacy_modules.Recv_seq.map (fun { Body_parse.consume } ->
              {
-               Grpc_eio_core.Body_reader.consume =
+               Legacy_modules.Body_reader.consume =
                  (fun f ->
-                   consume (fun { Grpc_eio_core.Body_parse.bytes; len } ->
+                   consume (fun { Body_parse.bytes; len } ->
                        f (Pbrt.Decoder.of_subbytes bytes 0 len)));
              })
       |> to_seq
@@ -58,7 +56,8 @@ module Io = struct
   end
 
   let grpc_trailers_to_headers
-      ({ grpc_status; grpc_message; extra } : Grpc_server.trailers) =
+      ({ grpc_status; grpc_message; extra } :
+        Legacy_modules.Grpc_server.trailers) =
     Haha.Header.of_list
       (("grpc-status", string_of_int grpc_status)
       ::
@@ -66,9 +65,9 @@ module Io = struct
       | None -> extra
       | Some msg -> ("grpc-message", msg) :: extra))
 
-  let respond_streaming ~(headers : Grpc_server.headers)
+  let respond_streaming ~(headers : Legacy_modules.Grpc_server.headers)
       ({ msg_stream; handler_resolver; buffer_pool = pool; _ } : Net_request.t)
-      : response Grpc_server_eio.Io.streaming_writer =
+      : response Legacy_modules.Io.streaming_writer =
     let open Haha in
     let body_writer_stream = Eio.Stream.create 0 in
     let write_body cs =
@@ -85,18 +84,16 @@ module Io = struct
           Eio.Stream.add body_writer_stream (`End (None, trailers), resolve))
     in
 
-    let msg_state = ref Grpc_eio_core.Body_parse.Idle in
+    let msg_state = ref Body_parse.Idle in
 
     let on_data () = function
       | `Data data ->
-          let new_state, parsed =
-            Grpc_eio_core.Body_parse.read_messages data !msg_state
-          in
+          let new_state, parsed = Body_parse.read_messages data !msg_state in
           List.iter
             (fun b ->
               Eio.Stream.add msg_stream
                 (Some
-                   (Grpc_eio_core.Body_parse.to_consumer ~pool
+                   (Body_parse.to_consumer ~pool
                       { bytes = b; len = Bytes.length b })))
             parsed;
           msg_state := new_state;
@@ -118,7 +115,8 @@ module Io = struct
           `Final
             (Response.create_with_streaming ~body_writer `OK
                (Header.of_list
-                  (("content-type", headers.Grpc_server.content_type)
+                  (( "content-type",
+                     headers.Legacy_modules.Grpc_server.content_type )
                   :: headers.extra))))
     in
 
@@ -146,14 +144,19 @@ module Io = struct
 
     let close () = write_end () in
 
-    let write_trailers (trailers : Grpc_server.trailers) =
+    let write_trailers (trailers : Legacy_modules.Grpc_server.trailers) =
       write_end ~trailers:(grpc_trailers_to_headers trailers) ()
     in
 
     let is_closed () = false in
 
     Eio.Promise.resolve handler_resolver handler;
-    { Grpc_server_eio.Io.write; close; write_trailers; is_closed }
+    {
+      Legacy_modules.Grpc_server_eio.Io.write;
+      close;
+      write_trailers;
+      is_closed;
+    }
 
   let respond_error ~(status_code : int) ~(headers : (string * string) list)
       ({ handler_resolver; _ } : Net_request.t) : unit =
@@ -179,22 +182,22 @@ end
 include Io
 
 let io =
-  (module Io : Grpc_server_eio.Io.S
+  (module Io : Legacy_modules.Io.S
     with type Net_request.t = Io.Net_request.t
-     and type request = Pbrt.Decoder.t Grpc_eio_core.Body_reader.consumer
+     and type request = Pbrt.Decoder.t Legacy_modules.Body_reader.consumer
      and type response = Pbrt.Encoder.t -> unit)
 
 let connection_handler ~sw ?debug ?config ?grpc_error_handler server =
   let error_p, error_r = Eio.Promise.create () in
-  let buffer_pool = Grpc_eio_core.Buffer_pool.Bytes_pool.make () in
+  let buffer_pool = Buffer_pool.Bytes_pool.make () in
 
   let request_handler (request : Haha.Reqd.t) =
     let handler_promise, handler_resolver = Eio.Promise.create () in
     let msg_stream = Eio.Stream.create Int.max_int in
 
     Eio.Fiber.fork ~sw (fun () ->
-        Grpc_server_eio.handle_request ~io ?error_handler:grpc_error_handler
-          server
+        Legacy_modules.Grpc_server_eio.handle_request ~io
+          ?error_handler:grpc_error_handler server
           {
             request;
             msg_stream;

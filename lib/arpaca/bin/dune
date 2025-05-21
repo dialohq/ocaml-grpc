@@ -1,0 +1,5 @@
+(executable
+ (package arpaca)
+ (name main)
+ (public_name arpaca-gen)
+ (libraries ocaml-protoc.compiler-lib re cmdliner))

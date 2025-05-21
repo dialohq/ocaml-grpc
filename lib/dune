@@ -1,0 +1,6 @@
+(library
+ (name grpc)
+ (public_name grpc)
+ (libraries haha uri pbrt eio.mock)
+ (preprocess
+  (pps ppx_expect ppx_deriving.show)))

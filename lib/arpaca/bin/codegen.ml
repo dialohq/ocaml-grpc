@@ -208,7 +208,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     | `Unary ->
         F.linep sc
           {|let %s ~channel request =
-  Grpc_client_eio.Client.Unary.call ~channel ~service:"%s"
+  Grpc.Client.Unary.call ~channel ~service:"%s"
     ~method_name:%S
     ~headers:(Grpc_client.make_request_headers `Proto)
     (%s.%s request)
@@ -221,12 +221,12 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
     | `Server_streaming ->
         F.linep sc
-          {|let %s ~channel request handler =
-  Grpc_client_eio.Client.Server_streaming.call ~channel ~service:"%s"
+          {|let %s ~channel ~initial_context request handler =
+  Grpc.Client.Server_streaming.call ~channel ~initial_context ~service:"%s"
     ~method_name:"%s"
     ~headers:(Grpc_client.make_request_headers `Proto)
     (%s.%s request) 
-    (fun decoder -> handler (%s.%s decoder))|}
+    (fun c decoder -> handler c (%s.%s decoder))|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
           (service_name_of_package service.service_packages service.service_name)
           rpc.rpc_name typ_mod_name
@@ -235,11 +235,13 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
     | `Client_streaming ->
         F.linep sc
-          {|let %s ~channel handler =
-  Grpc_client_eio.Client.Client_streaming.call ~channel ~service:"%s"
+          {|let %s ~channel ~initial_context handler =
+  Grpc.Client.Client_streaming.call ~channel ~initial_context ~service:"%s"
     ~method_name:"%s"
     ~headers:(Grpc_client.make_request_headers `Proto)
-    (fun () -> handler () |> Option.map %s.%s)
+    (fun c -> 
+        let msg, c = handler c in
+        (msg |> Option.map %s.%s, c))
   |> Result.map %s.%s|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
           (service_name_of_package service.service_packages service.service_name)
@@ -249,12 +251,14 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
     | `Bidirectional_streaming ->
         F.linep sc
-          {|let %s ~channel writer reader =
-  Grpc_client_eio.Client.Bidirectional_streaming.call ~channel ~service:"%s"
+          {|let %s ~channel ~initial_context writer reader =
+  Grpc.Client.Bidirectional_streaming.call ~channel ~initial_context ~service:"%s"
     ~method_name:"%s"
     ~headers:(Grpc_client.make_request_headers `Proto)
-    (fun () -> writer () |> Option.map %s.%s)
-    (fun decoder -> reader (%s.%s decoder))|}
+    (fun c -> 
+        let msg, c = writer c in 
+        (msg |> Option.map %s.%s, c))
+    (fun c decoder -> reader c (%s.%s decoder))|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
           (service_name_of_package service.service_packages service.service_name)
           rpc.rpc_name typ_mod_name
@@ -363,17 +367,9 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
           typ_mod_name
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
   in
-  (* List.iteri (gen_exn_rpc sc) service.service_body; *)
-  (* F.empty_line sc; *)
-  (* F.linep sc "module Result = struct"; *)
-  (* F.empty_line sc; *)
+  F.line sc "open Grpc.Legacy_modules";
+  F.empty_line sc;
   List.iteri (gen_result_rpc sc) service.service_body
-(* F.linep sc "end"; *)
-(* F.empty_line sc; *)
-(* F.linep sc "module Expert = struct"; *)
-(* F.empty_line sc; *)
-(* List.iteri (gen_expert_rpc sc) service.service_body; *)
-(* F.linep sc "end" *)
 
 let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
     : unit =
@@ -452,8 +448,7 @@ let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
                     p sc {|(Grpc_server_eio.Rpc.unary (fun grpc_req ->|};
                     F.line sc {|let response, trailers =|};
                     sub sc (fun sc ->
-                        p sc
-                          {|Impl.%s req (grpc_req.Grpc_eio_core.Body_reader.consume %s)|}
+                        p sc {|Impl.%s req (grpc_req.Body_reader.consume %s)|}
                           impl decoder_func);
                     F.line sc "in";
                     p sc {|((%s response), trailers )))|} encoder_func
@@ -466,8 +461,7 @@ let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
                         sub sc (fun sc ->
                             p sc {|(Seq.map (fun grpc_req ->|};
                             sub sc (fun sc ->
-                                p sc
-                                  {|grpc_req.Grpc_eio_core.Body_reader.consume %s|}
+                                p sc {|grpc_req.Body_reader.consume %s|}
                                   decoder_func);
                             p sc {|) grpc_req_seq)|}));
                     p sc "in";
@@ -479,8 +473,7 @@ let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
                     sub sc (fun sc ->
                         p sc {|Impl.%s req|} impl;
                         sub sc (fun sc ->
-                            p sc
-                              {|(grpc_req.Grpc_eio_core.Body_reader.consume %s)|}
+                            p sc {|(grpc_req.Body_reader.consume %s)|}
                               decoder_func;
                             p sc {|(fun resp -> write (%s resp))|} encoder_func));
                     p sc "in";
@@ -492,7 +485,7 @@ let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
                         p sc {|Impl.%s req|} impl;
                         sub sc (fun sc ->
                             p sc
-                              {|(Seq.map (fun grpc_req -> grpc_req.Grpc_eio_core.Body_reader.consume %s) grpc_req_seq)|}
+                              {|(Seq.map (fun grpc_req -> grpc_req.Body_reader.consume %s) grpc_req_seq)|}
                               decoder_func;
                             p sc {|(fun resp -> write (%s resp))|} encoder_func));
                     p sc "in";
@@ -501,6 +494,8 @@ let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
 
   let sc = top_scope in
 
+  F.line sc "open Grpc.Legacy_modules";
+  F.empty_line sc;
   F.line sc "module type Implementation = sig";
   F.line sc "  type net_request";
   F.empty_line sc;
@@ -515,4 +510,4 @@ let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
       List.iter (gen_rpc_handler sc) service.service_body;
       F.linep sc
         {|| _ ->
-    raise (Grpc_server_eio.Server_error (Grpc.Status.make Unimplemented, []))|})
+    raise (Grpc_server_eio.Server_error (Grpc_utils.Status.make Unimplemented, []))|})

@@ -1,4 +1,0 @@
-(library
- (name grpc_client)
- (public_name grpc-client)
- (libraries grpc))

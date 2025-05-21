@@ -1,6 +1,0 @@
-(library
- (name grpc)
- (public_name grpc)
- (preprocess
-  (pps ppx_deriving.show))
- (libraries bigstringaf uri))

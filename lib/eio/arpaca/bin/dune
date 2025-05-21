@@ -1,5 +1,0 @@
-(executable 
-  (package arpaca)
-  (name main)
-  (public_name arpaca-gen)
-  (libraries grpc-client-eio ocaml-protoc.compiler-lib re cmdliner))

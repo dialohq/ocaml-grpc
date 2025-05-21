@@ -1,4 +1,0 @@
-(library
- (public_name grpc-eio-io-client-h2-ocaml-protoc)
- (name io_client_h2_ocaml_protoc)
- (libraries pbrt pbrt_services grpc-client-eio h2 eio h2-eio grpc_eio_core))

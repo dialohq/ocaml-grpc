@@ -16,8 +16,8 @@ let get_feature channel =
   Printf.printf "[UNARY] Getting a feature...\n%!";
   match RouteGuideClient.get_feature ~channel request with
   | Error status ->
-      Format.printf "[UNARY] Error getting a feature: %a@."
-        Grpc_client_eio.Status_new.pp status
+      Format.printf "[UNARY] Error getting a feature: %a@." Grpc.Status.pp
+        status
   | Ok feature ->
       Format.printf "[UNARY] Done. Received a feature: %a@." Pb.pp_feature
         feature
@@ -32,13 +32,17 @@ let list_features channel =
       ()
   in
 
-  let handler : Pb.feature -> unit =
-   fun feature ->
-    Format.printf "[S_STREAMING] Received a feature: %a@." Pb.pp_feature feature
+  let handler : int -> Pb.feature -> int =
+   fun context feature ->
+    Format.printf "[S_STREAMING] Received a feature %i: %a@." context
+      Pb.pp_feature feature;
+    context + 1
   in
 
   Printf.printf "[S_STREAMING] Listing features...\n%!";
-  match RouteGuideClient.list_features ~channel rectangle handler with
+  match
+    RouteGuideClient.list_features ~channel ~initial_context:1 rectangle handler
+  with
   | Error () -> Printf.printf "[S_STREAMING] Error listing features\n%!"
   | Ok () -> Printf.printf "[S_STREAMING] Done.\n%!"
 
@@ -46,19 +50,20 @@ let run_record_route channel clock =
   let points = Array.init 10 (fun _ -> random_point ()) in
   let i = ref 0 in
 
-  let handler : unit -> Pb.point option =
-   fun () ->
+  let handler : int -> Pb.point option * int =
+   fun context ->
     if !i < Array.length points then (
       let point = points.(!i) in
       Eio.Time.sleep clock 0.1;
-      Format.printf "[C_STREAMING] Sending point: %a@." Pb.pp_point point;
+      Format.printf "[C_STREAMING] Sending point %i: %a@." context Pb.pp_point
+        point;
       incr i;
-      Some point)
-    else None
+      (Some point, context + 1))
+    else (None, context + 1)
   in
 
   Printf.printf "[C_STREAMING] Sending points...\n%!";
-  match RouteGuideClient.record_route ~channel handler with
+  match RouteGuideClient.record_route ~channel ~initial_context:1 handler with
   | Error _ -> Printf.printf "[C_STREAMING] Error listing features\n%!"
   | Ok _ -> Printf.printf "[C_STREAMING] Done.\n%!"
 
@@ -79,23 +84,29 @@ let run_route_chat channel clock =
   let route_notes = Array.of_seq route_notes in
   let i = ref 0 in
 
-  let writer : unit -> Pb.route_note option =
-   fun () ->
+  let writer : int * int -> Pb.route_note option * (int * int) =
+   fun (sent, received) ->
     if !i < Array.length route_notes then (
       let note = route_notes.(!i) in
       Eio.Time.sleep clock 0.1;
-      Format.printf "[BI_STREAMING] Sent a note: %a@." Pb.pp_route_note note;
+      Format.printf "[BI_STREAMING] Sent a note %i: %a@." sent Pb.pp_route_note
+        note;
       incr i;
-      Some note)
-    else None
+      (Some note, (sent + 1, received)))
+    else (None, (sent, received))
   in
 
-  let reader : Pb.route_note -> unit =
-    Format.printf "[BI_STREAMING] Received a note: %a@." Pb.pp_route_note
+  let reader : int * int -> Pb.route_note -> int * int =
+   fun (sent, received) note ->
+    Format.printf "[BI_STREAMING] Received a note %i: %a@." received
+      Pb.pp_route_note note;
+    (sent, received + 1)
   in
 
   Printf.printf "[BI_STREAMING] Exchanging notes...\n%!";
-  match RouteGuideClient.route_chat ~channel writer reader with
+  match
+    RouteGuideClient.route_chat ~channel ~initial_context:(1, 1) writer reader
+  with
   | Error () -> Printf.printf "[BI_STREAMING] Error listing features\n%!"
   | Ok () -> Printf.printf "[BI_STREAMING] Done.\n%!"
 
@@ -105,7 +116,7 @@ let main env =
 
   let run sw =
     let channel =
-      Grpc_client_eio.Channel.create ~max_streams:5 ~sw ~net:env#net
+      Grpc.Channel.create ~max_streams:5 ~sw ~net:env#net
         "http://127.0.0.1:8080"
     in
 
@@ -119,7 +130,7 @@ let main env =
     run_route_chat channel env#clock;
 
     Printf.printf "Disconnecting\n%!";
-    Grpc_client_eio.Channel.shutdown channel
+    Grpc.Channel.shutdown channel
   in
 
   Eio.Switch.run run

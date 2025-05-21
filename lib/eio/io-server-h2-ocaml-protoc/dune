@@ -1,7 +1,0 @@
-(library
- (public_name grpc-eio-io-server-h2-ocaml-protoc)
- (name io_server_h2_ocaml_protoc)
- (libraries grpc-server-eio h2-eio pbrt eio.mock grpc-eio-core)
- (inline_tests)
- (preprocess
-  (pps ppx_expect)))

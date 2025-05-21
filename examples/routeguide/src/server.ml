@@ -55,7 +55,7 @@ let unary_counter = ref 0
 let get_server (features : feature_list) clock =
   let module RouteGuideServerImplementation = struct
     (* underlaying protocol request (HTTP/2 in this case, and most cases) *)
-    type net_request = Haha_server_io.Net_request.t
+    type net_request = Grpc.Haha_server_io.Net_request.t
 
     let get_feature : net_request -> Pb.point -> Pb.feature * trailers =
      fun _ point ->
@@ -156,7 +156,7 @@ let get_server (features : feature_list) clock =
       []
   end in
   (module RouteGuideServerImplementation : RouteGuideServer.Implementation
-    with type net_request = Haha_server_io.Net_request.t)
+    with type net_request = Grpc.Haha_server_io.Net_request.t)
 
 let serve env addr server : unit =
   Eio.Switch.run @@ fun sw ->
@@ -164,7 +164,7 @@ let serve env addr server : unit =
     Eio.Net.listen env#net ~reuse_addr:true ~sw ~backlog:10 addr
   in
   let connection_handler a b =
-    Haha_server_io.connection_handler ~sw server a b;
+    Grpc.Haha_server_io.connection_handler ~sw server a b;
 
     Printf.printf "Ending connection handler\n%!"
   in

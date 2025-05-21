@@ -1,19 +1,19 @@
 open Eio
-open Haha
+module H2 = Haha
 module Client = Haha.Client
 
 let find_grpc_status headers =
-  Header.find_opt "grpc-status" headers
+  H2.Header.find_opt "grpc-status" headers
   |> Option.map @@ fun status ->
-     let code = Status_new.code_of_int @@ int_of_string status in
+     let code = Status.code_of_int @@ int_of_string status in
      {
-       Status_new.code;
+       Status.code;
        info =
-         Header.find_opt "grpc-message" headers
-         |> Option.map (fun s -> Status_new.Message s);
+         H2.Header.find_opt "grpc-message" headers
+         |> Option.map (fun s -> Status.Message s);
      }
 
-let status_of_h2_error : Error_code.t -> Status_new.code = function
+let status_of_h2_error : H2.Error_code.t -> Status.code = function
   (* NO_ERROR case of early shutdown *)
   | NoError | StreamClosed | Cancel -> Cancelled
   | ProtocolError | InternalError | FrameSizeError | CompressionError
@@ -22,11 +22,11 @@ let status_of_h2_error : Error_code.t -> Status_new.code = function
   | FlowControlError | EnhanceYourCalm -> Resource_exhausted
   | SettingsTimeout | RefusedStream | UnknownError_code _ -> Unavailable
 
-let connection_error_to_status : Error.connection_error -> Status_new.t =
+let connection_error_to_status : H2.Error.connection_error -> Status.t =
   function
   | ProtocolViolation (code, msg) | PeerError (code, msg) ->
-      { Status_new.code = status_of_h2_error code; info = Some (Message msg) }
-  | Exn exn -> { Status_new.code = Internal; info = Some (Exn exn) }
+      { Status.code = status_of_h2_error code; info = Some (Message msg) }
+  | Exn exn -> { Status.code = Internal; info = Some (Exn exn) }
 
 type 'context data_receiver_result = {
   action : [ `Continue | `Reset ];
@@ -37,10 +37,10 @@ type 'context data_receiver =
   'context -> Cstruct.t -> 'context data_receiver_result
 
 type 'context data_writer = 'context -> Cstruct.t list option * 'context
-type 'c stream_result = { status : Status_new.t; grpc_context : 'c }
+type 'c stream_result = { status : Status.t; grpc_context : 'c }
 
 type 'c stream_request = {
-  headers : Grpc_client.request_headers;
+  headers : Legacy_modules.Grpc_client.request_headers;
   data_writer : 'c data_writer;
   data_receiver : 'c data_receiver;
   path : string;
@@ -49,7 +49,7 @@ type 'c stream_request = {
 }
 
 type 'c stream_context = {
-  result : Status_new.t option;
+  result : Status.t option;
   resolver : 'c stream_result Promise.u; [@opaque]
   grpc_context : 'c; [@opaque]
 }
@@ -71,25 +71,25 @@ type 'c t = {
   shutdown_resolver : unit Promise.u;
 }
 
-let stream_error_handler : _ stream_context -> Error_code.t -> _ stream_context
-    =
+let stream_error_handler :
+    _ stream_context -> H2.Error_code.t -> _ stream_context =
  fun context code ->
   {
     context with
     result =
       Some
         {
-          Status_new.code = status_of_h2_error code;
+          Status.code = status_of_h2_error code;
           info =
             Some
               (Message
                  (Format.asprintf "HTTP/2 stream error, code %a"
-                    Error_code.pp_hum code));
+                    H2.Error_code.pp_hum code));
         };
   }
 
 let resolve_streams :
-    ?err:Error.connection_error -> (int32 * _ stream_context) list -> unit =
+    ?err:H2.Error.connection_error -> (int32 * _ stream_context) list -> unit =
  fun ?err closed_ctxs ->
   List.iter
     (fun (_, { grpc_context; result; resolver }) ->
@@ -118,7 +118,7 @@ let resolve_streams :
                   Some
                     (Message
                        (Format.asprintf "HTTP/2 connection error, code %a: %s"
-                          Error_code.pp_hum code msg));
+                          H2.Error_code.pp_hum code msg));
               };
           }
       | None, Some (Exn exn) ->
@@ -166,7 +166,7 @@ let make_connections_events :
     if List.is_empty new_pool then None
     else Some { state with connection_pool = new_pool }
 
-let make_request : Uri.t -> _ stream_request -> _ stream_context Request.t =
+let make_request : Uri.t -> _ stream_request -> _ stream_context H2.Request.t =
  fun uri
      {
        headers;
@@ -177,11 +177,11 @@ let make_request : Uri.t -> _ stream_request -> _ stream_context Request.t =
        initial_grpc_context;
      } ->
   let headers =
-    Header.of_list
+    H2.Header.of_list
       [ ("te", headers.te); ("content-type", headers.content_type) ]
   in
 
-  let body_writer : _ stream_context Types.body_writer =
+  let body_writer : _ stream_context H2.Types.body_writer =
    fun context ~window_size:_ ->
     let data, grpc_context = data_writer context.grpc_context in
     match data with
@@ -189,7 +189,7 @@ let make_request : Uri.t -> _ stream_request -> _ stream_context Request.t =
     | None -> (`End (None, []), ignore, { context with grpc_context })
   in
 
-  let on_data : _ stream_context Types.body_reader =
+  let on_data : _ stream_context H2.Types.body_reader =
    fun context -> function
     | `Data cs ->
         let { context = grpc_context; action } =
@@ -218,12 +218,15 @@ let make_request : Uri.t -> _ stream_request -> _ stream_context Request.t =
         | None -> { action = `Continue; context })
   in
 
-  let response_handler : _ stream_context Response.handler =
+  let response_handler : _ stream_context H2.Response.handler =
    fun context response ->
-    match Response.status response with
+    match H2.Response.status response with
     | `OK ->
         let context =
-          { context with result = find_grpc_status (Response.headers response) }
+          {
+            context with
+            result = find_grpc_status (H2.Response.headers response);
+          }
         in
 
         (Some on_data, context)
@@ -234,14 +237,14 @@ let make_request : Uri.t -> _ stream_request -> _ stream_context Request.t =
             result =
               Some
                 {
-                  Status_new.code = Internal;
+                  Status.code = Internal;
                   info =
                     Some
                       (Message
                          (Format.sprintf
                             "gRPC protocol error: HTTP/2 server responsed with \
                              %i status code, 200 expected"
-                            (Status.to_code h2_status)));
+                            (Haha.Status.to_code h2_status)));
                 };
           }
         in
@@ -257,21 +260,22 @@ let make_request : Uri.t -> _ stream_request -> _ stream_context Request.t =
     }
   in
 
-  Request.create_with_streaming ~context:initial_stream_state
+  H2.Request.create_with_streaming ~context:initial_stream_state
     ?scheme:(Uri.scheme uri) ~authority:(Uri.to_string uri) ~headers
     ~error_handler:stream_error_handler ~response_handler ~body_writer POST path
 
 let start_connection :
     connect_socket:(unit -> _ Net.stream_socket) ->
     uri:Uri.t ->
-    (_ connection, Error.connection_error) result =
+    (_ connection, H2.Error.connection_error) result =
  fun ~connect_socket ~uri ->
   let socket = connect_socket () in
-  let request_stream : _ stream_context Request.t option Stream.t =
+
+  let request_stream : _ stream_context H2.Request.t option Stream.t =
     Stream.create max_int
   in
 
-  let request_writer : unit -> _ stream_context Request.t option =
+  let request_writer : unit -> _ stream_context H2.Request.t option =
    fun () -> Stream.take request_stream
   in
 
@@ -297,7 +301,7 @@ let start_connection :
       Ok { next_iter; open_streams = 1; start_stream; shutdown }
 
 let make_new_stream_event :
-    new_connection:(unit -> (_ connection, Error.connection_error) result) ->
+    new_connection:(unit -> (_ connection, H2.Error.connection_error) result) ->
     max_streams:int ->
     request_stream:_ stream_request Stream.t ->
     unit ->
