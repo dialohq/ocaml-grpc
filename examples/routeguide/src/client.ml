@@ -41,9 +41,12 @@ let list_features channel =
 
   Printf.printf "[S_STREAMING] Listing features...\n%!";
   match
-    RouteGuideClient.list_features ~channel ~initial_context:1 rectangle handler
+    RouteGuideClient.Expert.list_features ~channel ~initial_context:1 rectangle
+      handler
   with
-  | Error () -> Printf.printf "[S_STREAMING] Error listing features\n%!"
+  | Error status ->
+      Format.printf "[S_STREAMING] Error listing features: %a@." Grpc.Status.pp
+        status
   | Ok () -> Printf.printf "[S_STREAMING] Done.\n%!"
 
 let run_record_route channel clock =
@@ -63,7 +66,9 @@ let run_record_route channel clock =
   in
 
   Printf.printf "[C_STREAMING] Sending points...\n%!";
-  match RouteGuideClient.record_route ~channel ~initial_context:1 handler with
+  match
+    RouteGuideClient.Expert.record_route ~channel ~initial_context:1 handler
+  with
   | Error _ -> Printf.printf "[C_STREAMING] Error listing features\n%!"
   | Ok _ -> Printf.printf "[C_STREAMING] Done.\n%!"
 
@@ -81,34 +86,60 @@ let run_route_chat channel clock =
                    (),
                  x - 1 ))
   in
-  let route_notes = Array.of_seq route_notes in
-  let i = ref 0 in
 
-  let writer : int * int -> Pb.route_note option * (int * int) =
-   fun (sent, received) ->
-    if !i < Array.length route_notes then (
-      let note = route_notes.(!i) in
-      Eio.Time.sleep clock 0.1;
-      Format.printf "[BI_STREAMING] Sent a note %i: %a@." sent Pb.pp_route_note
-        note;
-      incr i;
-      (Some note, (sent + 1, received)))
-    else (None, (sent, received))
-  in
+  (* let route_notes = Array.of_seq route_notes in *)
+  (* let i = ref 0 in *)
 
-  let reader : int * int -> Pb.route_note -> int * int =
-   fun (sent, received) note ->
-    Format.printf "[BI_STREAMING] Received a note %i: %a@." received
-      Pb.pp_route_note note;
-    (sent, received + 1)
+  (* let writer : int * int -> Pb.route_note option * (int * int) = *)
+  (*  fun (sent, received) -> *)
+  (*   if !i < Array.length route_notes then ( *)
+  (*     let note = route_notes.(!i) in *)
+  (*     Eio.Time.sleep clock 0.1; *)
+  (*     Format.printf "[BI_STREAMING] Sent a note %i: %a@." sent Pb.pp_route_note *)
+  (*       note; *)
+  (*     incr i; *)
+  (*     (Some note, (sent + 1, received))) *)
+  (*   else (None, (sent, received)) *)
+  (* in *)
+  (* let reader : int * int -> Pb.route_note -> int * int = *)
+  (*  fun (sent, received) note -> *)
+  (*   Format.printf "[BI_STREAMING] Received a note %i: %a@." received *)
+  (*     Pb.pp_route_note note; *)
+  (*   (sent, received + 1) *)
+  (* in *)
+  let handler ~(writer : Pb.route_note option -> unit)
+      ~(reader : Pb.route_note Seq.t) =
+    let write () =
+      Seq.iter
+        (fun note ->
+          writer (Some note);
+          Format.printf "[BI_STREAMING] Sent a note: %a@." Pb.pp_route_note note;
+          Eio.Time.sleep clock 0.1)
+        route_notes;
+      writer None
+    in
+
+    let read () =
+      let rec loop_read read =
+        match read () with
+        | Seq.Nil -> ()
+        | Cons (note, next) ->
+            Format.printf "[BI_STREAMING] Received a note: %a@."
+              Pb.pp_route_note note;
+            loop_read next
+      in
+      loop_read reader
+    in
+
+    Eio.Fiber.both write read
   in
 
   Printf.printf "[BI_STREAMING] Exchanging notes...\n%!";
-  match
-    RouteGuideClient.route_chat ~channel ~initial_context:(1, 1) writer reader
-  with
-  | Error () -> Printf.printf "[BI_STREAMING] Error listing features\n%!"
-  | Ok () -> Printf.printf "[BI_STREAMING] Done.\n%!"
+  match RouteGuideClient.route_chat ~channel handler with
+  | Error status ->
+      Format.printf "[BI_STREAMING] Error exchanging notes: %a@." Grpc.Status.pp
+        status
+  | Ok _ -> Printf.printf "[BI_STREAMING] Done.\n%!"
 
 let main env =
   let network = Eio.Stdenv.net env in

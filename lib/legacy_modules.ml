@@ -110,13 +110,6 @@ module Grpc_utils = struct
             loop ()
       in
       loop ()
-
-    type format = [ `Json | `Proto | `Other of string ]
-
-    let format_to_content_type = function
-      | `Json -> "application/grpc+json"
-      | `Proto -> "application/grpc+proto"
-      | `Other s -> Printf.sprintf "application/grpc+%s" s
   end
 
   module Status = struct
@@ -243,20 +236,6 @@ end
 
 module Grpc_client = struct
   module Grpc = Grpc_utils
-
-  type request_headers = { content_type : string; te : string }
-
-  let make_request_headers ?(te = []) format =
-    {
-      content_type = Grpc.Message.format_to_content_type format;
-      te =
-        (match te with
-        | [] -> "trailers"
-        | te -> Printf.sprintf "trailers; %s" (String.concat "; " te));
-    }
-
-  let make_path ~service ~method_name =
-    Printf.sprintf "/%s/%s" service method_name
 
   let status_of_trailers ~get_header =
     match get_header "grpc-status" with

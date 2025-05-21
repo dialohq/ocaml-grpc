@@ -34,13 +34,13 @@ type 'context data_receiver_result = {
 }
 
 type 'context data_receiver =
-  'context -> Cstruct.t -> 'context data_receiver_result
+  'context -> Cstruct.t option -> 'context data_receiver_result
 
 type 'context data_writer = 'context -> Cstruct.t list option * 'context
 type 'c stream_result = { status : Status.t; grpc_context : 'c }
 
 type 'c stream_request = {
-  headers : Legacy_modules.Grpc_client.request_headers;
+  headers : Utils.request_headers;
   data_writer : 'c data_writer;
   data_receiver : 'c data_receiver;
   path : string;
@@ -193,12 +193,12 @@ let make_request : Uri.t -> _ stream_request -> _ stream_context H2.Request.t =
    fun context -> function
     | `Data cs ->
         let { context = grpc_context; action } =
-          data_receiver context.grpc_context cs
+          data_receiver context.grpc_context (Some cs)
         in
         { action; context = { context with grpc_context } }
-    | `End (Some cs, trailers) -> (
+    | `End (cs_opt, trailers) -> (
         let { context = grpc_context; action } =
-          data_receiver context.grpc_context cs
+          data_receiver context.grpc_context cs_opt
         in
 
         match find_grpc_status trailers with
@@ -208,14 +208,6 @@ let make_request : Uri.t -> _ stream_request -> _ stream_context H2.Request.t =
               context = { context with grpc_context; result = Some status };
             }
         | None -> { action; context = { context with grpc_context } })
-    | `End (None, trailers) -> (
-        match find_grpc_status trailers with
-        | Some status ->
-            {
-              action = `Continue;
-              context = { context with result = Some status };
-            }
-        | None -> { action = `Continue; context })
   in
 
   let response_handler : _ stream_context H2.Response.handler =

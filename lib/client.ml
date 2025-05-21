@@ -1,32 +1,43 @@
-type read_state = Reading | Done of Pbrt.Decoder.t
+open Pbrt
+
+(* functional style readers/writers *)
+type read_state = Reading | Done of Decoder.t
+type single_writer = Encoder.t -> unit
+type 'a stream_writer = 'a -> (Encoder.t -> unit) option * 'a
+type 'a writer = Single of single_writer | Stream of 'a stream_writer
+type 'a stream_reader = 'a -> Decoder.t option -> 'a
+type 'a reader = Single | Stream of 'a stream_reader
+
+(* imperative style readers/writers *)
+type imp_writer = (Encoder.t -> unit) option -> unit
+type imp_reader = Decoder.t Seq.t
+type 'a reading_handler = reader:imp_reader -> 'a
+type 'a writing_handler = writer:imp_writer -> 'a
+type 'a bi_handler = writer:imp_writer -> reader:imp_reader -> 'a
 
 type context =
   | Context : {
       sent_all : bool;
       read_state : read_state;
       parse_state : Body_parse.state;
-      read_handler : 'c -> Pbrt.Decoder.t -> 'c;
-      write_handler : 'c -> (Pbrt.Encoder.t -> unit) option * 'c;
+      on_data : 'c -> Decoder.t option -> 'c;
+      write_data : 'c -> (Encoder.t -> unit) option * 'c;
       context : 'c;
     }
       -> context
 
-let fill_header_cs ~length (buffer : Cstruct.t) =
-  Cstruct.set_char buffer 0 '\x00';
-  Cstruct.BE.set_uint16 buffer 1 (length lsr 16);
-  Cstruct.BE.set_uint16 buffer 3 (length land 0xFFFF)
-
-let single_write encode_request : context Channel.data_writer =
-  let encoder = Pbrt.Encoder.create ~size:1_000 () in
-  Pbrt.Encoder.clear encoder;
+let single_write : single_writer -> context Channel.data_writer =
+ fun encode_request ->
+  let encoder = Encoder.create ~size:1_000 () in
+  Encoder.clear encoder;
   encode_request encoder;
-  let length = Pbrt.Encoder.length encoder in
+  let length = Encoder.length encoder in
 
   let header_buffer = Cstruct.create 5 in
-  fill_header_cs ~length header_buffer;
+  Utils.fill_header_cs ~length header_buffer;
 
   let body_buffer = Cstruct.create length in
-  Pbrt.Encoder.blit_to_buffer ~blit_from_bytes:Cstruct.blit_from_bytes encoder
+  Encoder.blit_to_buffer ~blit_from_bytes:Cstruct.blit_from_bytes encoder
     body_buffer 0;
 
   fun (Context context) ->
@@ -36,85 +47,142 @@ let single_write encode_request : context Channel.data_writer =
         Context { context with sent_all = true } )
 
 let single_read : context Channel.data_receiver =
- fun (Context c as context) data ->
-  match c.read_state with
-  | Done _ -> { action = `Reset; context }
-  | Reading ->
-      let new_parse_state, parsed =
-        Body_parse.read_messages data c.parse_state
-      in
-      let read_state =
-        match parsed with
-        | [] -> Reading
-        | x :: _ -> Done (Pbrt.Decoder.of_bytes x)
-      in
-      {
-        action = `Continue;
-        context = Context { c with read_state; parse_state = new_parse_state };
-      }
+ fun (Context c as context) -> function
+  | Some data -> (
+      match c.read_state with
+      | Done _ -> { action = `Reset; context }
+      | Reading ->
+          let new_parse_state, parsed =
+            Body_parse.read_messages data c.parse_state
+          in
+          let read_state : read_state =
+            match parsed with
+            | [] -> Reading
+            | x :: _ -> Done (Decoder.of_bytes x)
+          in
+          {
+            action = `Continue;
+            context =
+              Context { c with read_state; parse_state = new_parse_state };
+          })
+  | None -> { action = `Continue; context }
 
-let multi_write ~encoder ~header_buffer : context Channel.data_writer =
- fun (Context c) ->
-  match c.write_handler c.context with
+let multi_write :
+    encoder:Encoder.t -> header_buffer:Cstruct.t -> context Channel.data_writer
+    =
+ fun ~encoder ~header_buffer (Context c) ->
+  match c.write_data c.context with
   | None, context -> (None, Context { c with sent_all = true; context })
   | Some encode_request, context ->
-      Pbrt.Encoder.clear encoder;
+      Encoder.clear encoder;
       encode_request encoder;
-      let length = Pbrt.Encoder.length encoder in
+      let length = Encoder.length encoder in
 
-      fill_header_cs ~length header_buffer;
+      Utils.fill_header_cs ~length header_buffer;
 
       let body_buffer = Cstruct.create length in
-      Pbrt.Encoder.blit_to_buffer ~blit_from_bytes:Cstruct.blit_from_bytes
-        encoder body_buffer 0;
+      Encoder.blit_to_buffer ~blit_from_bytes:Cstruct.blit_from_bytes encoder
+        body_buffer 0;
       (Some [ header_buffer; body_buffer ], Context { c with context })
 
 let multi_read : context Channel.data_receiver =
- fun (Context c) data ->
-  let parse_state, parsed = Body_parse.read_messages data c.parse_state in
+ fun (Context c) -> function
+  | Some data ->
+      let parse_state, parsed = Body_parse.read_messages data c.parse_state in
 
-  let new_context =
-    List.fold_left
-      (fun acc msg -> c.read_handler acc (Pbrt.Decoder.of_bytes msg))
-      c.context parsed
+      let new_context =
+        List.fold_left
+          (fun acc msg -> c.on_data acc (Some (Decoder.of_bytes msg)))
+          c.context parsed
+      in
+
+      {
+        action = `Continue;
+        context = Context { c with parse_state; context = new_context };
+      }
+  | None ->
+      let new_context = c.on_data c.context None in
+
+      { action = `Continue; context = Context { c with context = new_context } }
+
+let make_imp_writer () : imp_writer * unit stream_writer =
+  let write_stream = Eio.Stream.create 0 in
+  let write_data : unit stream_writer =
+   fun () -> (Eio.Stream.take write_stream, ())
+  in
+  let writer : (Encoder.t -> unit) option -> unit =
+   fun encode_request -> Eio.Stream.add write_stream encode_request
+  in
+  (writer, write_data)
+
+let make_imp_reader () : imp_reader * unit stream_reader =
+  let read_stream = Eio.Stream.create 0 in
+  let on_data : unit stream_reader =
+   fun () decoder -> Eio.Stream.add read_stream decoder
+  in
+  let rec reader : Decoder.t Seq.t =
+   fun () ->
+    match Eio.Stream.take read_stream with
+    | None -> Seq.Nil
+    | Some decoder -> Cons (decoder, reader)
+  in
+  (reader, on_data)
+
+let generic_call :
+    channel:context Channel.t ->
+    initial_context:'a ->
+    service:string ->
+    method_name:string ->
+    headers:Utils.request_headers ->
+    'a writer ->
+    'a reader ->
+    context Channel.stream_result Eio.Promise.t =
+ fun ~channel ~initial_context ~service ~method_name ~headers writer reader ->
+  let data_writer, write_data =
+    match writer with
+    | Single encode_request -> (single_write encode_request, Obj.magic ())
+    | Stream handler ->
+        let encoder = Encoder.create ~size:1_000 () in
+        let header_buffer = Cstruct.create 5 in
+        (multi_write ~encoder ~header_buffer, handler)
   in
 
-  {
-    action = `Continue;
-    context = Context { c with parse_state; context = new_context };
-  }
+  let data_receiver, on_data =
+    match reader with
+    | Single -> (single_read, Obj.magic ())
+    | Stream handler -> (multi_read, handler)
+  in
+
+  let initial_context =
+    Context
+      {
+        sent_all = false;
+        read_state = Reading;
+        parse_state = Idle;
+        context = initial_context;
+        on_data;
+        write_data;
+      }
+  in
+
+  let path = Utils.make_path ~service ~method_name in
+  Channel.start_request ~headers ~data_writer ~data_receiver ~path
+    ~initial_context channel
 
 module Unary = struct
   let call :
       channel:context Channel.t ->
       service:string ->
       method_name:string ->
-      headers:Legacy_modules.Grpc_client.request_headers ->
-      (Pbrt.Encoder.t -> unit) ->
-      (Pbrt.Decoder.t, Status.t) result =
+      headers:Utils.request_headers ->
+      (Encoder.t -> unit) ->
+      (Decoder.t, Status.t) result =
    fun ~channel ~service ~method_name ~headers encode_request ->
-    let data_writer = single_write encode_request in
-
-    let data_receiver = single_read in
-
-    let path = Legacy_modules.Grpc_client.make_path ~service ~method_name in
-    let initial_context =
-      Context
-        {
-          sent_all = false;
-          read_state = Reading;
-          parse_state = Idle;
-          context = Obj.magic ();
-          read_handler = Obj.magic ();
-          write_handler = Obj.magic ();
-        }
-    in
-    let status_promise =
-      Channel.start_request ~headers ~data_writer ~data_receiver ~path
-        ~initial_context channel
-    in
-
-    match Eio.Promise.await status_promise with
+    match
+      Eio.Promise.await
+      @@ generic_call ~initial_context:(Obj.magic ()) ~channel ~service
+           ~method_name ~headers (Single encode_request) Single
+    with
     | {
      status = { code = OK; _ };
      grpc_context = Context { read_state = Done decoder; _ };
@@ -134,121 +202,135 @@ module Unary = struct
 end
 
 module Server_streaming = struct
+  module Expert = struct
+    let call :
+        channel:context Channel.t ->
+        initial_context:'a ->
+        service:string ->
+        method_name:string ->
+        headers:Utils.request_headers ->
+        (Encoder.t -> unit) ->
+        'a stream_reader ->
+        (unit, Status.t) result =
+     fun ~channel ~initial_context ~service ~method_name ~headers encode_request
+         read_handler ->
+      match
+        Eio.Promise.await
+        @@ generic_call ~channel ~initial_context ~service ~method_name ~headers
+             (Single encode_request) (Stream read_handler)
+      with
+      | { status = { code = OK; _ }; _ } -> Ok ()
+      | { status; _ } -> Error status
+  end
+
   let call :
       channel:context Channel.t ->
-      initial_context:'a ->
       service:string ->
       method_name:string ->
-      headers:Legacy_modules.Grpc_client.request_headers ->
-      (Pbrt.Encoder.t -> unit) ->
-      ('a -> Pbrt.Decoder.t -> 'a) ->
-      (unit, unit) result =
-   fun ~channel ~initial_context ~service ~method_name ~headers encode_request
-       read_handler ->
-    let data_writer = single_write encode_request in
+      headers:Utils.request_headers ->
+      (Encoder.t -> unit) ->
+      'a reading_handler ->
+      ('a, Status.t) result =
+   fun ~channel ~service ~method_name ~headers encode_request handler ->
+    let reader, on_data = make_imp_reader () in
 
-    let path = Legacy_modules.Grpc_client.make_path ~service ~method_name in
-    let initial_context =
-      Context
-        {
-          sent_all = false;
-          read_state = Reading;
-          parse_state = Idle;
-          context = initial_context;
-          read_handler;
-          write_handler = Obj.magic ();
-        }
-    in
-    let data_receiver = multi_read in
     let status_promise =
-      Channel.start_request ~headers ~data_writer ~data_receiver ~path
-        ~initial_context channel
+      generic_call ~channel ~initial_context:() ~service ~method_name ~headers
+        (Single encode_request) (Stream on_data)
     in
-
+    let user_result = handler ~reader in
     match Eio.Promise.await status_promise with
-    | { status = { code = OK; _ }; _ } -> Ok ()
-    | _ -> Error ()
+    | { status = { code = OK; _ }; _ } -> Ok user_result
+    | { status; _ } -> Error status
 end
 
 module Client_streaming = struct
+  module Expert = struct
+    let call :
+        channel:context Channel.t ->
+        initial_context:'a ->
+        service:string ->
+        method_name:string ->
+        headers:Utils.request_headers ->
+        'a stream_writer ->
+        (Decoder.t, Status.t) result =
+     fun ~channel ~initial_context ~service ~method_name ~headers handler ->
+      match
+        Eio.Promise.await
+        @@ generic_call ~channel ~initial_context ~service ~method_name ~headers
+             (Stream handler) Single
+      with
+      | {
+       status = { code = OK; _ };
+       grpc_context = Context { read_state = Done decoder; _ };
+      } ->
+          Ok decoder
+      | { status; _ } -> Error status
+  end
+
   let call :
       channel:context Channel.t ->
-      initial_context:'a ->
       service:string ->
       method_name:string ->
-      headers:Legacy_modules.Grpc_client.request_headers ->
-      ('a -> (Pbrt.Encoder.t -> unit) option * 'a) ->
-      (Pbrt.Decoder.t, Status.t) result =
-   fun ~channel ~initial_context ~service ~method_name ~headers handler ->
-    let encoder = Pbrt.Encoder.create ~size:1_000 () in
-    let header_buffer = Cstruct.create 5 in
+      headers:Utils.request_headers ->
+      'a writing_handler ->
+      (Decoder.t * 'a, Status.t) result =
+   fun ~channel ~service ~method_name ~headers handler ->
+    let writer, write_data = make_imp_writer () in
 
-    let data_writer = multi_write ~encoder ~header_buffer in
-
-    let data_receiver = single_read in
-
-    let path = Legacy_modules.Grpc_client.make_path ~service ~method_name in
-    let initial_context =
-      Context
-        {
-          sent_all = false;
-          read_state = Reading;
-          parse_state = Idle;
-          context = initial_context;
-          read_handler = Obj.magic ();
-          write_handler = handler;
-        }
-    in
     let status_promise =
-      Channel.start_request ~headers ~data_writer ~data_receiver ~path
-        ~initial_context channel
+      generic_call ~channel ~initial_context:() ~service ~method_name ~headers
+        (Stream write_data) Single
     in
-
+    let user_result = handler ~writer in
     match Eio.Promise.await status_promise with
     | {
      status = { code = OK; _ };
      grpc_context = Context { read_state = Done decoder; _ };
     } ->
-        Ok decoder
+        Ok (decoder, user_result)
     | { status; _ } -> Error status
 end
 
 module Bidirectional_streaming = struct
+  module Expert = struct
+    let call :
+        channel:context Channel.t ->
+        initial_context:'a ->
+        service:string ->
+        method_name:string ->
+        headers:Utils.request_headers ->
+        'a stream_writer ->
+        'a stream_reader ->
+        (unit, unit) result =
+     fun ~channel ~initial_context ~service ~method_name ~headers write_handler
+         read_handler ->
+      match
+        Eio.Promise.await
+        @@ generic_call ~channel ~initial_context ~service ~method_name ~headers
+             (Stream write_handler) (Stream read_handler)
+      with
+      | { status = { code = OK; _ }; _ } -> Ok ()
+      | _ -> Error ()
+  end
+
   let call :
       channel:context Channel.t ->
-      initial_context:'a ->
       service:string ->
       method_name:string ->
-      headers:Legacy_modules.Grpc_client.request_headers ->
-      ('a -> (Pbrt.Encoder.t -> unit) option * 'a) ->
-      ('a -> Pbrt.Decoder.t -> 'a) ->
-      (unit, unit) result =
-   fun ~channel ~initial_context ~service ~method_name ~headers write_handler
-       read_handler ->
-    let encoder = Pbrt.Encoder.create ~size:1_000 () in
-    let header_buffer = Cstruct.create 5 in
-    let data_writer = multi_write ~encoder ~header_buffer in
+      headers:Utils.request_headers ->
+      'a bi_handler ->
+      ('a, Status.t) result =
+   fun ~channel ~service ~method_name ~headers handler ->
+    let writer, write_data = make_imp_writer () in
+    let reader, on_data = make_imp_reader () in
 
-    let data_receiver = multi_read in
-
-    let path = Legacy_modules.Grpc_client.make_path ~service ~method_name in
-    let initial_context =
-      Context
-        {
-          sent_all = false;
-          read_state = Reading;
-          parse_state = Idle;
-          context = initial_context;
-          read_handler;
-          write_handler;
-        }
-    in
     let status_promise =
-      Channel.start_request ~headers ~data_writer ~data_receiver ~path
-        ~initial_context channel
+      generic_call ~channel ~initial_context:() ~service ~method_name ~headers
+        (Stream write_data) (Stream on_data)
     in
-
+    let user_result = handler ~writer ~reader in
     match Eio.Promise.await status_promise with
-    | { status = { code = OK; _ }; _ } -> Ok ()
-    | _ -> Error ()
+    | { status = { code = OK; _ }; _ } -> Ok user_result
+    | { status; _ } -> Error status
 end
