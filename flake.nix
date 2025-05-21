@@ -35,49 +35,16 @@
               config.allowUnfree = true;
               overlays = [ocaml-overlay.outputs.overlays];
             })
-            .extend ((import ./overlay.nix) nix-filter))
+            .extend (import ./overlay.nix))
           .extend (self: super: {
             ocamlPackages = super.ocaml-ng.ocamlPackages_5_1;
           });
         camlPkgs = pkgs.ocaml-ng.ocamlPackages_5_1;
-        bechamel-notty = camlPkgs.buildDunePackage {
-          pname = "bechamel-notty";
-          version = "0.5.0";
-          duneVersion = "3";
-          propagatedBuildInputs = [camlPkgs.notty camlPkgs.fmt camlPkgs.bechamel];
-          src = pkgs.fetchFromGitHub {
-            owner = "mirage";
-            repo = "bechamel";
-            rev = "v0.5.0";
-            sha256 = "sha256-aTz80gjVi+ITqi8TXH1NjWPECuTcLFvTEDC7BoRo+6M=";
-            fetchSubmodules = true;
-          };
-        };
-        dialo-ocaml-protoc-plugin = camlPkgs.buildDunePackage {
-          pname = "ocaml-protoc-plugin";
-          version = "0.1.0";
-          duneVersion = "3";
-
-          INCLUDE_GOOGLE_PROTOBUF = "${pkgs.protobuf}/include";
-
-          nativeBuildInputs = [pkgs.protobuf];
-          propagatedBuildInputs = [pkgs.protobuf pkgs.pkg-config];
-          buildInputs = with camlPkgs; [lwt stringext];
-          src = pkgs.fetchFromGitHub {
-            owner = "dialohq";
-            repo = "ocaml-protoc-plugin";
-            rev = "b814b305520563fff58388682cb360660cc29c47";
-            sha256 = "sha256-NgFvc+HTJXc17GwyfA0VqlWXx9R35FJ6CSEQrQ52Jds=";
-            fetchSubmodules = true;
-          };
-        };
       in {
         devShells.default = pkgs.mkShell {
           inputsFrom = [
             self'.packages.grpc
-            self'.packages.grpc-eio
             self'.packages.grpc-examples
-            self'.packages.grpc-bench
           ];
           nativeBuildInputs = with pkgs; [
             nil
@@ -89,42 +56,22 @@
         };
 
         packages = {
-          grpc-bench = camlPkgs.buildDunePackage {
-            pname = "grpc-bench";
-            version = "0.1.0";
-            duneVersion = "3";
-            buildInputs = with camlPkgs; [
-              self'.packages.grpc
-              self'.packages.grpc-eio
-              bechamel-notty
-              bigstringaf
-            ];
-            src = nix-filter.lib.filter {
-              root = ./.;
-              include = ["dune-project" "examples"];
-            };
-          };
           grpc-examples = camlPkgs.buildDunePackage {
             pname = "grpc-examples";
             version = "0.1.0";
             duneVersion = "3";
             nativeBuildInputs = with camlPkgs; [
-              dialo-ocaml-protoc-plugin
               ppx_jane
               ppx_deriving
               ppx_deriving_yojson
             ];
             buildInputs = with camlPkgs; [
-              h2-lwt-unix
               conduit-lwt-unix
               core_unix
               ppx_deriving_yojson
               cohttp-lwt-unix
-              camlPkgs.h2-eio
-              camlPkgs.h2-async
               tls-async
               self'.packages.grpc
-              self'.packages.grpc-eio
             ];
             src = nix-filter.lib.filter {
               root = ./.;
@@ -137,20 +84,10 @@
             duneVersion = "3";
             nativeBuildInputs = with camlPkgs; [mdx];
             propagatedBuildInputs = with camlPkgs; [ppxlib];
-            buildInputs = with camlPkgs; [uri haha hpackv h2 ppx_deriving];
+            buildInputs = with camlPkgs; [uri haha hpackv ppx_deriving];
             src = nix-filter.lib.filter {
               root = ./.;
               include = ["dune-project" "lib/grpc"];
-            };
-          };
-          grpc-eio = camlPkgs.buildDunePackage {
-            pname = "grpc-eio";
-            version = "0.1.0";
-            duneVersion = "3";
-            buildInputs = with camlPkgs; [self'.packages.grpc eio];
-            src = nix-filter.lib.filter {
-              root = ./.;
-              include = ["dune-project" "lib/grpc-eio"];
             };
           };
         };

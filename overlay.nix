@@ -1,4 +1,4 @@
-nix-filter: self: super: let
+self: super: let
   inherit (super) fetchFromGitHub callPackage;
 in {
   ocaml-ng =
@@ -32,25 +32,6 @@ in {
         in {
           hpackv = mkHahaPkg "hpackv" (with oself; [angstrom faraday]);
           haha = mkHahaPkg "haha" (with oself; [eio_main angstrom faraday hpackv]);
-          h2 = super.h2.overrideAttrs (_: {
-            src = fetchFromGitHub {
-              owner = "dialohq";
-              repo = "ocaml-h2";
-              rev = "5fc0a4976ed25248872bac487ba344ebcaa76de0";
-              sha256 = "sha256-SZKv6Cv45hRrM1e/P7bmmWT96IERmF41wUvyaQGHj3g=";
-              fetchSubmodules = true;
-            };
-          });
-          h2-eio = super.h2-eio.overrideAttrs (_: {
-            src = fetchFromGitHub {
-              owner = "dialohq";
-              repo = "ocaml-h2";
-              rev = "5fc0a4976ed25248872bac487ba344ebcaa76de0";
-              sha256 = "sha256-SZKv6Cv45hRrM1e/P7bmmWT96IERmF41wUvyaQGHj3g=";
-
-              fetchSubmodules = true;
-            };
-          });
           pbrt = super.pbrt.overrideAttrs (_: {src = ocamlProtocSrc;});
           pbrt_services = super.buildDunePackage {
             pname = "pbrt_services";
@@ -71,16 +52,6 @@ in {
               super.ocaml-protoc.propagatedBuildInputs
               ++ [oself.pbrt_yojson oself.pbrt_services];
             src = ocamlProtocSrc;
-          });
-          gluten-eio = super.gluten-eio.overrideAttrs (_: {
-            src = fetchFromGitHub {
-              owner = "dialohq";
-              repo = "gluten";
-              rev = "e9ae4690ebd65b143e69955b1dc26ac77c25fa91";
-              sha256 = "sha256-hT62/TWFD11Irn+fy43nNGB8PKF1UAux0i9+9U3a/Ho=";
-
-              fetchSubmodules = true;
-            };
           });
         });
     };
