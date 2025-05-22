@@ -15,6 +15,11 @@ type 'a reading_handler = reader:imp_reader -> 'a
 type 'a writing_handler = writer:imp_writer -> 'a
 type 'a bi_handler = writer:imp_writer -> reader:imp_reader -> 'a
 
+type 'a imp_handler =
+  | Reading of ('a reading_handler * single_writer)
+  | Writing of 'a writing_handler
+  | Bi of 'a bi_handler
+
 type context =
   | Context : {
       sent_all : bool;
@@ -106,7 +111,7 @@ let multi_read : context Channel.data_receiver =
       { action = `Continue; context = Context { c with context = new_context } }
 
 let make_imp_writer () : imp_writer * unit stream_writer =
-  let write_stream = Eio.Stream.create 0 in
+  let write_stream = Eio.Stream.create max_int in
   let write_data : unit stream_writer =
    fun () -> (Eio.Stream.take write_stream, ())
   in
@@ -116,7 +121,7 @@ let make_imp_writer () : imp_writer * unit stream_writer =
   (writer, write_data)
 
 let make_imp_reader () : imp_reader * unit stream_reader =
-  let read_stream = Eio.Stream.create 0 in
+  let read_stream = Eio.Stream.create max_int in
   let on_data : unit stream_reader =
    fun () decoder -> Eio.Stream.add read_stream decoder
   in
@@ -168,6 +173,51 @@ let generic_call :
   let path = Utils.make_path ~service ~method_name in
   Channel.start_request ~headers ~data_writer ~data_receiver ~path
     ~initial_context channel
+
+let generic_imperaive_call :
+    sw:Eio.Switch.t ->
+    channel:context Channel.t ->
+    service:string ->
+    method_name:string ->
+    headers:Utils.request_headers ->
+    'a imp_handler ->
+    context Channel.stream_result Eio.Promise.t * 'a Eio.Promise.t =
+ fun ~sw ~channel ~service ~method_name ~headers handler ->
+  let call_generic =
+    generic_call ~channel ~initial_context:() ~service ~method_name ~headers
+  in
+  match handler with
+  | Bi bi_handler ->
+      let writer, write_data = make_imp_writer () in
+      let reader, on_data = make_imp_reader () in
+      let handler () = bi_handler ~writer ~reader in
+
+      let handler_result_p, handler_result_r = Eio.Promise.create () in
+      Eio.Fiber.fork_daemon ~sw (fun () ->
+          Eio.Promise.resolve handler_result_r @@ handler ();
+          `Stop_daemon);
+
+      (call_generic (Stream write_data) (Stream on_data), handler_result_p)
+  | Reading (read_handler, encode_request) ->
+      let reader, on_data = make_imp_reader () in
+      let handler () = read_handler ~reader in
+
+      let handler_result_p, handler_result_r = Eio.Promise.create () in
+      Eio.Fiber.fork_daemon ~sw (fun () ->
+          Eio.Promise.resolve handler_result_r @@ handler ();
+          `Stop_daemon);
+
+      (call_generic (Single encode_request) (Stream on_data), handler_result_p)
+  | Writing write_handler ->
+      let writer, write_data = make_imp_writer () in
+      let handler () = write_handler ~writer in
+
+      let handler_result_p, handler_result_r = Eio.Promise.create () in
+      Eio.Fiber.fork_daemon ~sw (fun () ->
+          Eio.Promise.resolve handler_result_r @@ handler ();
+          `Stop_daemon);
+
+      (call_generic (Stream write_data) Single, handler_result_p)
 
 module Unary = struct
   let call :
@@ -232,15 +282,13 @@ module Server_streaming = struct
       'a reading_handler ->
       ('a, Status.t) result =
    fun ~channel ~service ~method_name ~headers encode_request handler ->
-    let reader, on_data = make_imp_reader () in
-
-    let status_promise =
-      generic_call ~channel ~initial_context:() ~service ~method_name ~headers
-        (Single encode_request) (Stream on_data)
+    Eio.Switch.run @@ fun sw ->
+    let status_promise, handler_promise =
+      generic_imperaive_call ~sw ~channel ~service ~method_name ~headers
+        (Reading (handler, encode_request))
     in
-    let user_result = handler ~reader in
     match Eio.Promise.await status_promise with
-    | { status = { code = OK; _ }; _ } -> Ok user_result
+    | { status = { code = OK; _ }; _ } -> Ok (Eio.Promise.await handler_promise)
     | { status; _ } -> Error status
 end
 
@@ -276,19 +324,17 @@ module Client_streaming = struct
       'a writing_handler ->
       (Decoder.t * 'a, Status.t) result =
    fun ~channel ~service ~method_name ~headers handler ->
-    let writer, write_data = make_imp_writer () in
-
-    let status_promise =
-      generic_call ~channel ~initial_context:() ~service ~method_name ~headers
-        (Stream write_data) Single
+    Eio.Switch.run @@ fun sw ->
+    let status_promise, handler_promise =
+      generic_imperaive_call ~sw ~channel ~service ~method_name ~headers
+        (Writing handler)
     in
-    let user_result = handler ~writer in
     match Eio.Promise.await status_promise with
     | {
      status = { code = OK; _ };
      grpc_context = Context { read_state = Done decoder; _ };
     } ->
-        Ok (decoder, user_result)
+        Ok (decoder, Eio.Promise.await handler_promise)
     | { status; _ } -> Error status
 end
 
@@ -302,7 +348,7 @@ module Bidirectional_streaming = struct
         headers:Utils.request_headers ->
         'a stream_writer ->
         'a stream_reader ->
-        (unit, unit) result =
+        (unit, Status.t) result =
      fun ~channel ~initial_context ~service ~method_name ~headers write_handler
          read_handler ->
       match
@@ -311,7 +357,7 @@ module Bidirectional_streaming = struct
              (Stream write_handler) (Stream read_handler)
       with
       | { status = { code = OK; _ }; _ } -> Ok ()
-      | _ -> Error ()
+      | { status; _ } -> Error status
   end
 
   let call :
@@ -322,15 +368,12 @@ module Bidirectional_streaming = struct
       'a bi_handler ->
       ('a, Status.t) result =
    fun ~channel ~service ~method_name ~headers handler ->
-    let writer, write_data = make_imp_writer () in
-    let reader, on_data = make_imp_reader () in
-
-    let status_promise =
-      generic_call ~channel ~initial_context:() ~service ~method_name ~headers
-        (Stream write_data) (Stream on_data)
+    Eio.Switch.run @@ fun sw ->
+    let status_promise, handler_promise =
+      generic_imperaive_call ~sw ~channel ~service ~method_name ~headers
+        (Bi handler)
     in
-    let user_result = handler ~writer ~reader in
     match Eio.Promise.await status_promise with
-    | { status = { code = OK; _ }; _ } -> Ok user_result
+    | { status = { code = OK; _ }; _ } -> Ok (Eio.Promise.await handler_promise)
     | { status; _ } -> Error status
 end

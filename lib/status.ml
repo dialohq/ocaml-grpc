@@ -1,3 +1,5 @@
+open Ppx_yojson_conv_lib.Yojson_conv.Primitives
+
 type code =
   | OK
   | Cancelled
@@ -16,7 +18,7 @@ type code =
   | Unavailable
   | Data_loss
   | Unauthenticated
-[@@deriving show]
+[@@deriving show, yojson_of]
 
 let int_of_code = function
   | OK -> 0
@@ -57,5 +59,8 @@ let code_of_int = function
   | 16 -> Unauthenticated
   | _ -> Unknown
 
-type info = Message of string | Exn of (exn[@opaque]) [@@deriving show]
-type t = { code : code; info : info option } [@@deriving show]
+let yojson_of_exn exn = `String (Printexc.to_string exn)
+let pp_exn = Eio.Exn.pp
+
+type info = Message of string | Exn of exn [@@deriving show, yojson_of]
+type t = { code : code; info : info option } [@@deriving show, yojson_of]
