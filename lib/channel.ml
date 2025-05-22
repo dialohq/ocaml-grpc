@@ -163,7 +163,7 @@ let make_connections_events :
             state.connection_pool
     in
 
-    if List.is_empty new_pool then None
+    if List.is_empty new_pool && state.shutdown then None
     else Some { state with connection_pool = new_pool }
 
 let make_request : Uri.t -> _ stream_request -> _ stream_context H2.Request.t =
@@ -253,47 +253,54 @@ let make_request : Uri.t -> _ stream_request -> _ stream_context H2.Request.t =
   in
 
   H2.Request.create_with_streaming ~context:initial_stream_state
-    ?scheme:(Uri.scheme uri) ~authority:(Uri.to_string uri) ~headers
+    ?scheme:(Uri.scheme uri) ?authority:(Uri.host uri) ~headers
     ~error_handler:stream_error_handler ~response_handler ~body_writer POST path
 
 let start_connection :
-    connect_socket:(unit -> _ Net.stream_socket) ->
+    connect_socket:(unit -> (_ Net.stream_socket, exn) result) ->
     uri:Uri.t ->
-    (_ connection, H2.Error.connection_error) result =
+    ( _ connection,
+      [ `H2Error of H2.Error.connection_error | `Exn of exn ] )
+    result =
  fun ~connect_socket ~uri ->
-  let socket = connect_socket () in
+  match connect_socket () with
+  | Error exn -> Error (`Exn exn)
+  | Ok socket -> (
+      let request_stream : _ stream_context H2.Request.t option Stream.t =
+        Stream.create max_int
+      in
 
-  let request_stream : _ stream_context H2.Request.t option Stream.t =
-    Stream.create max_int
-  in
+      let request_writer : unit -> _ stream_context H2.Request.t option =
+       fun () -> Stream.take request_stream
+      in
 
-  let request_writer : unit -> _ stream_context H2.Request.t option =
-   fun () -> Stream.take request_stream
-  in
+      let shutdown () = Stream.add request_stream None in
 
-  let shutdown () = Stream.add request_stream None in
+      let start_stream stream_request =
+        Stream.add request_stream (Some (make_request uri stream_request))
+      in
 
-  let start_stream stream_request =
-    Stream.add request_stream (Some (make_request uri stream_request))
-  in
+      let initial_iteration = Client.connect ~request_writer socket in
 
-  let initial_iteration = Client.connect ~request_writer socket in
-
-  match initial_iteration with
-  | { state = End; _ } as iter ->
-      Ok
-        {
-          next_iter = (fun () -> iter);
-          open_streams = 1;
-          start_stream;
-          shutdown;
-        }
-  | { state = Error err; _ } -> Error err
-  | { state = InProgress next_iter; _ } ->
-      Ok { next_iter; open_streams = 1; start_stream; shutdown }
+      match initial_iteration with
+      | { state = End; _ } as iter ->
+          Ok
+            {
+              next_iter = (fun () -> iter);
+              open_streams = 1;
+              start_stream;
+              shutdown;
+            }
+      | { state = Error err; _ } -> Error (`H2Error err)
+      | { state = InProgress next_iter; _ } ->
+          Ok { next_iter; open_streams = 1; start_stream; shutdown })
 
 let make_new_stream_event :
-    new_connection:(unit -> (_ connection, H2.Error.connection_error) result) ->
+    new_connection:
+      (unit ->
+      ( _ connection,
+        [ `H2Error of H2.Error.connection_error | `Exn of exn ] )
+      result) ->
     max_streams:int ->
     request_stream:_ stream_request Stream.t ->
     unit ->
@@ -342,10 +349,17 @@ let make_new_stream_event :
                 state with
                 connection_pool = connection :: state.connection_pool;
               }
-        | Error conn_err ->
+        | Error (`H2Error conn_err) ->
             Promise.resolve stream_request.result_resolver
               {
                 status = connection_error_to_status conn_err;
+                grpc_context = stream_request.initial_grpc_context;
+              };
+            Some state
+        | Error (`Exn exn) ->
+            Promise.resolve stream_request.result_resolver
+              {
+                status = { code = Unavailable; info = Some (Exn exn) };
                 grpc_context = stream_request.initial_grpc_context;
               };
             Some state)
@@ -380,9 +394,15 @@ let create : ?max_streams:int -> sw:Switch.t -> net:_ Net.t -> string -> _ t =
     | _ -> failwith "No port or unknown schema in the host"
   in
   let connect_socket () =
-    Net.(
-      connect ~sw net
-        (getaddrinfo_stream ~service:(string_of_int port) net host |> List.hd))
+    try
+      Ok
+        Net.(
+          connect ~sw net
+            (getaddrinfo_stream ~service:(string_of_int port) net host
+            |> List.hd))
+    with
+    | Eio.Cancel.Cancelled _ as exn -> raise exn
+    | exn -> Error exn
   in
 
   Fiber.fork ~sw (fun () ->
@@ -397,11 +417,15 @@ let create : ?max_streams:int -> sw:Switch.t -> net:_ Net.t -> string -> _ t =
         in
 
         let f =
-          Fiber.any
-            (if state.shutdown then new_stream_event :: connections_events
-             else shutdown_event :: new_stream_event :: connections_events)
+          match (state.shutdown, connections_events) with
+          | true, [] -> fun _ -> None
+          | true, _ -> Fiber.any (new_stream_event :: connections_events)
+          | _ ->
+              Fiber.any
+                (shutdown_event :: new_stream_event :: connections_events)
         in
-        Option.iter (fun state -> runloop state) (f state)
+
+        Option.iter (fun state -> (runloop [@tailcall]) state) (f state)
       in
 
       runloop { connection_pool = []; shutdown = false });
@@ -425,6 +449,5 @@ let start_request (t : _ t) ~headers ~data_writer ~data_receiver ~path
   result_promise
 
 let shutdown (t : _ t) =
-  Printf.printf "Shutting down the channel\n%!";
   if not (Promise.try_resolve t.shutdown_resolver ()) then
     failwith "cannot shutdown channel twice"

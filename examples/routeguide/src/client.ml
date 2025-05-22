@@ -69,7 +69,9 @@ let run_record_route channel clock =
   match
     RouteGuideClient.Expert.record_route ~channel ~initial_context:1 handler
   with
-  | Error _ -> Printf.printf "[C_STREAMING] Error listing features\n%!"
+  | Error status ->
+      Format.printf "[C_STREAMING] Error recording route: %a@." Grpc.Status.pp
+        status
   | Ok _ -> Printf.printf "[C_STREAMING] Done.\n%!"
 
 let run_route_chat channel clock =
@@ -87,55 +89,51 @@ let run_route_chat channel clock =
                  x - 1 ))
   in
 
-  (* let route_notes = Array.of_seq route_notes in *)
-  (* let i = ref 0 in *)
-
-  (* let writer : int * int -> Pb.route_note option * (int * int) = *)
-  (*  fun (sent, received) -> *)
-  (*   if !i < Array.length route_notes then ( *)
-  (*     let note = route_notes.(!i) in *)
-  (*     Eio.Time.sleep clock 0.1; *)
-  (*     Format.printf "[BI_STREAMING] Sent a note %i: %a@." sent Pb.pp_route_note *)
-  (*       note; *)
-  (*     incr i; *)
-  (*     (Some note, (sent + 1, received))) *)
-  (*   else (None, (sent, received)) *)
-  (* in *)
-  (* let reader : int * int -> Pb.route_note -> int * int = *)
-  (*  fun (sent, received) note -> *)
-  (*   Format.printf "[BI_STREAMING] Received a note %i: %a@." received *)
-  (*     Pb.pp_route_note note; *)
-  (*   (sent, received + 1) *)
-  (* in *)
-  let handler ~(writer : Pb.route_note option -> unit)
-      ~(reader : Pb.route_note Seq.t) =
-    let write () =
-      Seq.iter
-        (fun note ->
-          writer (Some note);
-          Format.printf "[BI_STREAMING] Sent a note: %a@." Pb.pp_route_note note;
-          Eio.Time.sleep clock 0.1)
-        route_notes;
-      writer None
-    in
-
-    let read () =
-      let rec loop_read read =
-        match read () with
-        | Seq.Nil -> ()
-        | Cons (note, next) ->
-            Format.printf "[BI_STREAMING] Received a note: %a@."
-              Pb.pp_route_note note;
-            loop_read next
-      in
-      loop_read reader
-    in
-
-    Eio.Fiber.both write read
+  let writer : int * int * Pb.route_note Seq.t -> Pb.route_note option * (int * int * Pb.route_note Seq.t) =
+   fun (sent, received, next) ->
+    match next () with
+    | Seq.Cons (note, next) -> 
+      Eio.Time.sleep clock 0.1;
+      Format.printf "[BI_STREAMING] Sent a note %i: %a@." sent Pb.pp_route_note
+        note;
+      (Some note, (sent + 1, received, next))
+    | Nil -> (None, (sent, received, Seq.empty))
   in
+  let reader : int * int * Pb.route_note Seq.t -> Pb.route_note -> int * int * Pb.route_note Seq.t =
+   fun (sent, received, s) note ->
+    Format.printf "[BI_STREAMING] Received a note %i: %a@." received
+      Pb.pp_route_note note;
+    (sent, received + 1, s)
+  in
+  (* let handler ~(writer : Pb.route_note option -> unit) *)
+  (*     ~(reader : Pb.route_note Seq.t) = *)
+  (*   let write () = *)
+  (*     Seq.iter *)
+  (*       (fun note -> *)
+  (*         writer (Some note); *)
+  (*         Format.printf "[BI_STREAMING] Sent a note: %a@." Pb.pp_route_note note; *)
+  (*         Eio.Time.sleep clock 0.1) *)
+  (*       route_notes; *)
+  (*     writer None *)
+  (*   in *)
+  (**)
+  (*   let read () = *)
+  (*     let rec loop_read read = *)
+  (*       match read () with *)
+  (*       | Seq.Nil -> () *)
+  (*       | Cons (note, next) -> *)
+  (*           Format.printf "[BI_STREAMING] Received a note: %a@." *)
+  (*             Pb.pp_route_note note; *)
+  (*           loop_read next *)
+  (*     in *)
+  (*     loop_read reader *)
+  (*   in *)
+  (**)
+  (*   Eio.Fiber.both write read *)
+  (* in *)
 
   Printf.printf "[BI_STREAMING] Exchanging notes...\n%!";
-  match RouteGuideClient.route_chat ~channel handler with
+  match RouteGuideClient.Expert.route_chat ~initial_context:(1, 1, route_notes) ~channel writer reader with
   | Error status ->
       Format.printf "[BI_STREAMING] Error exchanging notes: %a@." Grpc.Status.pp
         status
@@ -161,6 +159,7 @@ let main env =
     run_route_chat channel env#clock;
 
     Printf.printf "Disconnecting\n%!";
+    Eio.Time.sleep env#clock 2.;
     Grpc.Channel.shutdown channel
   in
 
