@@ -73,9 +73,11 @@ let single_read : context Channel.data_receiver =
   | None -> { action = `Continue; context }
 
 let multi_write :
-    encoder:Encoder.t -> header_buffer:Cstruct.t -> context Channel.data_writer
-    =
- fun ~encoder ~header_buffer (Context c) ->
+    encoder:Encoder.t ->
+    header_buffer:Cstruct.t ->
+    body_buffer:Cstruct.t ->
+    context Channel.data_writer =
+ fun ~encoder ~header_buffer ~body_buffer (Context c) ->
   match c.write_data c.context with
   | None, context -> (None, Context { c with sent_all = true; context })
   | Some encode_request, context ->
@@ -85,10 +87,10 @@ let multi_write :
 
       Utils.fill_header_cs ~length header_buffer;
 
-      let body_buffer = Cstruct.create length in
       Encoder.blit_to_buffer ~blit_from_bytes:Cstruct.blit_from_bytes encoder
         body_buffer 0;
-      (Some [ header_buffer; body_buffer ], Context { c with context })
+      ( Some [ header_buffer; Cstruct.sub body_buffer 0 length ],
+        Context { c with context } )
 
 let multi_read : context Channel.data_receiver =
  fun (Context c) -> function
@@ -149,7 +151,8 @@ let generic_call :
     | Stream handler ->
         let encoder = Encoder.create ~size:1_000 () in
         let header_buffer = Cstruct.create 5 in
-        (multi_write ~encoder ~header_buffer, handler)
+        let body_buffer = Cstruct.create 500_000 in
+        (multi_write ~encoder ~header_buffer ~body_buffer, handler)
   in
 
   let data_receiver, on_data =

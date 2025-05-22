@@ -159,7 +159,6 @@ let main env =
     run_route_chat channel env#clock;
 
     Printf.printf "Disconnecting\n%!";
-    Eio.Time.sleep env#clock 2.;
     Grpc.Channel.shutdown channel
   in
 
