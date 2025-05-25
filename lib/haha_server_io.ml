@@ -9,7 +9,7 @@ let wrap_in_promise f =
 type 'context net_request = {
   request : Haha.Reqd.t;
   msg_stream : Body_parse.t Body_parse.consumer option Eio.Stream.t;
-  handler_resolver : 'context Haha.Reqd.handler Eio.Promise.u;
+  handler_resolver : 'context Haha.Reqd.handler_result Eio.Promise.u;
   connection_error : Haha.Error.connection_error Eio.Promise.t;
   buffer_pool : Buffer_pool.Bytes_pool.t;
 }
@@ -75,9 +75,9 @@ module Io = struct
       Eio.Stream.add body_writer_stream (`Data cs, resolve)
     in
     let body_writer () ~window_size:_ =
-      let took = Eio.Stream.take body_writer_stream in
+      let payload, on_flush = Eio.Stream.take body_writer_stream in
 
-      (fst took, snd took, ())
+      { Types.payload; on_flush; context = () }
     in
     let write_end ?(trailers = []) () =
       wrap_in_promise (fun resolve ->
@@ -110,14 +110,19 @@ module Io = struct
     in
 
     let handler =
-      Reqd.handle ~context:() ~error_handler ~on_data
-        ~response_writer:(fun () ->
-          `Final
-            (Response.create_with_streaming ~body_writer `OK
-               (Header.of_list
-                  (( "content-type",
-                     headers.Legacy_modules.Grpc_server.content_type )
-                  :: headers.extra))))
+      {
+        Reqd.initial_context = ();
+        error_handler;
+        on_data;
+        response_writer =
+          (fun () ->
+            `Final
+              (Response.create_with_streaming ~body_writer `OK
+                 (Header.of_list
+                    (( "content-type",
+                       headers.Legacy_modules.Grpc_server.content_type )
+                    :: headers.extra))));
+      }
     in
 
     let fill_header_cs ~length (buffer : Cstruct.t) =
@@ -167,13 +172,17 @@ module Io = struct
         code
     in
     let handler =
-      Reqd.handle ~context:() ~error_handler
-        ~on_data:(fun _ _ -> { Types.action = `Continue; context = () })
-        ~response_writer:(fun () ->
-          `Final
-            (Response.create
-               (Status.of_code status_code)
-               (Header.of_list headers)))
+      {
+        Reqd.initial_context = ();
+        error_handler;
+        on_data = (fun _ _ -> { Types.action = `Continue; context = () });
+        response_writer =
+          (fun () ->
+            `Final
+              (Response.create
+                 (Status.of_code status_code)
+                 (Header.of_list headers)));
+      }
     in
 
     Eio.Promise.resolve handler_resolver handler

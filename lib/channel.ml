@@ -191,8 +191,18 @@ let make_request : Uri.t -> _ stream_request -> _ stream_context H2.Request.t =
    fun context ~window_size:_ ->
     let data, grpc_context = data_writer context.grpc_context in
     match data with
-    | Some cs_l -> (`Data cs_l, ignore, { context with grpc_context })
-    | None -> (`End (None, []), ignore, { context with grpc_context })
+    | Some cs_l ->
+        {
+          payload = `Data cs_l;
+          on_flush = ignore;
+          context = { context with grpc_context };
+        }
+    | None ->
+        {
+          payload = `End (None, []);
+          on_flush = ignore;
+          context = { context with grpc_context };
+        }
   in
 
   let on_data : _ stream_context H2.Types.body_reader =
