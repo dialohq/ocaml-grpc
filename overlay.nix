@@ -17,8 +17,8 @@ in {
           hahaPkgsSrc = fetchFromGitHub {
             owner = "dialohq";
             repo = "haha";
-            rev = "0f7cf7eabc4f4fb7a5ca97608bb117bad67398c6";
-            sha256 = "sha256-4ZmoX5V4PJ/FJKaRC5q7YjfFvyrkaSS9Th8nU5v1tH4=";
+            rev = "32fc9fd154b995d44d9d30fbf92ed412a6334d64";
+            sha256 = "sha256-we3WNLz2qHs4lYtd+3wT8j3anuN8Ppa6snbYgigR5qY=";
           };
           mkHahaPkg = pname: buildDeps:
             super.buildDunePackage {

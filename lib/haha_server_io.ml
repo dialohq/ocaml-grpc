@@ -187,7 +187,7 @@ let io =
      and type request = Pbrt.Decoder.t Legacy_modules.Body_reader.consumer
      and type response = Pbrt.Encoder.t -> unit)
 
-let connection_handler ~sw ?debug ?config ?grpc_error_handler server =
+let connection_handler ~sw ?debug:_ ?config ?grpc_error_handler server =
   let error_p, error_r = Eio.Promise.create () in
   let buffer_pool = Buffer_pool.Bytes_pool.make () in
 
@@ -220,4 +220,4 @@ let connection_handler ~sw ?debug ?config ?grpc_error_handler server =
         Eio.Promise.try_resolve error_r err |> ignore
   in
 
-  Haha.Server.connection_handler ?debug ~error_handler ?config request_handler
+  Haha.Server.connection_handler ~error_handler ?config request_handler

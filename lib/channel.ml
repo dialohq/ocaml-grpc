@@ -71,6 +71,13 @@ type 'c t = {
   shutdown_resolver : unit Promise.u;
 }
 
+let combine :
+    (_ state -> _ state option) ->
+    (_ state -> _ state option) ->
+    _ state ->
+    _ state option =
+ fun x y state -> Option.bind (x state) y
+
 let stream_error_handler :
     _ stream_context -> H2.Error_code.t -> _ stream_context =
  fun context code ->
@@ -140,7 +147,7 @@ let make_connections_events :
       | Error err ->
           resolve_streams ~err iteration.closed_ctxs;
           List.filteri (fun i _ -> i <> idx) state.connection_pool
-      | InProgress next_iter ->
+      | InProgress _ ->
           resolve_streams iteration.closed_ctxs;
           List.mapi
             (fun i conn ->
@@ -148,7 +155,6 @@ let make_connections_events :
                 let new_conn =
                   {
                     conn with
-                    next_iter;
                     open_streams =
                       conn.open_streams - List.length iteration.closed_ctxs;
                   }
@@ -257,15 +263,16 @@ let make_request : Uri.t -> _ stream_request -> _ stream_context H2.Request.t =
     ~error_handler:stream_error_handler ~response_handler ~body_writer POST path
 
 let start_connection :
+    sw:Switch.t ->
     connect_socket:(unit -> (_ Net.stream_socket, exn) result) ->
     uri:Uri.t ->
     ( _ connection,
       [ `H2Error of H2.Error.connection_error | `Exn of exn ] )
     result =
- fun ~connect_socket ~uri ->
+ fun ~sw ~connect_socket ~uri ->
   match connect_socket () with
   | Error exn -> Error (`Exn exn)
-  | Ok socket -> (
+  | Ok socket ->
       let request_stream : _ stream_context H2.Request.t option Stream.t =
         Stream.create max_int
       in
@@ -282,18 +289,20 @@ let start_connection :
 
       let initial_iteration = Client.connect ~request_writer socket in
 
-      match initial_iteration with
-      | { state = End; _ } as iter ->
-          Ok
-            {
-              next_iter = (fun () -> iter);
-              open_streams = 1;
-              start_stream;
-              shutdown;
-            }
-      | { state = Error err; _ } -> Error (`H2Error err)
-      | { state = InProgress next_iter; _ } ->
-          Ok { next_iter; open_streams = 1; start_stream; shutdown })
+      let iter_stream = Stream.create max_int in
+      let next_iter = fun () -> Stream.take iter_stream in
+
+      Fiber.fork ~sw (fun () ->
+          let rec loop : _ Client.iteration -> unit =
+           fun iter ->
+            Stream.add iter_stream iter;
+
+            match iter.state with
+            | InProgress next_iter -> loop (next_iter ())
+            | _ -> ()
+          in
+          loop initial_iteration);
+      Ok { next_iter; open_streams = 1; start_stream; shutdown }
 
 let make_new_stream_event :
     new_connection:
@@ -407,7 +416,7 @@ let create : ?max_streams:int -> sw:Switch.t -> net:_ Net.t -> string -> _ t =
 
   Fiber.fork ~sw (fun () ->
       let rec runloop state =
-        let new_connection () = start_connection ~connect_socket ~uri in
+        let new_connection () = start_connection ~sw ~connect_socket ~uri in
         let new_stream_event =
           make_new_stream_event ~new_connection ~max_streams ~request_stream
         in
@@ -419,13 +428,14 @@ let create : ?max_streams:int -> sw:Switch.t -> net:_ Net.t -> string -> _ t =
         let f =
           match (state.shutdown, connections_events) with
           | true, [] -> fun _ -> None
-          | true, _ -> Fiber.any (new_stream_event :: connections_events)
+          | true, _ ->
+              Fiber.any ~combine (new_stream_event :: connections_events)
           | _ ->
-              Fiber.any
+              Fiber.any ~combine
                 (shutdown_event :: new_stream_event :: connections_events)
         in
 
-        Option.iter (fun state -> (runloop [@tailcall]) state) (f state)
+        Option.iter runloop (f state)
       in
 
       runloop { connection_pool = []; shutdown = false });
