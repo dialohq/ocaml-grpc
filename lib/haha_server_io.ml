@@ -77,7 +77,7 @@ module Io = struct
     let body_writer () ~window_size:_ =
       let payload, on_flush = Eio.Stream.take body_writer_stream in
 
-      { Types.payload; on_flush; context = () }
+      { Body.payload; on_flush; context = () }
     in
     let write_end ?(trailers = []) () =
       wrap_in_promise (fun resolve ->
@@ -97,10 +97,10 @@ module Io = struct
                       { bytes = b; len = Bytes.length b })))
             parsed;
           msg_state := new_state;
-          { Types.action = `Continue; context = () }
+          { Body.action = `Continue; context = () }
       | `End _ ->
           Eio.Stream.add msg_stream None;
-          { Types.action = `Continue; context = () }
+          { Body.action = `Continue; context = () }
     in
 
     let error_handler =
@@ -175,7 +175,7 @@ module Io = struct
       {
         Reqd.initial_context = ();
         error_handler;
-        on_data = (fun _ _ -> { Types.action = `Continue; context = () });
+        on_data = (fun _ _ -> { Body.action = `Continue; context = () });
         response_writer =
           (fun () ->
             `Final

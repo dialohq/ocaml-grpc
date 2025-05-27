@@ -52,25 +52,17 @@ let single_write : single_writer -> context Channel.data_writer =
         Context { context with sent_all = true } )
 
 let single_read : context Channel.data_receiver =
- fun (Context c as context) -> function
-  | Some data -> (
-      match c.read_state with
-      | Done _ -> { action = `Reset; context }
-      | Reading ->
-          let new_parse_state, parsed =
-            Body_parse.read_messages data c.parse_state
-          in
-          let read_state : read_state =
-            match parsed with
-            | [] -> Reading
-            | x :: _ -> Done (Decoder.of_bytes x)
-          in
-          {
-            action = `Continue;
-            context =
-              Context { c with read_state; parse_state = new_parse_state };
-          })
-  | None -> { action = `Continue; context }
+ fun (Context c as context) data ->
+  match (data, c.read_state) with
+  | Some data, Reading ->
+      let new_parse_state, parsed =
+        Body_parse.read_messages data c.parse_state
+      in
+      let read_state : read_state =
+        match parsed with [] -> Reading | x :: _ -> Done (Decoder.of_bytes x)
+      in
+      Context { c with read_state; parse_state = new_parse_state }
+  | _ -> context
 
 let multi_write :
     encoder:Encoder.t ->
@@ -103,14 +95,11 @@ let multi_read : context Channel.data_receiver =
           c.context parsed
       in
 
-      {
-        action = `Continue;
-        context = Context { c with parse_state; context = new_context };
-      }
+      Context { c with parse_state; context = new_context }
   | None ->
       let new_context = c.on_data c.context None in
 
-      { action = `Continue; context = Context { c with context = new_context } }
+      Context { c with context = new_context }
 
 let make_imp_writer () : imp_writer * unit stream_writer =
   let write_stream = Eio.Stream.create max_int in

@@ -17,8 +17,8 @@ in {
           hahaPkgsSrc = fetchFromGitHub {
             owner = "dialohq";
             repo = "haha";
-            rev = "0867affaf51cada076ef3ad14709d78e0428b2e2";
-            sha256 = "sha256-4WJH8nJytBvgmqmrSuO/NG+a9/X1NtNPoABjrafNASo=";
+            rev = "2f3d3bedda944b8efbcd02368d0d0c2792a931b4";
+            sha256 = "sha256-JEhqsCwqCe9ryA18OUKNYQCM7A695K4uOEhSBtXocWA=";
           };
           eioPkgsSrc = fetchFromGitHub {
             owner = "dialohq";

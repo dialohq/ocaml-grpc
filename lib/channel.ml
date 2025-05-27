@@ -28,14 +28,7 @@ let connection_error_to_status : H2.Error.connection_error -> Status.t =
       { Status.code = status_of_h2_error code; info = Some (Message msg) }
   | Exn exn -> { Status.code = Internal; info = Some (Exn exn) }
 
-type 'context data_receiver_result = {
-  action : [ `Continue | `Reset ];
-  context : 'context;
-}
-
-type 'context data_receiver =
-  'context -> Cstruct.t option -> 'context data_receiver_result
-
+type 'context data_receiver = 'context -> Cstruct.t option -> 'context
 type 'context data_writer = 'context -> Cstruct.t list option * 'context
 type 'c stream_result = { status : Status.t; grpc_context : 'c }
 
@@ -188,7 +181,7 @@ let make_request : Uri.t -> _ stream_request -> _ stream_context H2.Request.t =
       [ ("te", headers.te); ("content-type", headers.content_type) ]
   in
 
-  let body_writer : _ stream_context H2.Types.body_writer =
+  let body_writer : _ stream_context H2.Body.body_writer =
    fun context ~window_size:_ ->
     let data, grpc_context = data_writer context.grpc_context in
     match data with
@@ -206,25 +199,22 @@ let make_request : Uri.t -> _ stream_request -> _ stream_context H2.Request.t =
         }
   in
 
-  let on_data : _ stream_context H2.Types.body_reader =
+  let on_data : _ stream_context H2.Body.body_reader =
    fun context -> function
     | `Data cs ->
-        let { context = grpc_context; action } =
-          data_receiver context.grpc_context (Some cs)
-        in
-        { action; context = { context with grpc_context } }
+        let grpc_context = data_receiver context.grpc_context (Some cs) in
+        { action = `Continue; context = { context with grpc_context } }
     | `End (cs_opt, trailers) -> (
-        let { context = grpc_context; action } =
-          data_receiver context.grpc_context cs_opt
-        in
+        let grpc_context = data_receiver context.grpc_context cs_opt in
 
         match find_grpc_status trailers with
         | Some status ->
             {
-              action;
+              action = `Continue;
               context = { context with grpc_context; result = Some status };
             }
-        | None -> { action; context = { context with grpc_context } })
+        | None ->
+            { action = `Continue; context = { context with grpc_context } })
   in
 
   let response_handler : _ stream_context H2.Response.handler =
