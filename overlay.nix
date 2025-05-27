@@ -20,6 +20,12 @@ in {
             rev = "0867affaf51cada076ef3ad14709d78e0428b2e2";
             sha256 = "sha256-4WJH8nJytBvgmqmrSuO/NG+a9/X1NtNPoABjrafNASo=";
           };
+          eioPkgsSrc = fetchFromGitHub {
+            owner = "dialohq";
+            repo = "eio";
+            rev = "8a9f8674764129a713a6c3d17c4fb82df4be393e";
+            sha256 = "sha256-uo5bpfx9ZU2LNC5BbT862iYHmou8v7lURFRMRGkauzk=";
+          };
           mkHahaPkg = pname: buildDeps:
             super.buildDunePackage {
               inherit pname;
@@ -30,6 +36,12 @@ in {
               propagatedBuildInputs = buildDeps;
             };
         in {
+          eio = super.eio.overrideAttrs (_: {
+            src = eioPkgsSrc;
+          });
+          eio_main = super.eio_main.overrideAttrs (_: {
+            src = eioPkgsSrc;
+          });
           hpackv = mkHahaPkg "hpackv" (with oself; [angstrom faraday]);
           haha = mkHahaPkg "haha" (with oself; [eio_main angstrom faraday hpackv]);
           pbrt = super.pbrt.overrideAttrs (_: {src = ocamlProtocSrc;});
