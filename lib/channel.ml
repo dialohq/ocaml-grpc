@@ -33,7 +33,7 @@ type 'context data_writer = 'context -> Cstruct.t list option * 'context
 type 'c stream_result = { status : Status.t; grpc_context : 'c }
 
 type 'c stream_request = {
-  headers : Utils.request_headers;
+  headers : (string * string) list;
   data_writer : 'c data_writer;
   data_receiver : 'c data_receiver;
   path : string;
@@ -148,11 +148,6 @@ let make_request : Uri.t -> _ stream_request -> H2.Request.t =
        result_resolver;
        initial_grpc_context;
      } ->
-  let headers =
-    H2.Header.of_list
-      [ ("te", headers.te); ("content-type", headers.content_type) ]
-  in
-
   let body_writer : _ stream_context H2.Body.writer =
    fun context ->
     let data, grpc_context = data_writer context.grpc_context in
@@ -248,6 +243,7 @@ let make_request : Uri.t -> _ stream_request -> H2.Request.t =
     }
   in
 
+  let headers = H2.Header.of_list headers in
   H2.Request.create_with_streaming ~context:initial_stream_state
     ?scheme:(Uri.scheme uri) ?authority:(Uri.host uri) ~headers
     ~error_handler:stream_error_handler ~on_close ~response_handler ~body_writer

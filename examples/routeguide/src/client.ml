@@ -1,8 +1,6 @@
 open Routeguide_proto
 module Pb = Route_guide
 
-[@@@warning "-32-26"]
-
 let random_point () =
   let latitude = (Random.int 180 - 90) * 10000000 in
   let longitude = (Random.int 360 - 180) * 10000000 in
@@ -146,8 +144,7 @@ let run_route_chat channel clock =
   | Ok _ -> Printf.printf "[BI_STREAMING] Done.\n%!"
 
 let main env =
-  let network = Eio.Stdenv.net env in
-  let () = Random.self_init () in
+  Random.self_init ();
 
   let run sw =
     let channel =

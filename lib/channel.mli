@@ -8,7 +8,7 @@ val create :
 
 val start_request :
   'c t ->
-  headers:Utils.request_headers ->
+  headers:(string * string) list ->
   data_writer:'c data_writer ->
   data_receiver:'c data_receiver ->
   path:string ->

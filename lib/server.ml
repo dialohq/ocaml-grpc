@@ -1,9 +1,7 @@
 open Haha
 open Pbrt
+open Utils
 
-type single_writer = Encoder.t -> unit
-type 'a stream_writer = 'a -> (Encoder.t -> unit) option * 'a
-type 'a stream_reader = 'a -> Decoder.t option -> 'a
 type route_getter = service:string -> meth:string -> Reqd.handler_result option
 
 let error_handler : Error.connection_error -> unit = fun _error -> ()
@@ -13,61 +11,65 @@ let grpc_headers = Header.of_list [ ("content-type", "application/grpc+proto") ]
 let ok_trailers =
   Header.of_list [ ("grpc-status", "0"); ("grpc-message", "OK") ]
 
+let not_found_trailers =
+  Header.of_list
+    [ ("grpc-status", "12"); ("grpc-message", "unimplemented service/method") ]
+
+let encode_data ?header_buffer ?body_buffer encode_f encoder =
+  Encoder.clear encoder;
+  encode_f encoder;
+  let length = Encoder.length encoder in
+
+  let header_buffer = Option.value ~default:(Cstruct.create 5) header_buffer in
+  fill_header ~length header_buffer;
+
+  let body_buffer = Option.value ~default:(Cstruct.create length) body_buffer in
+  Encoder.blit_to_buffer ~blit_from_bytes:Cstruct.blit_from_bytes encoder
+    body_buffer 0;
+
+  [ header_buffer; Cstruct.sub body_buffer 0 length ]
+
+let make_response_writer : 'c Body.writer -> 'c Response.response_writer =
+ fun body_writer () ->
+  `Final (Response.create_with_streaming ~body_writer `OK grpc_headers)
+
 module Unary = struct
   type read_state = Reading | Done of Decoder.t
   type context = { read_state : read_state; parse_state : Body_parse.state }
 
-  let body_writer : (Decoder.t -> Encoder.t -> unit) -> context Body.writer =
-   fun get_encoder ->
+  let body_writer : (Decoder.t -> single_writer) -> context Body.writer =
+   fun get_encode_f ->
     let encoder = Encoder.create ~size:1_000 () in
-    fun (c as context) ->
-      match c.read_state with
-      | Done decoder ->
-          Encoder.clear encoder;
-          (get_encoder decoder) encoder;
-          let length = Encoder.length encoder in
-
-          let header_buffer = Cstruct.create 5 in
-          Utils.fill_header_cs ~length header_buffer;
-
-          let body_buffer = Cstruct.create length in
-          Encoder.blit_to_buffer ~blit_from_bytes:Cstruct.blit_from_bytes
-            encoder body_buffer 0;
-
-          {
-            payload = `End (Some [ header_buffer; body_buffer ], ok_trailers);
-            on_flush = ignore;
-            context;
-          }
-      | Reading -> Eio.Fiber.await_cancel ()
+    function
+    | { read_state = Done decoder; _ } as context ->
+        {
+          payload =
+            `End (Some (encode_data (get_encode_f decoder) encoder), ok_trailers);
+          on_flush = ignore;
+          context;
+        }
+    | { read_state = Reading; _ } -> Eio.Fiber.await_cancel ()
 
   let body_reader : context Body.reader =
    fun context data ->
     match (data, context.read_state) with
     | `Data data, Reading ->
-        let new_parse_state, parsed =
+        let parse_state, parsed =
           Body_parse.read_messages data context.parse_state
         in
-        let read_state : read_state =
+        let read_state =
           match parsed with
           | [] -> Reading
           | x :: _ -> Done (Decoder.of_bytes x)
         in
 
-        { read_state; parse_state = new_parse_state }
+        { read_state; parse_state }
     | _ -> context
 
-  let respond : (Decoder.t -> Encoder.t -> unit) -> Reqd.handler_result =
+  let respond : (Decoder.t -> single_writer) -> Reqd.handler_result =
    fun get_encoder ->
     let context = { read_state = Reading; parse_state = Idle } in
-
-    let response_writer : context Response.response_writer =
-     fun () ->
-      `Final
-        (Response.create_with_streaming ~body_writer:(body_writer get_encoder)
-           `OK grpc_headers)
-    in
-
+    let response_writer = make_response_writer (body_writer get_encoder) in
     Reqd.handle ~context ~response_writer ~error_handler:stream_error_handler
       ~body_reader ()
 end
@@ -86,40 +88,24 @@ module ServerStreaming = struct
   let body_writer () : 'a context Body.writer =
     let encoder = Encoder.create ~size:1_000 () in
     let body_buffer = Cstruct.create 500_000 in
+    let header_buffer = Cstruct.create 5 in
     function
-    | { read_state = Reading _; _ } -> Eio.Fiber.await_cancel ()
-    | { read_state = Done writer; user_context; _ } as context -> (
+    | { read_state = Done writer; user_context; _ } as context ->
         let encode_opt, user_context = writer user_context in
-
-        match encode_opt with
-        | Some encode ->
-            Encoder.clear encoder;
-            encode encoder;
-            let length = Encoder.length encoder in
-
-            let header_buffer = Cstruct.create 5 in
-            Utils.fill_header_cs ~length header_buffer;
-
-            Encoder.blit_to_buffer ~blit_from_bytes:Cstruct.blit_from_bytes
-              encoder body_buffer 0;
-            {
-              payload =
-                `Data [ header_buffer; Cstruct.sub body_buffer 0 length ];
-              on_flush = ignore;
-              context = { context with user_context };
-            }
-        | None ->
-            {
-              payload = `End (None, ok_trailers);
-              on_flush = ignore;
-              context = { context with user_context };
-            })
+        let payload =
+          match encode_opt with
+          | Some encode_f ->
+              `Data (encode_data ~header_buffer ~body_buffer encode_f encoder)
+          | None -> `End (None, ok_trailers)
+        in
+        { payload; on_flush = ignore; context = { context with user_context } }
+    | { read_state = Reading _; _ } -> Eio.Fiber.await_cancel ()
 
   let body_reader : 'a context Body.reader =
    fun context data ->
     match (data, context.read_state) with
     | `Data data, Reading get_writer ->
-        let new_parse_state, parsed =
+        let parse_state, parsed =
           Body_parse.read_messages data context.parse_state
         in
         let read_state : 'a read_state =
@@ -128,14 +114,8 @@ module ServerStreaming = struct
           | x :: _ -> Done (get_writer (Decoder.of_bytes x))
         in
 
-        { context with read_state; parse_state = new_parse_state }
+        { context with read_state; parse_state }
     | _ -> context
-
-  let response_writer : _ context Response.response_writer =
-   fun () ->
-    `Final
-      (Response.create_with_streaming ~body_writer:(body_writer ()) `OK
-         grpc_headers)
 
   let respond : 'a -> (Decoder.t -> 'a stream_writer) -> Reqd.handler_result =
    fun context get_writer ->
@@ -146,7 +126,7 @@ module ServerStreaming = struct
         user_context = context;
       }
     in
-
+    let response_writer = make_response_writer (body_writer ()) in
     Reqd.handle ~context ~response_writer ~error_handler:stream_error_handler
       ~body_reader ()
 end
@@ -166,25 +146,14 @@ module ClientStreaming = struct
    fun () ->
     let encoder = Encoder.create ~size:1_000 () in
     function
-    | { read_state = Reading; _ } -> Eio.Fiber.await_cancel ()
     | { read_state = Done; respond; user_context; _ } as context ->
-        Encoder.clear encoder;
-        (respond user_context) encoder;
-
-        let length = Encoder.length encoder in
-
-        let header_buffer = Cstruct.create 5 in
-        Utils.fill_header_cs ~length header_buffer;
-
-        let body_buffer = Cstruct.create length in
-        Encoder.blit_to_buffer ~blit_from_bytes:Cstruct.blit_from_bytes encoder
-          body_buffer 0;
-
         {
-          payload = `End (Some [ header_buffer; body_buffer ], ok_trailers);
+          payload =
+            `End (Some (encode_data (respond user_context) encoder), ok_trailers);
           on_flush = ignore;
           context;
         }
+    | { read_state = Reading; _ } -> Eio.Fiber.await_cancel ()
 
   let body_reader : _ context Body.reader =
    fun ({ user_context; reader; _ } as context) payload ->
@@ -205,12 +174,6 @@ module ClientStreaming = struct
 
         { context with parse_state; user_context }
 
-  let response_writer : _ context Response.response_writer =
-   fun () ->
-    `Final
-      (Response.create_with_streaming ~body_writer:(body_writer ()) `OK
-         grpc_headers)
-
   let respond :
       'a -> 'a stream_reader -> ('a -> single_writer) -> Reqd.handler_result =
    fun context reader respond ->
@@ -223,7 +186,7 @@ module ClientStreaming = struct
         parse_state = Idle;
       }
     in
-
+    let response_writer = make_response_writer (body_writer ()) in
     Reqd.handle ~context ~response_writer ~error_handler:stream_error_handler
       ~body_reader ()
 end
@@ -239,31 +202,18 @@ module BidirectionalStreaming = struct
   let body_writer () : _ context Body.writer =
     let encoder = Encoder.create ~size:1_000 () in
     let body_buffer = Cstruct.create 500_000 in
+    let header_buffer = Cstruct.create 5 in
     fun ({ writer; user_context; _ } as context) ->
       let encode_opt, user_context = writer user_context in
 
-      match encode_opt with
-      | Some encode ->
-          Encoder.clear encoder;
-          encode encoder;
-          let length = Encoder.length encoder in
+      let payload =
+        match encode_opt with
+        | Some encode_f ->
+            `Data (encode_data ~header_buffer ~body_buffer encode_f encoder)
+        | None -> `End (None, ok_trailers)
+      in
 
-          let header_buffer = Cstruct.create 5 in
-          Utils.fill_header_cs ~length header_buffer;
-
-          Encoder.blit_to_buffer ~blit_from_bytes:Cstruct.blit_from_bytes
-            encoder body_buffer 0;
-          {
-            payload = `Data [ header_buffer; Cstruct.sub body_buffer 0 length ];
-            on_flush = ignore;
-            context = { context with user_context };
-          }
-      | None ->
-          {
-            payload = `End (None, ok_trailers);
-            on_flush = ignore;
-            context = { context with user_context };
-          }
+      { payload; on_flush = ignore; context = { context with user_context } }
 
   let body_reader : _ context Body.reader =
    fun ({ user_context; reader; _ } as context) payload ->
@@ -284,18 +234,13 @@ module BidirectionalStreaming = struct
 
         { context with parse_state; user_context }
 
-  let response_writer : _ context Response.response_writer =
-   fun () ->
-    `Final
-      (Response.create_with_streaming ~body_writer:(body_writer ()) `OK
-         grpc_headers)
-
   let respond :
       'a -> 'a stream_reader -> 'a stream_writer -> Reqd.handler_result =
    fun context reader writer ->
     let context =
       { user_context = context; parse_state = Idle; reader; writer }
     in
+    let response_writer = make_response_writer (body_writer ()) in
     Reqd.handle ~context ~response_writer ~error_handler:stream_error_handler
       ~body_reader ()
 end
@@ -303,14 +248,7 @@ end
 let respond_not_found =
   Reqd.handle ~context:() ~body_reader:Body.ignore_reader
     ~error_handler:(fun c _ -> c)
-    ~response_writer:(fun () ->
-      `Final
-        (Response.create `OK
-           (Header.of_list
-              [
-                ("grpc-status", "12");
-                ("grpc-message", "unimplemented service/method");
-              ])))
+    ~response_writer:(fun () -> `Final (Response.create `OK not_found_trailers))
     ()
 
 let connection_handler : route_getter -> _ Eio.Net.connection_handler =

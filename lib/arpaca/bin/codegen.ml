@@ -71,7 +71,6 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     ~channel 
     ~service:"%s"
     ~method_name:%S
-    ~headers:(Grpc.Utils.make_request_headers `Proto)
     (%s.%s request)
   |> Result.map %s.%s|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
@@ -83,11 +82,10 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     | `Server_streaming ->
         F.linep sc
           {|let %s ~channel request handler =
-  Grpc.Client.Server_streaming.call 
+  Grpc.Client.ServerStreaming.call 
     ~channel 
     ~service:"%s"
     ~method_name:"%s"
-    ~headers:(Grpc.Utils.make_request_headers `Proto)
     (%s.%s request) 
     (fun ~reader -> 
         handler 
@@ -101,11 +99,10 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     | `Client_streaming ->
         F.linep sc
           {|let %s ~channel handler =
-  Grpc.Client.Client_streaming.call 
+  Grpc.Client.ClientStreaming.call 
     ~channel 
     ~service:"%s"
     ~method_name:"%s"
-    ~headers:(Grpc.Utils.make_request_headers `Proto)
     (fun ~writer -> 
         handler 
         ~writer:(function 
@@ -121,11 +118,10 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     | `Bidirectional_streaming ->
         F.linep sc
           {|let %s ~channel handler =
-  Grpc.Client.Bidirectional_streaming.call 
+  Grpc.Client.BidirectionalStreaming.call 
     ~channel 
     ~service:"%s"
     ~method_name:"%s"
-    ~headers:(Grpc.Utils.make_request_headers `Proto)
     (fun ~writer ~reader -> 
         handler 
         ~writer:(function 
@@ -147,12 +143,11 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     | `Server_streaming ->
         F.linep sc
           {|  let %s ~channel ~initial_context request reader =
-    Grpc.Client.Server_streaming.Expert.call 
+    Grpc.Client.ServerStreaming.Expert.call 
       ~channel
       ~initial_context 
       ~service:"%s"
       ~method_name:"%s"
-      ~headers:(Grpc.Utils.make_request_headers `Proto)
       (%s.%s request) 
       (fun c -> function
         | Some decoder -> reader c (%s.%s decoder)
@@ -166,14 +161,14 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     | `Client_streaming ->
         F.linep sc
           {|  let %s ~channel ~initial_context writer =
-    Grpc.Client.Client_streaming.Expert.call
+    Grpc.Client.ClientStreaming.Expert.call
       ~channel 
       ~initial_context 
       ~service:"%s"
       ~method_name:"%s"
-      ~headers:(Grpc.Utils.make_request_headers `Proto)
       (fun c -> 
-           map_fst (%s.%s |> Option.map) (writer c))
+          let msg, c = writer c in
+           (Option.map %s.%s msg, c))
     |> Result.map %s.%s|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
           (service_name_of_package service.service_packages service.service_name)
@@ -184,14 +179,14 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     | `Bidirectional_streaming ->
         F.linep sc
           {|  let %s ~channel ~initial_context writer reader =
-    Grpc.Client.Bidirectional_streaming.Expert.call 
+    Grpc.Client.BidirectionalStreaming.Expert.call 
       ~channel 
       ~initial_context 
       ~service:"%s"
       ~method_name:"%s"
-      ~headers:(Grpc.Utils.make_request_headers `Proto)
       (fun c -> 
-          map_fst (%s.%s |> Option.map) (writer c))
+          let msg, c = writer c in
+           (Option.map %s.%s msg, c))
       (fun c -> function
         | Some decoder -> reader c (%s.%s decoder)
         | None -> c)|}
@@ -204,8 +199,6 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     | _ -> ()
   in
 
-  F.linep sc "open Grpc.Utils";
-  F.empty_line sc;
   List.iteri (gen_result_rpc sc) service.service_body;
   F.empty_line sc;
   F.line sc "module Expert = struct";
@@ -303,7 +296,8 @@ let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
                 p sc "let f = %s decoder |> %s.handler in" decoder_func impl;
                 p sc "fun c ->";
                 sub sc (fun sc ->
-                    p sc "map_fst (%s |> Option.map) (f c)" encoder_func));
+                    p sc "let msg, c = f c in";
+                    p sc "(Option.map %s msg, c)" encoder_func));
             p sc "in";
             p sc "Some (ServerStreaming.respond %s.initial_context handler)"
               impl)
@@ -312,16 +306,12 @@ let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
           (String.concat "." (service.service_packages @ [ service_name ]))
           rpc_name;
         sub sc (fun sc ->
-            p sc "let reader, respond =";
-            sub sc (fun sc ->
-                p sc "let single_write = (fun c -> %s.respond c |> %s) in" impl
-                  encoder_func;
-                p sc
-                  "let reader = (fun c -> function None -> c | Some d -> \
-                   %s.reader c (%s d)) in"
-                  impl decoder_func;
-                p sc "(reader, single_write)");
-            p sc "in";
+            p sc
+              "let reader = (fun c -> function None -> c | Some d -> %s.reader \
+               c (%s d)) in"
+              impl decoder_func;
+            p sc "let respond = (fun c -> %s.respond c |> %s) in" impl
+              encoder_func;
             p sc
               "Some (ClientStreaming.respond %s.initial_context reader respond)"
               impl)
@@ -330,18 +320,12 @@ let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
           (String.concat "." (service.service_packages @ [ service_name ]))
           rpc_name;
         sub sc (fun sc ->
-            p sc "let reader, writer =";
-            sub sc (fun sc ->
-                p sc
-                  "let writer = (fun c -> map_fst (%s |> Option.map) \
-                   (%s.writer c)) in"
-                  encoder_func impl;
-                p sc
-                  "let reader = (fun c d ->  %s.reader c (Option.map (%s) d)) \
-                   in"
-                  impl decoder_func;
-                p sc "(reader, writer)");
-            p sc "in";
+            p sc
+              "let writer = (fun c -> let msg, c = (%s.writer c) in \
+               (Option.map %s msg, c)) in"
+              impl encoder_func;
+            p sc "let reader = (fun c d ->  %s.reader c (Option.map (%s) d)) in"
+              impl decoder_func;
             p sc
               "Some (BidirectionalStreaming.respond %s.initial_context reader \
                writer)"
@@ -367,8 +351,6 @@ let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
 
   let sc = top_scope in
 
-  F.linep sc "open Grpc.Utils";
-  F.empty_line sc;
   gen_imperative_impl_sig sc;
   F.empty_line sc;
   gen_connection_handler sc

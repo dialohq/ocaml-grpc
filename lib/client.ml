@@ -1,11 +1,9 @@
 open Pbrt
+open Utils
 
 (* functional style readers/writers *)
 type read_state = Reading | Done of Decoder.t
-type single_writer = Encoder.t -> unit
-type 'a stream_writer = 'a -> (Encoder.t -> unit) option * 'a
 type 'a writer = Single of single_writer | Stream of 'a stream_writer
-type 'a stream_reader = 'a -> Decoder.t option -> 'a
 type 'a reader = Single | Stream of 'a stream_reader
 
 (* imperative style readers/writers *)
@@ -39,7 +37,7 @@ let single_write : single_writer -> context Channel.data_writer =
   let length = Encoder.length encoder in
 
   let header_buffer = Cstruct.create 5 in
-  Utils.fill_header_cs ~length header_buffer;
+  fill_header ~length header_buffer;
 
   let body_buffer = Cstruct.create length in
   Encoder.blit_to_buffer ~blit_from_bytes:Cstruct.blit_from_bytes encoder
@@ -77,7 +75,7 @@ let multi_write :
       encode_request encoder;
       let length = Encoder.length encoder in
 
-      Utils.fill_header_cs ~length header_buffer;
+      fill_header ~length header_buffer;
 
       Encoder.blit_to_buffer ~blit_from_bytes:Cstruct.blit_from_bytes encoder
         body_buffer 0;
@@ -129,11 +127,10 @@ let generic_call :
     initial_context:'a ->
     service:string ->
     method_name:string ->
-    headers:Utils.request_headers ->
     'a writer ->
     'a reader ->
     context Channel.stream_result Eio.Promise.t =
- fun ~channel ~initial_context ~service ~method_name ~headers writer reader ->
+ fun ~channel ~initial_context ~service ~method_name writer reader ->
   let data_writer, write_data =
     match writer with
     | Single encode_request -> (single_write encode_request, Obj.magic ())
@@ -162,7 +159,10 @@ let generic_call :
       }
   in
 
-  let path = Utils.make_path ~service ~method_name in
+  let path = Printf.sprintf "/%s/%s" service method_name in
+  let headers =
+    [ ("te", "trailers"); ("content-type", "application/grpc+proto") ]
+  in
   Channel.start_request ~headers ~data_writer ~data_receiver ~path
     ~initial_context channel
 
@@ -171,12 +171,11 @@ let generic_imperaive_call :
     channel:context Channel.t ->
     service:string ->
     method_name:string ->
-    headers:Utils.request_headers ->
     'a imp_handler ->
     context Channel.stream_result Eio.Promise.t * 'a Eio.Promise.t =
- fun ~sw ~channel ~service ~method_name ~headers handler ->
+ fun ~sw ~channel ~service ~method_name handler ->
   let call_generic =
-    generic_call ~channel ~initial_context:() ~service ~method_name ~headers
+    generic_call ~channel ~initial_context:() ~service ~method_name
   in
   match handler with
   | Bi bi_handler ->
@@ -216,14 +215,13 @@ module Unary = struct
       channel:context Channel.t ->
       service:string ->
       method_name:string ->
-      headers:Utils.request_headers ->
       (Encoder.t -> unit) ->
       (Decoder.t, Status.t) result =
-   fun ~channel ~service ~method_name ~headers encode_request ->
+   fun ~channel ~service ~method_name encode_request ->
     match
       Eio.Promise.await
       @@ generic_call ~initial_context:(Obj.magic ()) ~channel ~service
-           ~method_name ~headers (Single encode_request) Single
+           ~method_name (Single encode_request) Single
     with
     | {
      status = { code = OK; _ };
@@ -243,22 +241,21 @@ module Unary = struct
     | { status; _ } -> Error status
 end
 
-module Server_streaming = struct
+module ServerStreaming = struct
   module Expert = struct
     let call :
         channel:context Channel.t ->
         initial_context:'a ->
         service:string ->
         method_name:string ->
-        headers:Utils.request_headers ->
         (Encoder.t -> unit) ->
         'a stream_reader ->
         (unit, Status.t) result =
-     fun ~channel ~initial_context ~service ~method_name ~headers encode_request
+     fun ~channel ~initial_context ~service ~method_name encode_request
          read_handler ->
       match
         Eio.Promise.await
-        @@ generic_call ~channel ~initial_context ~service ~method_name ~headers
+        @@ generic_call ~channel ~initial_context ~service ~method_name
              (Single encode_request) (Stream read_handler)
       with
       | { status = { code = OK; _ }; _ } -> Ok ()
@@ -269,14 +266,13 @@ module Server_streaming = struct
       channel:context Channel.t ->
       service:string ->
       method_name:string ->
-      headers:Utils.request_headers ->
       (Encoder.t -> unit) ->
       'a reading_handler ->
       ('a, Status.t) result =
-   fun ~channel ~service ~method_name ~headers encode_request handler ->
+   fun ~channel ~service ~method_name encode_request handler ->
     Eio.Switch.run @@ fun sw ->
     let status_promise, handler_promise =
-      generic_imperaive_call ~sw ~channel ~service ~method_name ~headers
+      generic_imperaive_call ~sw ~channel ~service ~method_name
         (Reading (handler, encode_request))
     in
     match Eio.Promise.await status_promise with
@@ -284,20 +280,19 @@ module Server_streaming = struct
     | { status; _ } -> Error status
 end
 
-module Client_streaming = struct
+module ClientStreaming = struct
   module Expert = struct
     let call :
         channel:context Channel.t ->
         initial_context:'a ->
         service:string ->
         method_name:string ->
-        headers:Utils.request_headers ->
         'a stream_writer ->
         (Decoder.t, Status.t) result =
-     fun ~channel ~initial_context ~service ~method_name ~headers handler ->
+     fun ~channel ~initial_context ~service ~method_name handler ->
       match
         Eio.Promise.await
-        @@ generic_call ~channel ~initial_context ~service ~method_name ~headers
+        @@ generic_call ~channel ~initial_context ~service ~method_name
              (Stream handler) Single
       with
       | {
@@ -312,13 +307,12 @@ module Client_streaming = struct
       channel:context Channel.t ->
       service:string ->
       method_name:string ->
-      headers:Utils.request_headers ->
       'a writing_handler ->
       (Decoder.t * 'a, Status.t) result =
-   fun ~channel ~service ~method_name ~headers handler ->
+   fun ~channel ~service ~method_name handler ->
     Eio.Switch.run @@ fun sw ->
     let status_promise, handler_promise =
-      generic_imperaive_call ~sw ~channel ~service ~method_name ~headers
+      generic_imperaive_call ~sw ~channel ~service ~method_name
         (Writing handler)
     in
     match Eio.Promise.await status_promise with
@@ -330,22 +324,21 @@ module Client_streaming = struct
     | { status; _ } -> Error status
 end
 
-module Bidirectional_streaming = struct
+module BidirectionalStreaming = struct
   module Expert = struct
     let call :
         channel:context Channel.t ->
         initial_context:'a ->
         service:string ->
         method_name:string ->
-        headers:Utils.request_headers ->
         'a stream_writer ->
         'a stream_reader ->
         (unit, Status.t) result =
-     fun ~channel ~initial_context ~service ~method_name ~headers write_handler
+     fun ~channel ~initial_context ~service ~method_name write_handler
          read_handler ->
       match
         Eio.Promise.await
-        @@ generic_call ~channel ~initial_context ~service ~method_name ~headers
+        @@ generic_call ~channel ~initial_context ~service ~method_name
              (Stream write_handler) (Stream read_handler)
       with
       | { status = { code = OK; _ }; _ } -> Ok ()
@@ -356,14 +349,12 @@ module Bidirectional_streaming = struct
       channel:context Channel.t ->
       service:string ->
       method_name:string ->
-      headers:Utils.request_headers ->
       'a bi_handler ->
       ('a, Status.t) result =
-   fun ~channel ~service ~method_name ~headers handler ->
+   fun ~channel ~service ~method_name handler ->
     Eio.Switch.run @@ fun sw ->
     let status_promise, handler_promise =
-      generic_imperaive_call ~sw ~channel ~service ~method_name ~headers
-        (Bi handler)
+      generic_imperaive_call ~sw ~channel ~service ~method_name (Bi handler)
     in
     match Eio.Promise.await status_promise with
     | { status = { code = OK; _ }; _ } -> Ok (Eio.Promise.await handler_promise)

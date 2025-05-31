@@ -84,7 +84,7 @@
             duneVersion = "3";
             nativeBuildInputs = with camlPkgs; [mdx];
             propagatedBuildInputs = with camlPkgs; [ppxlib];
-            buildInputs = with camlPkgs; [uri haha hpackv ppx_deriving ppx_yojson_conv];
+            buildInputs = with camlPkgs; [uri haha hpackv ppx_deriving];
             src = nix-filter.lib.filter {
               root = ./.;
               include = ["dune-project" "lib/grpc"];
