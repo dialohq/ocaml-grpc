@@ -158,7 +158,7 @@ let get_server (features : feature_list) clock =
         | `End -> (None, `End)
     end
   end in
-  (module RouteGuideServerImplementation : RouteGuideServer.Implementation)
+  (module RouteGuideServerImplementation : Route_guide_server.Implementation)
 
 let serve env addr connection_handler : unit =
   Eio.Switch.run @@ fun sw ->
@@ -188,4 +188,4 @@ let () =
 
   Eio_main.run (fun env ->
       serve env addr
-        (RouteGuideServer.connection_handler (get_server features env#clock)))
+        (Route_guide_server.connection_handler (get_server features env#clock)))

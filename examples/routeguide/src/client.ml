@@ -14,7 +14,7 @@ let get_feature channel =
   in
 
   Printf.printf "[UNARY] Getting a feature...\n%!";
-  match RouteGuideClient.get_feature ~channel request with
+  match Route_guide_client.get_feature ~channel request with
   | Error status ->
       Format.printf "[UNARY] Error getting a feature: %a@." Grpc.Status.pp
         status
@@ -41,8 +41,8 @@ let list_features channel =
 
   Printf.printf "[S_STREAMING] Listing features...\n%!";
   match
-    RouteGuideClient.Expert.list_features ~channel ~initial_context:1 rectangle
-      handler
+    Route_guide_client.Expert.list_features ~channel ~initial_context:1
+      rectangle handler
   with
   | Error status ->
       Format.printf "[S_STREAMING] Error listing features: %a@." Grpc.Status.pp
@@ -67,7 +67,7 @@ let run_record_route channel clock =
 
   Printf.printf "[C_STREAMING] Sending points...\n%!";
   match
-    RouteGuideClient.Expert.record_route ~channel ~initial_context:1 handler
+    Route_guide_client.Expert.record_route ~channel ~initial_context:1 handler
   with
   | Error status ->
       Format.printf "[C_STREAMING] Error recording route: %a@." Grpc.Status.pp
@@ -137,7 +137,7 @@ let run_route_chat channel clock =
 
   Printf.printf "[BI_STREAMING] Exchanging notes...\n%!";
   match
-    RouteGuideClient.Expert.route_chat ~initial_context:(1, 1, route_notes)
+    Route_guide_client.Expert.route_chat ~initial_context:(1, 1, route_notes)
       ~channel writer reader
   with
   | Error status ->

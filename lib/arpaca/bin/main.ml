@@ -142,10 +142,11 @@ let client_cmd =
               let scope = Pb_codegen_formatting.empty_scope () in
               Codegen.gen_service_client_struct ~proto_gen_module svc scope;
 
-              let out =
-                Out_channel.open_text
-                  (output ^ "/" ^ svc.service_name ^ suffix ^ ".ml")
+              let filename =
+                svc.service_name ^ suffix ^ ".ml"
+                |> Codegen.to_snake_case |> String.uncapitalize_ascii
               in
+              let out = Out_channel.open_text (output ^ "/" ^ filename) in
 
               Pb_codegen_all.F.output out scope)
             proto_services)
@@ -166,10 +167,11 @@ let server_cmd =
               let scope = Pb_codegen_formatting.empty_scope () in
               Codegen.gen_service_server_struct ~proto_gen_module svc scope;
 
-              let out =
-                Out_channel.open_text
-                  (output ^ "/" ^ svc.service_name ^ suffix ^ ".ml")
+              let filename =
+                svc.service_name ^ suffix ^ ".ml"
+                |> Codegen.to_snake_case |> String.uncapitalize_ascii
               in
+              let out = Out_channel.open_text (output ^ "/" ^ filename) in
 
               Pb_codegen_all.F.output out scope)
             proto_services)
