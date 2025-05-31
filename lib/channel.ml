@@ -49,7 +49,7 @@ type 'c stream_context = {
 [@@deriving show]
 
 type 'c connection = {
-  next_iter : unit -> 'c stream_context Client.iteration;
+  next_iter : unit -> Client.iteration;
   open_streams : int;
   start_stream : 'c stream_request -> unit;
   shutdown : unit -> unit;
@@ -71,60 +71,38 @@ let combine :
     _ state option =
  fun x y state -> Option.bind (x state) y
 
-let stream_error_handler :
-    _ stream_context -> H2.Error_code.t -> _ stream_context =
- fun context code ->
-  {
-    context with
-    result =
-      Some
-        {
-          Status.code = status_of_h2_error code;
-          info =
-            Some
-              (Message
-                 (Format.asprintf "HTTP/2 stream error, code %a"
-                    H2.Error_code.pp_hum code));
-        };
-  }
-
-let resolve_streams :
-    ?err:H2.Error.connection_error -> (int32 * _ stream_context) list -> unit =
- fun ?err closed_ctxs ->
-  List.iter
-    (fun (_, { grpc_context; result; resolver }) ->
-      (match (result, err) with
-      | None, None ->
-          {
-            grpc_context;
-            status =
-              {
-                code = Unknown;
-                info =
-                  Some
-                    (Message
-                       "gRPC protocol error: No gRPC status found in the \
-                        HTTP/2 response trailers");
-              };
-          }
-      | Some status, _ -> { status; grpc_context }
-      | None, Some (ProtocolViolation (code, msg) | PeerError (code, msg)) ->
-          {
-            grpc_context;
-            status =
-              {
-                code = status_of_h2_error code;
-                info =
-                  Some
-                    (Message
-                       (Format.asprintf "HTTP/2 connection error, code %a: %s"
-                          H2.Error_code.pp_hum code msg));
-              };
-          }
-      | None, Some (Exn exn) ->
-          { grpc_context; status = { code = Internal; info = Some (Exn exn) } })
-      |> Promise.resolve resolver)
-    closed_ctxs
+let stream_error_handler : _ stream_context -> H2.Error.t -> _ stream_context =
+ fun context -> function
+  | StreamError (_, code) ->
+      {
+        context with
+        result =
+          Some
+            {
+              Status.code = status_of_h2_error code;
+              info =
+                Some
+                  (Message
+                     (Format.asprintf "HTTP/2 stream error, code %a"
+                        H2.Error_code.pp_hum code));
+            };
+      }
+  | ConnectionError (Exn exn) ->
+      { context with result = Some { code = Internal; info = Some (Exn exn) } }
+  | ConnectionError (ProtocolViolation (code, msg) | PeerError (code, msg)) ->
+      {
+        context with
+        result =
+          Some
+            {
+              code = status_of_h2_error code;
+              info =
+                Some
+                  (Message
+                     (Format.asprintf "HTTP/2 connection error, code %a: %s"
+                        H2.Error_code.pp_hum code msg));
+            };
+      }
 
 let make_connections_events :
     int -> _ connection -> unit -> _ state -> _ state option =
@@ -134,14 +112,9 @@ let make_connections_events :
   fun state ->
     let new_pool =
       match iteration.state with
-      | End ->
-          resolve_streams iteration.closed_ctxs;
-          List.filteri (fun i _ -> i <> idx) state.connection_pool
-      | Error err ->
-          resolve_streams ~err iteration.closed_ctxs;
-          List.filteri (fun i _ -> i <> idx) state.connection_pool
+      | End -> List.filteri (fun i _ -> i <> idx) state.connection_pool
+      | Error _ -> List.filteri (fun i _ -> i <> idx) state.connection_pool
       | InProgress next_iter ->
-          resolve_streams iteration.closed_ctxs;
           List.mapi
             (fun i conn ->
               if i = idx then (
@@ -149,8 +122,7 @@ let make_connections_events :
                   {
                     conn with
                     next_iter;
-                    open_streams =
-                      conn.open_streams - List.length iteration.closed_ctxs;
+                    open_streams = iteration.active_streams;
                   }
                 in
 
@@ -166,7 +138,7 @@ let make_connections_events :
     if List.is_empty new_pool && state.shutdown then None
     else Some { state with connection_pool = new_pool }
 
-let make_request : Uri.t -> _ stream_request -> _ stream_context H2.Request.t =
+let make_request : Uri.t -> _ stream_request -> H2.Request.t =
  fun uri
      {
        headers;
@@ -181,8 +153,8 @@ let make_request : Uri.t -> _ stream_request -> _ stream_context H2.Request.t =
       [ ("te", headers.te); ("content-type", headers.content_type) ]
   in
 
-  let body_writer : _ stream_context H2.Body.body_writer =
-   fun context ~window_size:_ ->
+  let body_writer : _ stream_context H2.Body.writer =
+   fun context ->
     let data, grpc_context = data_writer context.grpc_context in
     match data with
     | Some cs_l ->
@@ -199,22 +171,17 @@ let make_request : Uri.t -> _ stream_request -> _ stream_context H2.Request.t =
         }
   in
 
-  let on_data : _ stream_context H2.Body.body_reader =
+  let on_data : _ stream_context H2.Body.reader =
    fun context -> function
     | `Data cs ->
         let grpc_context = data_receiver context.grpc_context (Some cs) in
-        { action = `Continue; context = { context with grpc_context } }
-    | `End (cs_opt, trailers) -> (
-        let grpc_context = data_receiver context.grpc_context cs_opt in
+        { context with grpc_context }
+    | `End trailers -> (
+        let grpc_context = data_receiver context.grpc_context None in
 
         match find_grpc_status trailers with
-        | Some status ->
-            {
-              action = `Continue;
-              context = { context with grpc_context; result = Some status };
-            }
-        | None ->
-            { action = `Continue; context = { context with grpc_context } })
+        | Some status -> { context with grpc_context; result = Some status }
+        | None -> { context with grpc_context })
   in
 
   let response_handler : _ stream_context H2.Response.handler =
@@ -251,6 +218,28 @@ let make_request : Uri.t -> _ stream_request -> _ stream_context H2.Request.t =
         (None, context)
   in
 
+  let on_close : _ stream_context -> unit =
+   fun { result; grpc_context; resolver } ->
+    let unknown_result =
+      {
+        grpc_context;
+        status =
+          {
+            code = Unknown;
+            info =
+              Some
+                (Message
+                   "gRPC protocol error: No gRPC status found in the HTTP/2 \
+                    response trailers");
+          };
+      }
+    in
+
+    match result with
+    | Some status -> Promise.resolve resolver { status; grpc_context }
+    | None -> Promise.resolve resolver unknown_result
+  in
+
   let initial_stream_state =
     {
       result = None;
@@ -261,7 +250,8 @@ let make_request : Uri.t -> _ stream_request -> _ stream_context H2.Request.t =
 
   H2.Request.create_with_streaming ~context:initial_stream_state
     ?scheme:(Uri.scheme uri) ?authority:(Uri.host uri) ~headers
-    ~error_handler:stream_error_handler ~response_handler ~body_writer POST path
+    ~error_handler:stream_error_handler ~on_close ~response_handler ~body_writer
+    POST path
 
 let start_connection :
     connect_socket:(unit -> (_ Net.stream_socket, exn) result) ->
@@ -273,11 +263,11 @@ let start_connection :
   match connect_socket () with
   | Error exn -> Error (`Exn exn)
   | Ok socket -> (
-      let request_stream : _ stream_context H2.Request.t option Stream.t =
+      let request_stream : H2.Request.t option Stream.t =
         Stream.create max_int
       in
 
-      let request_writer : unit -> _ stream_context H2.Request.t option =
+      let request_writer : unit -> H2.Request.t option =
        fun () -> Stream.take request_stream
       in
 

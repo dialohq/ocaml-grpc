@@ -146,7 +146,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     match rpc_kind rpc.rpc_req rpc.rpc_res with
     | `Server_streaming ->
         F.linep sc
-          {|  let %s ~channel ~initial_context request handler =
+          {|  let %s ~channel ~initial_context request reader =
     Grpc.Client.Server_streaming.Expert.call 
       ~channel
       ~initial_context 
@@ -155,7 +155,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
       ~headers:(Grpc.Utils.make_request_headers `Proto)
       (%s.%s request) 
       (fun c -> function
-        | Some decoder -> handler c (%s.%s decoder)
+        | Some decoder -> reader c (%s.%s decoder)
         | None -> c)|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
           (service_name_of_package service.service_packages service.service_name)
@@ -165,7 +165,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
           (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_res)
     | `Client_streaming ->
         F.linep sc
-          {|  let %s ~channel ~initial_context handler =
+          {|  let %s ~channel ~initial_context writer =
     Grpc.Client.Client_streaming.Expert.call
       ~channel 
       ~initial_context 
@@ -173,8 +173,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
       ~method_name:"%s"
       ~headers:(Grpc.Utils.make_request_headers `Proto)
       (fun c -> 
-          let msg, c = handler c in
-          (msg |> Option.map %s.%s, c))
+           map_fst (%s.%s |> Option.map) (writer c))
     |> Result.map %s.%s|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
           (service_name_of_package service.service_packages service.service_name)
@@ -192,8 +191,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
       ~method_name:"%s"
       ~headers:(Grpc.Utils.make_request_headers `Proto)
       (fun c -> 
-          let msg, c = writer c in 
-          (msg |> Option.map %s.%s, c))
+          map_fst (%s.%s |> Option.map) (writer c))
       (fun c -> function
         | Some decoder -> reader c (%s.%s decoder)
         | None -> c)|}
@@ -206,6 +204,8 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
     | _ -> ()
   in
 
+  F.linep sc "open Grpc.Utils";
+  F.empty_line sc;
   List.iteri (gen_result_rpc sc) service.service_body;
   F.empty_line sc;
   F.line sc "module Expert = struct";
@@ -218,141 +218,166 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
 
 let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
     : unit =
+  let sub = F.sub_scope in
+  let p = F.linep in
+  let el = F.empty_line in
+
   let typ_mod_name = String.capitalize_ascii proto_gen_module in
   let gen_rpc_sig sc i (rpc : Ot.rpc) =
     if i > 0 then F.empty_line sc;
     let name = Pb_codegen_util.function_name_of_rpc rpc in
 
-    F.linep sc "val %s :" (to_snake_case name);
-    (* F.linep sc *)
-    (*   "  Eio.Net.Sockaddr.stream * H2.Reqd.t * H2.Request.t * H2.Reqd.error \ *)
-    (*    Eio.Promise.t ->"; *)
-    F.linep sc "  net_request ->";
+    p sc "module %s : sig" (String.capitalize_ascii name);
     let req_type =
       Printf.sprintf "%s.%s" typ_mod_name (ocaml_type_of_rpc_type rpc.rpc_req)
     in
     let res_type =
       Printf.sprintf "%s.%s" typ_mod_name (ocaml_type_of_rpc_type rpc.rpc_res)
     in
-    match rpc_kind rpc.rpc_req rpc.rpc_res with
-    | `Unary ->
-        F.linep sc {|  %s ->
-    %s * (string * string) list|} req_type res_type
-    | `Client_streaming ->
-        F.linep sc
-          {|  %s Seq.t ->
-    %s * (string * string) list|}
-          req_type res_type
-    | `Server_streaming ->
-        F.linep sc
-          {|  %s ->
-    (%s -> unit) ->
-    (string * string) list|}
-          req_type res_type
-    | `Bidirectional_streaming ->
-        F.linep sc
-          {|  %s Seq.t ->
-    (%s -> unit) ->
-    (string * string) list|}
-          req_type res_type
+    sub sc (fun sc ->
+        match rpc_kind rpc.rpc_req rpc.rpc_res with
+        | `Unary -> p sc "val handler : %s -> %s" req_type res_type
+        | `Client_streaming ->
+            p sc "type context";
+            el sc;
+            p sc "val initial_context : context";
+            p sc "val reader : (context -> %s -> context)" req_type;
+            p sc "val respond : (context -> %s)" res_type
+        | `Server_streaming ->
+            p sc "type context";
+            el sc;
+            p sc "val initial_context : context";
+            p sc "val handler : %s -> (context -> %s option * context)" req_type
+              res_type
+        | `Bidirectional_streaming ->
+            p sc "type context";
+            el sc;
+            p sc "val initial_context : context";
+            p sc "val reader : (context -> %s option -> context)" req_type;
+            p sc "val writer : (context -> %s option * context)" res_type);
+    p sc "end"
   in
 
-  let gen_impl_sig sc =
-    List.iteri (gen_rpc_sig sc) service.service_body
-    (* now generate a function from the module type to a [Service_server.t] *)
+  let gen_imperative_impl_sig sc =
+    p sc "module type Implementation = sig";
+    sub sc (fun sc -> List.iteri (gen_rpc_sig sc) service.service_body);
+    p sc "end"
   in
 
-  let gen_rpc_handler sc (rpc : Ot.rpc) =
+  let gen_rpc_match sc (rpc : Ot.rpc) =
     let rpc_name = rpc.rpc_name in
     let service_name = service.service_name in
-
-    F.linep sc {|| "%s", %S ->|}
-      (String.concat "." (service.service_packages @ [ service.service_name ]))
-      rpc.rpc_name;
-    let impl = Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case in
-
     let decoder_func =
       Printf.sprintf "%s.%s" typ_mod_name
         (function_name_decode_pb ~service_name ~rpc_name rpc.rpc_req)
+    in
+    let impl =
+      Printf.sprintf "Impl.%s"
+      @@ (Pb_codegen_util.function_name_of_rpc rpc |> String.capitalize_ascii)
     in
     let encoder_func =
       Printf.sprintf "%s.%s" typ_mod_name
         (function_name_encode_pb ~service_name ~rpc_name rpc.rpc_res)
     in
 
-    let p = F.linep in
-    let sub = F.sub_scope in
-
-    sub sc (fun sc ->
-        p sc {|fun req { Grpc_server_eio.Rpc.accept } ->|};
+    match rpc_kind rpc.rpc_req rpc.rpc_res with
+    | `Unary ->
+        p sc {|| "%s", %S ->|}
+          (String.concat "." (service.service_packages @ [ service_name ]))
+          rpc_name;
         sub sc (fun sc ->
-            p sc {|accept Grpc_server.headers_grpc_proto|};
+            p sc "let handler decoder =";
             sub sc (fun sc ->
-                match rpc_kind rpc.rpc_req rpc.rpc_res with
-                | `Unary ->
-                    p sc {|(Grpc_server_eio.Rpc.unary (fun grpc_req ->|};
-                    F.line sc {|let response, trailers =|};
-                    sub sc (fun sc ->
-                        p sc {|Impl.%s req (grpc_req.Body_reader.consume %s)|}
-                          impl decoder_func);
-                    F.line sc "in";
-                    p sc {|((%s response), trailers )))|} encoder_func
-                | `Client_streaming ->
-                    p sc
-                      {|(Grpc_server_eio.Rpc.client_streaming (fun grpc_req_seq ->|};
-                    p sc {|let response, trailers =|};
-                    sub sc (fun sc ->
-                        p sc {|Impl.%s req|} impl;
-                        sub sc (fun sc ->
-                            p sc {|(Seq.map (fun grpc_req ->|};
-                            sub sc (fun sc ->
-                                p sc {|grpc_req.Body_reader.consume %s|}
-                                  decoder_func);
-                            p sc {|) grpc_req_seq)|}));
-                    p sc "in";
-                    p sc {|((%s response), trailers)))|} encoder_func
-                | `Server_streaming ->
-                    p sc
-                      {|(Grpc_server_eio.Rpc.server_streaming (fun grpc_req write ->|};
-                    p sc {|let trailers =|};
-                    sub sc (fun sc ->
-                        p sc {|Impl.%s req|} impl;
-                        sub sc (fun sc ->
-                            p sc {|(grpc_req.Body_reader.consume %s)|}
-                              decoder_func;
-                            p sc {|(fun resp -> write (%s resp))|} encoder_func));
-                    p sc "in";
-                    p sc {|trailers))|}
-                | `Bidirectional_streaming ->
-                    p sc {|(fun grpc_req_seq write ->|};
-                    p sc {|let trailers =|};
-                    sub sc (fun sc ->
-                        p sc {|Impl.%s req|} impl;
-                        sub sc (fun sc ->
-                            p sc
-                              {|(Seq.map (fun grpc_req -> grpc_req.Body_reader.consume %s) grpc_req_seq)|}
-                              decoder_func;
-                            p sc {|(fun resp -> write (%s resp))|} encoder_func));
-                    p sc "in";
-                    p sc {|trailers)|})))
+                p sc "%s decoder" decoder_func;
+                p sc "|> %s.handler" impl;
+                p sc "|> %s" encoder_func);
+            p sc "in";
+            p sc "Some (Unary.respond handler)")
+    | `Server_streaming ->
+        p sc {|| "%s", %S ->|}
+          (String.concat "." (service.service_packages @ [ service_name ]))
+          rpc_name;
+        sub sc (fun sc ->
+            p sc "let handler decoder =";
+            sub sc (fun sc ->
+                p sc "let f = %s decoder |> %s.handler in" decoder_func impl;
+                p sc "fun c ->";
+                sub sc (fun sc ->
+                    p sc "map_fst (%s |> Option.map) (f c)" encoder_func));
+            p sc "in";
+            p sc "Some (ServerStreaming.respond %s.initial_context handler)"
+              impl)
+    | `Client_streaming ->
+        p sc {|| "%s", %S ->|}
+          (String.concat "." (service.service_packages @ [ service_name ]))
+          rpc_name;
+        sub sc (fun sc ->
+            p sc "let reader, respond =";
+            sub sc (fun sc ->
+                p sc "let single_write = (fun c -> %s.respond c |> %s) in" impl
+                  encoder_func;
+                p sc
+                  "let reader = (fun c -> function None -> c | Some d -> \
+                   %s.reader c (%s d)) in"
+                  impl decoder_func;
+                p sc "(reader, single_write)");
+            p sc "in";
+            p sc
+              "Some (ClientStreaming.respond %s.initial_context reader respond)"
+              impl)
+    | `Bidirectional_streaming ->
+        p sc {|| "%s", %S ->|}
+          (String.concat "." (service.service_packages @ [ service_name ]))
+          rpc_name;
+        sub sc (fun sc ->
+            p sc "let reader, writer =";
+            sub sc (fun sc ->
+                p sc
+                  "let writer = (fun c -> map_fst (%s |> Option.map) \
+                   (%s.writer c)) in"
+                  encoder_func impl;
+                p sc
+                  "let reader = (fun c d ->  %s.reader c (Option.map (%s) d)) \
+                   in"
+                  impl decoder_func;
+                p sc "(reader, writer)");
+            p sc "in";
+            p sc
+              "Some (BidirectionalStreaming.respond %s.initial_context reader \
+               writer)"
+              impl)
+  in
+
+  let gen_connection_handler (sc : F.scope) =
+    p sc "let connection_handler (module Impl : Implementation) =";
+    sub sc (fun sc ->
+        p sc "let open Grpc.Server in";
+        p sc {|let get_route : Grpc.Server.route_getter =|};
+        sub sc (fun sc ->
+            p sc {|fun ~service ~meth ->|};
+            sub sc (fun sc ->
+                p sc "match (service, meth) with";
+                List.iter (gen_rpc_match sc) service.service_body;
+                p sc "| _ -> None"));
+
+        p sc "in";
+        el sc;
+        p sc "connection_handler get_route")
   in
 
   let sc = top_scope in
 
-  F.line sc "open Grpc.Legacy_modules";
+  F.linep sc "open Grpc.Utils";
   F.empty_line sc;
-  F.line sc "module type Implementation = sig";
-  F.line sc "  type net_request";
+  gen_imperative_impl_sig sc;
   F.empty_line sc;
-  F.sub_scope sc gen_impl_sig;
-  F.line sc "end";
-  F.empty_line sc;
-  F.linep sc
-    "let create_server (type net_request) (module Impl : Implementation with \
-     type net_request = net_request) ~service ~meth =";
-  F.sub_scope sc (fun sc ->
-      F.linep sc "match (service, meth) with";
-      List.iter (gen_rpc_handler sc) service.service_body;
-      F.linep sc
-        {|| _ ->
-    raise (Grpc_server_eio.Server_error (Grpc_utils.Status.make Unimplemented, []))|})
+  gen_connection_handler sc
+(* F.linep sc *)
+(*   "let create_server (type net_request) (module Impl : Implementation with \ *)
+  (*    type net_request = net_request) ~service ~meth =" *)
+(* F.sub_scope sc (fun sc -> *)
+(*     F.linep sc "match (service, meth) with"; *)
+(*     List.iter (gen_rpc_handler sc) service.service_body; *)
+(*     F.linep sc *)
+(*       {|| _ -> *)
+  (*   raise (Grpc_server_eio.Server_error (Grpc_utils.Status.make Unimplemented, []))|}) *)

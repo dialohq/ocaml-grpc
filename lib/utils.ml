@@ -23,3 +23,5 @@ let make_request_headers ?(te = []) format =
 
 let make_path ~service ~method_name =
   Printf.sprintf "/%s/%s" service method_name
+
+let map_fst f (x, y) = (f x, y)

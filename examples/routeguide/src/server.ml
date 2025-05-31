@@ -2,7 +2,6 @@ open Routeguide_proto
 module Pb = Route_guide
 
 type feature_list = Pb.feature list [@@deriving of_yojson { exn = true }]
-type trailers = (string * string) list
 
 let in_range (point : Pb.point) (rect : Pb.rectangle) : bool =
   let lo = Option.get rect.lo in
@@ -54,117 +53,120 @@ let unary_counter = ref 0
 
 let get_server (features : feature_list) clock =
   let module RouteGuideServerImplementation = struct
-    (* underlaying protocol request (HTTP/2 in this case, and most cases) *)
-    type net_request = Grpc.Haha_server_io.Net_request.t
+    module GetFeature = struct
+      let handler : Pb.point -> Pb.feature =
+       fun point ->
+        (* incr unary_counter; *)
+        Printf.printf "[UNARY] /GetFeature #%i\n%!" !unary_counter;
 
-    let get_feature : net_request -> Pb.point -> Pb.feature * trailers =
-     fun _ point ->
-      (* incr unary_counter; *)
-      Printf.printf "[UNARY] /GetFeature #%i\n%!" !unary_counter;
+        (* if !unary_counter <> 6 then Eio.Time.sleep clock 3.; *)
+        match
+          List.find_opt
+            (fun (f : Pb.feature) -> f.location = Some point)
+            features
+        with
+        | Some feature ->
+            Format.printf "[UNARY] Feature found: %a@." Pb.pp_feature feature;
+            feature
+        | None ->
+            Format.printf "[UNARY] Feature not found.@.";
+            { Pb.location = None; name = "" }
+    end
 
-      (* if !unary_counter <> 6 then Eio.Time.sleep clock 3.; *)
-      match
-        List.find_opt (fun (f : Pb.feature) -> f.location = Some point) features
-      with
-      | Some feature ->
-          Format.printf "[UNARY] Feature found: %a@." Pb.pp_feature feature;
-          (feature, [])
-      | None ->
-          Format.printf "[UNARY] Feature not found.@.";
-          ({ Pb.location = None; name = "" }, [])
+    module ListFeatures = struct
+      type context = Pb.feature Seq.t
 
-    let list_features :
-        net_request -> Pb.rectangle -> (Pb.feature -> unit) -> trailers =
-     fun _ rectangle write ->
-      Printf.printf "[S_STREAMING] /ListFeatures\n%!";
+      let initial_context = list_take 10 features |> List.to_seq
 
-      List.iter
-        (fun (feature : Pb.feature) ->
-          if in_range (Option.get feature.location) rectangle then (
-            write feature;
-            Format.printf "[S_STREAMING] Sent a feature: %a@." Pb.pp_feature
-              feature;
-            Eio.Time.sleep clock 0.1)
-          else ())
-        (list_take 10 features);
-      []
+      let handler : Pb.rectangle -> context -> Pb.feature option * context =
+       fun rectangle ->
+        Printf.printf "[S_STREAMING] /ListFeatures\n%!";
+        Format.printf "[S_STREAMING] Received a rectangle %a@." Pb.pp_rectangle
+          rectangle;
+        fun feature_seq ->
+          Eio.Time.sleep clock 0.1;
+          match feature_seq () with
+          | Seq.Cons ((feature : Pb.feature), next) ->
+              if in_range (Option.get feature.location) rectangle then (
+                Format.printf "[S_STREAMING] Sending a feature: %a@."
+                  Pb.pp_feature feature;
+                (Some feature, next))
+              else Eio.Fiber.await_cancel ()
+          | Seq.Nil -> (None, feature_seq)
+    end
 
-    let record_route :
-        net_request -> Pb.point Seq.t -> Pb.route_summary * trailers =
-     fun _ read ->
-      Printf.printf "[C_STREAMING] /RecordRoute\n%!";
-      let start = Eio.Time.now clock in
+    module RecordRoute = struct
+      type context = int * int * int * Pb.point option * float
 
-      let point_count, feature_count, distance =
-        let rec loop_seq :
-            int * int * int ->
-            Pb.point option ->
-            Pb.point Seq.t ->
-            int * int * int =
-         fun (point_count, feature_count, distance) last_point read ->
-          match read () with
-          | Seq.Nil -> (point_count, feature_count, distance)
-          | Cons (point, rest) ->
-              Format.printf "[C_STREAMING] Received a point: %a@." Pb.pp_point
-                point;
+      let initial_context = (0, 0, 0, None, 0.)
 
-              let point_count = point_count + 1 in
+      let reader : context -> Pb.point -> context =
+        (* Printf.printf "[C_STREAMING] /RecordRoute\n%!"; *)
+        let start = Eio.Time.now clock in
+        fun (point_count, feature_count, distance, last_point, _) point ->
+          Format.printf "[C_STREAMING] Received a point: %a@." Pb.pp_point point;
 
-              let feature_count =
-                List.find_all
-                  (fun (feature : Pb.feature) -> feature.location = Some point)
-                  features
-                |> fun x -> List.length x + feature_count
-              in
+          let point_count = point_count + 1 in
 
-              let distance =
-                match last_point with
-                | Some last_point -> calc_distance last_point point
-                | None -> distance
-              in
-              loop_seq (point_count, feature_count, distance) (Some point) rest
-        in
-        loop_seq (0, 0, 0) None read
-      in
+          let feature_count =
+            List.find_all
+              (fun (feature : Pb.feature) -> feature.location = Some point)
+              features
+            |> fun x -> List.length x + feature_count
+          in
 
-      ( {
+          let distance =
+            match last_point with
+            | Some last_point -> calc_distance last_point point
+            | None -> distance
+          in
+
+          (point_count, feature_count, distance, Some point, start)
+
+      let respond : context -> Pb.route_summary =
+       fun (point_count, feature_count, distance, _, start) ->
+        Printf.printf "[C_STREAMING] Responding with summary...\n%!";
+        {
           Pb.point_count;
           feature_count;
           distance;
           elapsed_time = Eio.Time.now clock -. start |> Float.to_int;
-        },
-        [] )
+        }
+    end
 
-    let route_chat :
-        net_request ->
-        Pb.route_note Seq.t ->
-        (Pb.route_note -> unit) ->
-        trailers =
-     fun _ read write ->
-      Printf.printf "[BI_STREAMING] /RouteChat\n%!";
+    module RouteChat = struct
+      type context = [ `Empty | `Note of Pb.route_note | `End ]
 
-      Seq.iter
-        (fun (note : Pb.route_note) ->
-          Format.printf "[BI_STREAMING] Received a note: %a@." Pb.pp_route_note
-            note;
-          write note;
-          Format.printf "[BI_STREAMING] Sent the note back.@.")
-        read;
+      let initial_context = `Empty
 
-      Printf.printf "[BI_STREAMING] Done.\n%!";
+      let reader : context -> Pb.route_note option -> context =
+       fun buffer note ->
+        match (buffer, note) with
+        | `Empty, Some note ->
+            Format.printf "[BI_STREAMING] Received a note: %a@."
+              Pb.pp_route_note note;
+            `Note note
+        | _, None -> `End
+        | _ -> Eio.Fiber.await_cancel ()
 
-      []
+      let writer : context -> Pb.route_note option * context = function
+        | `Empty -> Eio.Fiber.await_cancel ()
+        | `Note note ->
+            Format.printf "[BI_STREAMING] Sending a note: %a@." Pb.pp_route_note
+              note;
+            (Some note, `Empty)
+        | `End -> (None, `End)
+    end
   end in
-  (module RouteGuideServerImplementation : RouteGuideServer.Implementation
-    with type net_request = Grpc.Haha_server_io.Net_request.t)
+  (module RouteGuideServerImplementation : RouteGuideServer.Implementation)
 
-let serve env addr server : unit =
+let serve env addr connection_handler : unit =
   Eio.Switch.run @@ fun sw ->
   let server_socket =
     Eio.Net.listen env#net ~reuse_addr:true ~sw ~backlog:10 addr
   in
   let connection_handler a b =
-    Grpc.Haha_server_io.connection_handler ~sw server a b;
+    connection_handler a b;
 
     Printf.printf "Ending connection handler\n%!"
   in
@@ -186,4 +188,4 @@ let () =
 
   Eio_main.run (fun env ->
       serve env addr
-        (RouteGuideServer.create_server (get_server features env#clock)))
+        (RouteGuideServer.connection_handler (get_server features env#clock)))

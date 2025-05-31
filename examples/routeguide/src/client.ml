@@ -89,17 +89,22 @@ let run_route_chat channel clock =
                  x - 1 ))
   in
 
-  let writer : int * int * Pb.route_note Seq.t -> Pb.route_note option * (int * int * Pb.route_note Seq.t) =
+  let writer :
+      int * int * Pb.route_note Seq.t ->
+      Pb.route_note option * (int * int * Pb.route_note Seq.t) =
    fun (sent, received, next) ->
     match next () with
-    | Seq.Cons (note, next) -> 
-      Eio.Time.sleep clock 0.1;
-      Format.printf "[BI_STREAMING] Sent a note %i: %a@." sent Pb.pp_route_note
-        note;
-      (Some note, (sent + 1, received, next))
+    | Seq.Cons (note, next) ->
+        Eio.Time.sleep clock 0.1;
+        Format.printf "[BI_STREAMING] Sent a note %i: %a@." sent
+          Pb.pp_route_note note;
+        (Some note, (sent + 1, received, next))
     | Nil -> (None, (sent, received, Seq.empty))
   in
-  let reader : int * int * Pb.route_note Seq.t -> Pb.route_note -> int * int * Pb.route_note Seq.t =
+  let reader :
+      int * int * Pb.route_note Seq.t ->
+      Pb.route_note ->
+      int * int * Pb.route_note Seq.t =
    fun (sent, received, s) note ->
     Format.printf "[BI_STREAMING] Received a note %i: %a@." received
       Pb.pp_route_note note;
@@ -116,7 +121,6 @@ let run_route_chat channel clock =
   (*       route_notes; *)
   (*     writer None *)
   (*   in *)
-  (**)
   (*   let read () = *)
   (*     let rec loop_read read = *)
   (*       match read () with *)
@@ -128,12 +132,14 @@ let run_route_chat channel clock =
   (*     in *)
   (*     loop_read reader *)
   (*   in *)
-  (**)
   (*   Eio.Fiber.both write read *)
   (* in *)
 
   Printf.printf "[BI_STREAMING] Exchanging notes...\n%!";
-  match RouteGuideClient.Expert.route_chat ~initial_context:(1, 1, route_notes) ~channel writer reader with
+  match
+    RouteGuideClient.Expert.route_chat ~initial_context:(1, 1, route_notes)
+      ~channel writer reader
+  with
   | Error status ->
       Format.printf "[BI_STREAMING] Error exchanging notes: %a@." Grpc.Status.pp
         status
@@ -157,7 +163,6 @@ let main env =
     run_record_route channel env#clock;
     Printf.printf "\n*** BIDIRECTIONAL STREAMING ***\n%!";
     run_route_chat channel env#clock;
-
     Printf.printf "Disconnecting\n%!";
     Grpc.Channel.shutdown channel
   in
