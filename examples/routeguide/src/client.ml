@@ -45,7 +45,8 @@ let list_features channel =
   | Error status ->
       Format.printf "[S_STREAMING] Error listing features: %a@." Grpc.Status.pp
         status
-  | Ok () -> Printf.printf "[S_STREAMING] Done.\n%!"
+  | Ok final_context ->
+      Printf.printf "[S_STREAMING] Done. Final count: %i\n%!" final_context
 
 let run_record_route channel clock =
   let points = Array.init 10 (fun _ -> random_point ()) in
@@ -70,7 +71,10 @@ let run_record_route channel clock =
   | Error status ->
       Format.printf "[C_STREAMING] Error recording route: %a@." Grpc.Status.pp
         status
-  | Ok _ -> Printf.printf "[C_STREAMING] Done.\n%!"
+  | Ok (resp, final_context) ->
+      Format.printf "[C_STREAMING] Received route summary: %a@."
+        Pb.pp_route_summary resp;
+      Printf.printf "[C_STREAMING] Done. Final count: %i\n%!" final_context
 
 let run_route_chat channel clock =
   let location_count = 5 in
@@ -141,7 +145,10 @@ let run_route_chat channel clock =
   | Error status ->
       Format.printf "[BI_STREAMING] Error exchanging notes: %a@." Grpc.Status.pp
         status
-  | Ok _ -> Printf.printf "[BI_STREAMING] Done.\n%!"
+  | Ok (final_sent, final_received, _) ->
+      Printf.printf
+        "[BI_STREAMING] Done. Final (sent, received) counts: (%i, %i)\n%!"
+        final_sent final_received
 
 let main env =
   Random.self_init ();

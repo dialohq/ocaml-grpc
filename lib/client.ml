@@ -18,18 +18,16 @@ type 'a imp_handler =
   | Writing of 'a writing_handler
   | Bi of 'a bi_handler
 
-type context =
-  | Context : {
-      sent_all : bool;
-      read_state : read_state;
-      parse_state : Body_parse.state;
-      on_data : 'c -> Decoder.t option -> 'c;
-      write_data : 'c -> (Encoder.t -> unit) option * 'c;
-      context : 'c;
-    }
-      -> context
+type 'c context = {
+  sent_all : bool;
+  read_state : read_state;
+  parse_state : Body_parse.state;
+  on_data : 'c -> Decoder.t option -> 'c;
+  write_data : 'c -> (Encoder.t -> unit) option * 'c;
+  context : 'c;
+}
 
-let single_write : single_writer -> context Channel.data_writer =
+let single_write : single_writer -> _ context Channel.data_writer =
  fun encode_request ->
   let encoder = Encoder.create ~size:1_000 () in
   Encoder.clear encoder;
@@ -43,14 +41,12 @@ let single_write : single_writer -> context Channel.data_writer =
   Encoder.blit_to_buffer ~blit_from_bytes:Cstruct.blit_from_bytes encoder
     body_buffer 0;
 
-  fun (Context context) ->
-    if context.sent_all then (None, Context context)
-    else
-      ( Some [ header_buffer; body_buffer ],
-        Context { context with sent_all = true } )
+  fun context ->
+    if context.sent_all then (None, context)
+    else (Some [ header_buffer; body_buffer ], { context with sent_all = true })
 
-let single_read : context Channel.data_receiver =
- fun (Context c as context) data ->
+let single_read : _ context Channel.data_receiver =
+ fun (c as context) data ->
   match (data, c.read_state) with
   | Some data, Reading ->
       let new_parse_state, parsed =
@@ -59,17 +55,17 @@ let single_read : context Channel.data_receiver =
       let read_state : read_state =
         match parsed with [] -> Reading | x :: _ -> Done (Decoder.of_bytes x)
       in
-      Context { c with read_state; parse_state = new_parse_state }
+      { c with read_state; parse_state = new_parse_state }
   | _ -> context
 
 let multi_write :
     encoder:Encoder.t ->
     header_buffer:Cstruct.t ->
     body_buffer:Cstruct.t ->
-    context Channel.data_writer =
- fun ~encoder ~header_buffer ~body_buffer (Context c) ->
+    _ context Channel.data_writer =
+ fun ~encoder ~header_buffer ~body_buffer c ->
   match c.write_data c.context with
-  | None, context -> (None, Context { c with sent_all = true; context })
+  | None, context -> (None, { c with sent_all = true; context })
   | Some encode_request, context ->
       Encoder.clear encoder;
       encode_request encoder;
@@ -80,10 +76,10 @@ let multi_write :
       Encoder.blit_to_buffer ~blit_from_bytes:Cstruct.blit_from_bytes encoder
         body_buffer 0;
       ( Some [ header_buffer; Cstruct.sub body_buffer 0 length ],
-        Context { c with context } )
+        { c with context } )
 
-let multi_read : context Channel.data_receiver =
- fun (Context c) -> function
+let multi_read : _ context Channel.data_receiver =
+ fun c -> function
   | Some data ->
       let parse_state, parsed = Body_parse.read_messages data c.parse_state in
 
@@ -93,11 +89,11 @@ let multi_read : context Channel.data_receiver =
           c.context parsed
       in
 
-      Context { c with parse_state; context = new_context }
+      { c with parse_state; context = new_context }
   | None ->
       let new_context = c.on_data c.context None in
 
-      Context { c with context = new_context }
+      { c with context = new_context }
 
 let make_imp_writer () : imp_writer * unit stream_writer =
   let write_stream = Eio.Stream.create max_int in
@@ -123,13 +119,13 @@ let make_imp_reader () : imp_reader * unit stream_reader =
   (reader, on_data)
 
 let generic_call :
-    channel:context Channel.t ->
+    channel:Channel.t ->
     initial_context:'a ->
     service:string ->
     method_name:string ->
     'a writer ->
     'a reader ->
-    context Channel.stream_result Eio.Promise.t =
+    'a context Channel.stream_result Eio.Promise.t =
  fun ~channel ~initial_context ~service ~method_name writer reader ->
   let data_writer, write_data =
     match writer with
@@ -148,15 +144,14 @@ let generic_call :
   in
 
   let initial_context =
-    Context
-      {
-        sent_all = false;
-        read_state = Reading;
-        parse_state = Idle;
-        context = initial_context;
-        on_data;
-        write_data;
-      }
+    {
+      sent_all = false;
+      read_state = Reading;
+      parse_state = Idle;
+      context = initial_context;
+      on_data;
+      write_data;
+    }
   in
 
   let path = Printf.sprintf "/%s/%s" service method_name in
@@ -168,11 +163,11 @@ let generic_call :
 
 let generic_imperaive_call :
     sw:Eio.Switch.t ->
-    channel:context Channel.t ->
+    channel:Channel.t ->
     service:string ->
     method_name:string ->
     'a imp_handler ->
-    context Channel.stream_result Eio.Promise.t * 'a Eio.Promise.t =
+    unit context Channel.stream_result Eio.Promise.t * 'a Eio.Promise.t =
  fun ~sw ~channel ~service ~method_name handler ->
   let call_generic =
     generic_call ~channel ~initial_context:() ~service ~method_name
@@ -212,7 +207,7 @@ let generic_imperaive_call :
 
 module Unary = struct
   let call :
-      channel:context Channel.t ->
+      channel:Channel.t ->
       service:string ->
       method_name:string ->
       (Encoder.t -> unit) ->
@@ -225,13 +220,11 @@ module Unary = struct
     with
     | {
      status = { code = OK; _ };
-     grpc_context = Context { read_state = Done decoder; _ };
+     grpc_context = { read_state = Done decoder; _ };
     } ->
         Ok decoder
-    | {
-     status = { code = OK; _ };
-     grpc_context = Context { read_state = Reading; _ };
-    } ->
+    | { status = { code = OK; _ }; grpc_context = { read_state = Reading; _ } }
+      ->
         Error
           {
             code = Internal;
@@ -244,13 +237,13 @@ end
 module ServerStreaming = struct
   module Expert = struct
     let call :
-        channel:context Channel.t ->
+        channel:Channel.t ->
         initial_context:'a ->
         service:string ->
         method_name:string ->
         (Encoder.t -> unit) ->
         'a stream_reader ->
-        (unit, Status.t) result =
+        ('a, Status.t) result =
      fun ~channel ~initial_context ~service ~method_name encode_request
          read_handler ->
       match
@@ -258,12 +251,13 @@ module ServerStreaming = struct
         @@ generic_call ~channel ~initial_context ~service ~method_name
              (Single encode_request) (Stream read_handler)
       with
-      | { status = { code = OK; _ }; _ } -> Ok ()
+      | { status = { code = OK; _ }; grpc_context = { context; _ } } ->
+          Ok context
       | { status; _ } -> Error status
   end
 
   let call :
-      channel:context Channel.t ->
+      channel:Channel.t ->
       service:string ->
       method_name:string ->
       (Encoder.t -> unit) ->
@@ -283,12 +277,12 @@ end
 module ClientStreaming = struct
   module Expert = struct
     let call :
-        channel:context Channel.t ->
+        channel:Channel.t ->
         initial_context:'a ->
         service:string ->
         method_name:string ->
         'a stream_writer ->
-        (Decoder.t, Status.t) result =
+        (Decoder.t * 'a, Status.t) result =
      fun ~channel ~initial_context ~service ~method_name handler ->
       match
         Eio.Promise.await
@@ -297,14 +291,14 @@ module ClientStreaming = struct
       with
       | {
        status = { code = OK; _ };
-       grpc_context = Context { read_state = Done decoder; _ };
+       grpc_context = { read_state = Done decoder; context; _ };
       } ->
-          Ok decoder
+          Ok (decoder, context)
       | { status; _ } -> Error status
   end
 
   let call :
-      channel:context Channel.t ->
+      channel:Channel.t ->
       service:string ->
       method_name:string ->
       'a writing_handler ->
@@ -318,7 +312,7 @@ module ClientStreaming = struct
     match Eio.Promise.await status_promise with
     | {
      status = { code = OK; _ };
-     grpc_context = Context { read_state = Done decoder; _ };
+     grpc_context = { read_state = Done decoder; _ };
     } ->
         Ok (decoder, Eio.Promise.await handler_promise)
     | { status; _ } -> Error status
@@ -327,13 +321,13 @@ end
 module BidirectionalStreaming = struct
   module Expert = struct
     let call :
-        channel:context Channel.t ->
+        channel:Channel.t ->
         initial_context:'a ->
         service:string ->
         method_name:string ->
         'a stream_writer ->
         'a stream_reader ->
-        (unit, Status.t) result =
+        ('a, Status.t) result =
      fun ~channel ~initial_context ~service ~method_name write_handler
          read_handler ->
       match
@@ -341,12 +335,13 @@ module BidirectionalStreaming = struct
         @@ generic_call ~channel ~initial_context ~service ~method_name
              (Stream write_handler) (Stream read_handler)
       with
-      | { status = { code = OK; _ }; _ } -> Ok ()
+      | { status = { code = OK; _ }; grpc_context = { context; _ } } ->
+          Ok context
       | { status; _ } -> Error status
   end
 
   let call :
-      channel:context Channel.t ->
+      channel:Channel.t ->
       service:string ->
       method_name:string ->
       'a bi_handler ->

@@ -1,13 +1,13 @@
-type 'c t
+type t
 type 'context data_receiver = 'context -> Cstruct.t option -> 'context
 type 'context data_writer = 'context -> Cstruct.t list option * 'context
 type 'context stream_result = { status : Status.t; grpc_context : 'context }
 
 val create :
-  ?max_streams:int -> sw:Eio.Switch.t -> net:_ Eio.Net.t -> string -> _ t
+  ?max_streams:int -> sw:Eio.Switch.t -> net:_ Eio.Net.t -> string -> t
 
 val start_request :
-  'c t ->
+  t ->
   headers:(string * string) list ->
   data_writer:'c data_writer ->
   data_receiver:'c data_receiver ->
@@ -15,4 +15,4 @@ val start_request :
   initial_context:'c ->
   'c stream_result Eio.Promise.t
 
-val shutdown : _ t -> unit
+val shutdown : t -> unit

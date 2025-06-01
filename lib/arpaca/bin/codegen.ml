@@ -169,7 +169,7 @@ let gen_service_client_struct ~proto_gen_module (service : Ot.service) sc : unit
       (fun c -> 
           let msg, c = writer c in
            (Option.map %s.%s msg, c))
-    |> Result.map %s.%s|}
+    |> Result.map (fun (msg, c) -> (%s.%s msg, c))|}
           (Pb_codegen_util.function_name_of_rpc rpc |> to_snake_case)
           (service_name_of_package service.service_packages service.service_name)
           rpc.rpc_name typ_mod_name
