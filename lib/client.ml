@@ -118,7 +118,7 @@ let make_imp_reader () : imp_reader * unit stream_reader =
   in
   (reader, on_data)
 
-let generic_call :
+let call_gen :
     channel:Channel.t ->
     initial_context:'a ->
     service:string ->
@@ -161,7 +161,7 @@ let generic_call :
   Channel.start_request ~headers ~data_writer ~data_receiver ~path
     ~initial_context channel
 
-let generic_imperaive_call :
+let imperative_call_gen :
     sw:Eio.Switch.t ->
     channel:Channel.t ->
     service:string ->
@@ -169,9 +169,7 @@ let generic_imperaive_call :
     'a imp_handler ->
     unit context Channel.stream_result Eio.Promise.t * 'a Eio.Promise.t =
  fun ~sw ~channel ~service ~method_name handler ->
-  let call_generic =
-    generic_call ~channel ~initial_context:() ~service ~method_name
-  in
+  let call_gen = call_gen ~channel ~initial_context:() ~service ~method_name in
   match handler with
   | Bi bi_handler ->
       let writer, write_data = make_imp_writer () in
@@ -183,7 +181,7 @@ let generic_imperaive_call :
           Eio.Promise.resolve handler_result_r @@ handler ();
           `Stop_daemon);
 
-      (call_generic (Stream write_data) (Stream on_data), handler_result_p)
+      (call_gen (Stream write_data) (Stream on_data), handler_result_p)
   | Reading (read_handler, encode_request) ->
       let reader, on_data = make_imp_reader () in
       let handler () = read_handler ~reader in
@@ -193,7 +191,7 @@ let generic_imperaive_call :
           Eio.Promise.resolve handler_result_r @@ handler ();
           `Stop_daemon);
 
-      (call_generic (Single encode_request) (Stream on_data), handler_result_p)
+      (call_gen (Single encode_request) (Stream on_data), handler_result_p)
   | Writing write_handler ->
       let writer, write_data = make_imp_writer () in
       let handler () = write_handler ~writer in
@@ -203,7 +201,7 @@ let generic_imperaive_call :
           Eio.Promise.resolve handler_result_r @@ handler ();
           `Stop_daemon);
 
-      (call_generic (Stream write_data) Single, handler_result_p)
+      (call_gen (Stream write_data) Single, handler_result_p)
 
 module Unary = struct
   let call :
@@ -215,8 +213,8 @@ module Unary = struct
    fun ~channel ~service ~method_name encode_request ->
     match
       Eio.Promise.await
-      @@ generic_call ~initial_context:(Obj.magic ()) ~channel ~service
-           ~method_name (Single encode_request) Single
+      @@ call_gen ~initial_context:(Obj.magic ()) ~channel ~service ~method_name
+           (Single encode_request) Single
     with
     | {
      status = { code = OK; _ };
@@ -248,7 +246,7 @@ module ServerStreaming = struct
          read_handler ->
       match
         Eio.Promise.await
-        @@ generic_call ~channel ~initial_context ~service ~method_name
+        @@ call_gen ~channel ~initial_context ~service ~method_name
              (Single encode_request) (Stream read_handler)
       with
       | { status = { code = OK; _ }; grpc_context = { context; _ } } ->
@@ -266,7 +264,7 @@ module ServerStreaming = struct
    fun ~channel ~service ~method_name encode_request handler ->
     Eio.Switch.run @@ fun sw ->
     let status_promise, handler_promise =
-      generic_imperaive_call ~sw ~channel ~service ~method_name
+      imperative_call_gen ~sw ~channel ~service ~method_name
         (Reading (handler, encode_request))
     in
     match Eio.Promise.await status_promise with
@@ -286,7 +284,7 @@ module ClientStreaming = struct
      fun ~channel ~initial_context ~service ~method_name handler ->
       match
         Eio.Promise.await
-        @@ generic_call ~channel ~initial_context ~service ~method_name
+        @@ call_gen ~channel ~initial_context ~service ~method_name
              (Stream handler) Single
       with
       | {
@@ -306,8 +304,7 @@ module ClientStreaming = struct
    fun ~channel ~service ~method_name handler ->
     Eio.Switch.run @@ fun sw ->
     let status_promise, handler_promise =
-      generic_imperaive_call ~sw ~channel ~service ~method_name
-        (Writing handler)
+      imperative_call_gen ~sw ~channel ~service ~method_name (Writing handler)
     in
     match Eio.Promise.await status_promise with
     | {
@@ -332,7 +329,7 @@ module BidirectionalStreaming = struct
          read_handler ->
       match
         Eio.Promise.await
-        @@ generic_call ~channel ~initial_context ~service ~method_name
+        @@ call_gen ~channel ~initial_context ~service ~method_name
              (Stream write_handler) (Stream read_handler)
       with
       | { status = { code = OK; _ }; grpc_context = { context; _ } } ->
@@ -349,7 +346,7 @@ module BidirectionalStreaming = struct
    fun ~channel ~service ~method_name handler ->
     Eio.Switch.run @@ fun sw ->
     let status_promise, handler_promise =
-      generic_imperaive_call ~sw ~channel ~service ~method_name (Bi handler)
+      imperative_call_gen ~sw ~channel ~service ~method_name (Bi handler)
     in
     match Eio.Promise.await status_promise with
     | { status = { code = OK; _ }; _ } -> Ok (Eio.Promise.await handler_promise)

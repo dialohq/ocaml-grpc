@@ -49,17 +49,12 @@ let calc_distance (p1 : Pb.point) (p2 : Pb.point) : int =
   let c = 2.0 *. atan2 (sqrt a) (sqrt (1.0 -. a)) in
   Float.to_int (r *. c)
 
-let unary_counter = ref 0
-
 let get_server (features : feature_list) clock =
   let module RouteGuideServerImplementation = struct
     module GetFeature = struct
       let handler : Pb.point -> Pb.feature =
        fun point ->
-        (* incr unary_counter; *)
-        Printf.printf "[UNARY] /GetFeature #%i\n%!" !unary_counter;
-
-        (* if !unary_counter <> 6 then Eio.Time.sleep clock 3.; *)
+        Printf.printf "[UNARY] /GetFeature\n%!";
         match
           List.find_opt
             (fun (f : Pb.feature) -> f.location = Some point)

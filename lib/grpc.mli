@@ -11,3 +11,4 @@ end
 
 module Client = Client
 module Status = Status
+module Utils = Utils

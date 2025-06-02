@@ -1,3 +1,5 @@
+exception GrpcError of (Status.code * string)
+
 open Haha
 open Pbrt
 open Utils

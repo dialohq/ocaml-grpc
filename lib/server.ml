@@ -1,10 +1,12 @@
+module GStatus = Status
 open Haha
 open Pbrt
 open Utils
 
+exception GrpcError of (GStatus.code * string)
+
 type route_getter = service:string -> meth:string -> Reqd.handler_result option
 
-let error_handler : Error.connection_error -> unit = fun _error -> ()
 let stream_error_handler : _ -> Error.t -> _ = fun c _code -> c
 let grpc_headers = Header.of_list [ ("content-type", "application/grpc+proto") ]
 
@@ -14,6 +16,28 @@ let ok_trailers =
 let not_found_trailers =
   Header.of_list
     [ ("grpc-status", "12"); ("grpc-message", "unimplemented service/method") ]
+
+let internal_err_trailers exn =
+  Header.of_list
+    [
+      ("grpc-status", "13");
+      ( "grpc-message",
+        Format.asprintf "internal server exception: %a" Eio.Exn.pp exn );
+    ]
+
+let custom_status_trailers : GStatus.code -> string -> Header.t list =
+ fun code msg ->
+  Header.of_list
+    [
+      ("grpc-status", GStatus.int_of_code code |> string_of_int);
+      ("grpc-message", msg);
+    ]
+
+let catch_all f =
+  try Ok (f ()) with
+  | GrpcError (code, msg) -> Error (custom_status_trailers code msg)
+  | Eio.Cancel.Cancelled _ as e -> raise e
+  | exn -> Error (internal_err_trailers exn)
 
 let encode_data ?header_buffer ?body_buffer encode_f encoder =
   Encoder.clear encoder;
@@ -42,12 +66,13 @@ module Unary = struct
     let encoder = Encoder.create ~size:1_000 () in
     function
     | { read_state = Done decoder; _ } as context ->
-        {
-          payload =
-            `End (Some (encode_data (get_encode_f decoder) encoder), ok_trailers);
-          on_flush = ignore;
-          context;
-        }
+        let payload =
+          catch_all (fun () -> get_encode_f decoder)
+          |> Result.fold
+               ~ok:(fun x -> `End (Some (encode_data x encoder), ok_trailers))
+               ~error:(fun x -> `End (None, x))
+        in
+        { payload; on_flush = ignore; context }
     | { read_state = Reading; _ } -> Eio.Fiber.await_cancel ()
 
   let body_reader : context Body.reader =
@@ -78,6 +103,7 @@ module ServerStreaming = struct
   type 'a read_state =
     | Reading of (Decoder.t -> 'a stream_writer)
     | Done of 'a stream_writer
+    | Error of Header.t list
 
   type 'a context = {
     read_state : 'a read_state;
@@ -90,13 +116,21 @@ module ServerStreaming = struct
     let body_buffer = Cstruct.create 500_000 in
     let header_buffer = Cstruct.create 5 in
     function
+    | { read_state = Error trailers; _ } as context ->
+        { payload = `End (None, trailers); on_flush = ignore; context }
     | { read_state = Done writer; user_context; _ } as context ->
-        let encode_opt, user_context = writer user_context in
-        let payload =
-          match encode_opt with
-          | Some encode_f ->
-              `Data (encode_data ~header_buffer ~body_buffer encode_f encoder)
-          | None -> `End (None, ok_trailers)
+        let payload, user_context =
+          catch_all (fun () ->
+              let encode_opt, user_context = writer user_context in
+              match encode_opt with
+              | Some encode_f ->
+                  ( `Data
+                      (encode_data ~header_buffer ~body_buffer encode_f encoder),
+                    user_context )
+              | None -> (`End (None, ok_trailers), user_context))
+          |> Result.fold
+               ~ok:(fun x -> x)
+               ~error:(fun x -> (`End (None, x), user_context))
         in
         { payload; on_flush = ignore; context = { context with user_context } }
     | { read_state = Reading _; _ } -> Eio.Fiber.await_cancel ()
@@ -111,7 +145,9 @@ module ServerStreaming = struct
         let read_state : 'a read_state =
           match parsed with
           | [] -> Reading get_writer
-          | x :: _ -> Done (get_writer (Decoder.of_bytes x))
+          | x :: _ ->
+              catch_all (fun () -> get_writer (Decoder.of_bytes x))
+              |> Result.fold ~error:(fun h -> Error h) ~ok:(fun x -> Done x)
         in
 
         { context with read_state; parse_state }
@@ -132,7 +168,7 @@ module ServerStreaming = struct
 end
 
 module ClientStreaming = struct
-  type 'a read_state = Reading | Done
+  type 'a read_state = Reading | Done | Error of Header.t list
 
   type 'a context = {
     read_state : 'a read_state;
@@ -146,33 +182,45 @@ module ClientStreaming = struct
    fun () ->
     let encoder = Encoder.create ~size:1_000 () in
     function
+    | { read_state = Error trailers; _ } as context ->
+        { payload = `End (None, trailers); on_flush = ignore; context }
     | { read_state = Done; respond; user_context; _ } as context ->
-        {
-          payload =
-            `End (Some (encode_data (respond user_context) encoder), ok_trailers);
-          on_flush = ignore;
-          context;
-        }
+        let payload =
+          catch_all (fun () -> respond user_context)
+          |> Result.fold
+               ~error:(fun x -> `End (None, x))
+               ~ok:(fun x -> `End (Some (encode_data x encoder), ok_trailers))
+        in
+        { payload; on_flush = ignore; context }
     | { read_state = Reading; _ } -> Eio.Fiber.await_cancel ()
 
   let body_reader : _ context Body.reader =
-   fun ({ user_context; reader; _ } as context) payload ->
+   fun ({ user_context; reader; read_state; _ } as context) payload ->
     match payload with
     | `End _ ->
-        let user_context = reader user_context None in
-        { context with read_state = Done; user_context }
+        let user_context, read_state =
+          catch_all (fun () -> reader user_context None)
+          |> Result.fold
+               ~ok:(fun x -> (x, Done))
+               ~error:(fun x -> (user_context, Error x))
+        in
+        { context with read_state; user_context }
     | `Data data ->
         let parse_state, parsed =
           Body_parse.read_messages data context.parse_state
         in
 
-        let user_context =
-          List.fold_left
-            (fun u_ctx b -> reader u_ctx (Some (Decoder.of_bytes b)))
-            user_context parsed
+        let user_context, read_state =
+          catch_all (fun () ->
+              List.fold_left
+                (fun u_ctx b -> reader u_ctx (Some (Decoder.of_bytes b)))
+                user_context parsed)
+          |> Result.fold
+               ~ok:(fun x -> (x, read_state))
+               ~error:(fun x -> (user_context, Error x))
         in
 
-        { context with parse_state; user_context }
+        { context with parse_state; user_context; read_state }
 
   let respond :
       'a -> 'a stream_reader -> ('a -> single_writer) -> Reqd.handler_result =
@@ -197,48 +245,72 @@ module BidirectionalStreaming = struct
     parse_state : Body_parse.state;
     reader : 'a stream_reader;
     writer : 'a stream_writer;
+    errored : Header.t list option;
   }
 
   let body_writer () : _ context Body.writer =
     let encoder = Encoder.create ~size:1_000 () in
     let body_buffer = Cstruct.create 500_000 in
     let header_buffer = Cstruct.create 5 in
-    fun ({ writer; user_context; _ } as context) ->
-      let encode_opt, user_context = writer user_context in
+    function
+    | { errored = Some trailers; _ } as context ->
+        { payload = `End (None, trailers); on_flush = ignore; context }
+    | { writer; user_context; _ } as context ->
+        let payload, user_context =
+          catch_all (fun () ->
+              let encode_opt, user_context = writer user_context in
+              match encode_opt with
+              | Some encode_f ->
+                  ( `Data
+                      (encode_data ~header_buffer ~body_buffer encode_f encoder),
+                    user_context )
+              | None -> (`End (None, ok_trailers), user_context))
+          |> Result.fold
+               ~ok:(fun x -> x)
+               ~error:(fun x -> (`End (None, x), user_context))
+        in
 
-      let payload =
-        match encode_opt with
-        | Some encode_f ->
-            `Data (encode_data ~header_buffer ~body_buffer encode_f encoder)
-        | None -> `End (None, ok_trailers)
-      in
-
-      { payload; on_flush = ignore; context = { context with user_context } }
+        { payload; on_flush = ignore; context = { context with user_context } }
 
   let body_reader : _ context Body.reader =
-   fun ({ user_context; reader; _ } as context) payload ->
+   fun ({ user_context; reader; errored; _ } as context) payload ->
     match payload with
     | `End _ ->
-        let user_context = reader user_context None in
-        { context with user_context }
+        let user_context, errored =
+          catch_all (fun () -> reader user_context None)
+          |> Result.fold
+               ~ok:(fun x -> (x, None))
+               ~error:(fun x -> (user_context, Some x))
+        in
+        { context with errored; user_context }
     | `Data data ->
         let parse_state, parsed =
           Body_parse.read_messages data context.parse_state
         in
 
-        let user_context =
-          List.fold_left
-            (fun u_ctx b -> reader u_ctx (Some (Decoder.of_bytes b)))
-            user_context parsed
+        let user_context, errored =
+          catch_all (fun () ->
+              List.fold_left
+                (fun u_ctx b -> reader u_ctx (Some (Decoder.of_bytes b)))
+                user_context parsed)
+          |> Result.fold
+               ~ok:(fun x -> (x, errored))
+               ~error:(fun x -> (user_context, Some x))
         in
 
-        { context with parse_state; user_context }
+        { context with parse_state; errored; user_context }
 
   let respond :
       'a -> 'a stream_reader -> 'a stream_writer -> Reqd.handler_result =
    fun context reader writer ->
     let context =
-      { user_context = context; parse_state = Idle; reader; writer }
+      {
+        user_context = context;
+        parse_state = Idle;
+        reader;
+        writer;
+        errored = None;
+      }
     in
     let response_writer = make_response_writer (body_writer ()) in
     Reqd.handle ~context ~response_writer ~error_handler:stream_error_handler
@@ -263,4 +335,4 @@ let connection_handler : route_getter -> _ Eio.Net.connection_handler =
     | _ -> respond_not_found
   in
 
-  Server.connection_handler ~error_handler request_handler
+  Server.connection_handler ~error_handler:ignore request_handler

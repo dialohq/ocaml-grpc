@@ -169,16 +169,22 @@ let make_request :
   let body_writer : _ stream_context H2.Body.writer =
    fun context ->
     let data, grpc_context = data_writer context.grpc_context in
-    match data with
-    | Some cs_l ->
+    match (context.result, data) with
+    | None, Some cs_l ->
         {
           payload = `Data cs_l;
           on_flush = ignore;
           context = { context with grpc_context };
         }
-    | None ->
+    | None, None ->
         {
           payload = `End (None, []);
+          on_flush = ignore;
+          context = { context with grpc_context };
+        }
+    | Some _, cs_opt ->
+        {
+          payload = `End (cs_opt, []);
           on_flush = ignore;
           context = { context with grpc_context };
         }
