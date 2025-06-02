@@ -254,21 +254,22 @@ let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
         | `Client_streaming ->
             p sc "type context";
             el sc;
-            p sc "val initial_context : context";
+            p sc "val init : unit -> context";
             p sc "val reader : (context -> %s -> context)" req_type;
             p sc "val respond : (context -> %s)" res_type
         | `Server_streaming ->
             p sc "type context";
             el sc;
-            p sc "val initial_context : context";
+            p sc "val init : unit -> context";
             p sc "val handler : %s -> (context -> %s option * context)" req_type
               res_type
         | `Bidirectional_streaming ->
             p sc "type context";
             el sc;
-            p sc "val initial_context : context";
+            p sc "val init : unit -> context";
             p sc "val reader : (context -> %s option -> context)" req_type;
-            p sc "val writer : (context -> %s option * context)" res_type);
+            p sc "val writer : (context -> %s option * context)" res_type;
+            p sc "val on_close : (context -> unit)");
     p sc "end"
   in
 
@@ -320,8 +321,7 @@ let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
                     p sc "let msg, c = f c in";
                     p sc "(Option.map %s msg, c)" encoder_func));
             p sc "in";
-            p sc "Some (ServerStreaming.respond %s.initial_context handler)"
-              impl)
+            p sc "Some (ServerStreaming.respond %s.init handler)" impl)
     | `Client_streaming ->
         p sc {|| "%s", %S ->|}
           (String.concat "." (service.service_packages @ [ service_name ]))
@@ -333,9 +333,7 @@ let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
               impl decoder_func;
             p sc "let respond = (fun c -> %s.respond c |> %s) in" impl
               encoder_func;
-            p sc
-              "Some (ClientStreaming.respond %s.initial_context reader respond)"
-              impl)
+            p sc "Some (ClientStreaming.respond %s.init reader respond)" impl)
     | `Bidirectional_streaming ->
         p sc {|| "%s", %S ->|}
           (String.concat "." (service.service_packages @ [ service_name ]))
@@ -348,9 +346,9 @@ let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
             p sc "let reader = (fun c d ->  %s.reader c (Option.map (%s) d)) in"
               impl decoder_func;
             p sc
-              "Some (BidirectionalStreaming.respond %s.initial_context reader \
-               writer)"
-              impl)
+              "Some (BidirectionalStreaming.respond %s.init reader writer \
+               %s.on_close)"
+              impl impl)
   in
 
   let gen_connection_handler (sc : F.scope) =

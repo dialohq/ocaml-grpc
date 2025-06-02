@@ -153,14 +153,12 @@ module ServerStreaming = struct
         { context with read_state; parse_state }
     | _ -> context
 
-  let respond : 'a -> (Decoder.t -> 'a stream_writer) -> Reqd.handler_result =
-   fun context get_writer ->
+  let respond :
+      (unit -> 'a) -> (Decoder.t -> 'a stream_writer) -> Reqd.handler_result =
+   fun init get_writer ->
+    let user_context = init () in
     let context =
-      {
-        read_state = Reading get_writer;
-        parse_state = Idle;
-        user_context = context;
-      }
+      { read_state = Reading get_writer; parse_state = Idle; user_context }
     in
     let response_writer = make_response_writer (body_writer ()) in
     Reqd.handle ~context ~response_writer ~error_handler:stream_error_handler
@@ -223,11 +221,15 @@ module ClientStreaming = struct
         { context with parse_state; user_context; read_state }
 
   let respond :
-      'a -> 'a stream_reader -> ('a -> single_writer) -> Reqd.handler_result =
-   fun context reader respond ->
+      (unit -> 'a) ->
+      'a stream_reader ->
+      ('a -> single_writer) ->
+      Reqd.handler_result =
+   fun init reader respond ->
+    let user_context = init () in
     let context =
       {
-        user_context = context;
+        user_context;
         read_state = Reading;
         reader;
         respond;
@@ -246,6 +248,7 @@ module BidirectionalStreaming = struct
     reader : 'a stream_reader;
     writer : 'a stream_writer;
     errored : Header.t list option;
+    on_close : 'a -> unit;
   }
 
   let body_writer () : _ context Body.writer =
@@ -300,21 +303,30 @@ module BidirectionalStreaming = struct
 
         { context with parse_state; errored; user_context }
 
+  let on_close : _ context -> unit =
+   fun { user_context; on_close; _ } -> on_close user_context
+
   let respond :
-      'a -> 'a stream_reader -> 'a stream_writer -> Reqd.handler_result =
-   fun context reader writer ->
+      (unit -> 'a) ->
+      'a stream_reader ->
+      'a stream_writer ->
+      ('a -> unit) ->
+      Reqd.handler_result =
+   fun init reader writer user_on_close ->
+    let user_context = init () in
     let context =
       {
-        user_context = context;
+        user_context;
         parse_state = Idle;
         reader;
         writer;
         errored = None;
+        on_close = user_on_close;
       }
     in
     let response_writer = make_response_writer (body_writer ()) in
-    Reqd.handle ~context ~response_writer ~error_handler:stream_error_handler
-      ~body_reader ()
+    Reqd.handle ~on_close ~context ~response_writer
+      ~error_handler:stream_error_handler ~body_reader ()
 end
 
 let respond_not_found =

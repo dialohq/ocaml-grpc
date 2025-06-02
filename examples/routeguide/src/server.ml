@@ -71,11 +71,12 @@ let get_server (features : feature_list) clock =
     module ListFeatures = struct
       type context = Pb.feature Seq.t
 
-      let initial_context = list_take 10 features |> List.to_seq
+      let init () =
+        Printf.printf "[S_STREAMING] /ListFeatures\n%!";
+        list_take 10 features |> List.to_seq
 
       let handler : Pb.rectangle -> context -> Pb.feature option * context =
        fun rectangle ->
-        Printf.printf "[S_STREAMING] /ListFeatures\n%!";
         Format.printf "[S_STREAMING] Received a rectangle %a@." Pb.pp_rectangle
           rectangle;
         fun feature_seq ->
@@ -93,10 +94,11 @@ let get_server (features : feature_list) clock =
     module RecordRoute = struct
       type context = int * int * int * Pb.point option * float
 
-      let initial_context = (0, 0, 0, None, 0.)
+      let init () =
+        Printf.printf "[C_STREAMING] /RecordRoute\n%!";
+        (0, 0, 0, None, 0.)
 
       let reader : context -> Pb.point -> context =
-        (* Printf.printf "[C_STREAMING] /RecordRoute\n%!"; *)
         let start = Eio.Time.now clock in
         fun (point_count, feature_count, distance, last_point, _) point ->
           Format.printf "[C_STREAMING] Received a point: %a@." Pb.pp_point point;
@@ -132,7 +134,9 @@ let get_server (features : feature_list) clock =
     module RouteChat = struct
       type context = [ `Empty | `Note of Pb.route_note | `End ]
 
-      let initial_context = `Empty
+      let init () =
+        Printf.printf "[BI_STREAMING] /RouteChat\n%!";
+        `Empty
 
       let reader : context -> Pb.route_note option -> context =
        fun buffer note ->
@@ -151,6 +155,8 @@ let get_server (features : feature_list) clock =
               note;
             (Some note, `Empty)
         | `End -> (None, `End)
+
+      let on_close _ = print_endline "[BI_STREAMING] End of stream"
     end
   end in
   (module RouteGuideServerImplementation : Route_guide_server.Implementation)
