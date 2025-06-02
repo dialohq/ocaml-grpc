@@ -44,14 +44,35 @@ let function_name_decode_pb ~service_name ~rpc_name (ty : Ot.rpc_type) : string
   in
   match ty with Ot.Rpc_scalar ty | Ot.Rpc_stream ty -> f ty
 
-let to_snake_case =
-  let regex =
-    Re.replace (Re.compile Re.upper) ~f:(fun g ->
-        if Re.Group.start g 0 > 0 then
-          "_" ^ String.lowercase_ascii (Re.Group.get g 0)
-        else Re.Group.get g 0)
+(* TODO: this should be regex *)
+let to_snake_case (s : string) : string =
+  let is_uppercase c =
+    Char.uppercase_ascii c = c && Char.lowercase_ascii c <> c
   in
-  fun str -> regex str
+  let is_lowercase c =
+    Char.lowercase_ascii c = c && Char.uppercase_ascii c <> c
+  in
+  let len = String.length s in
+  if len = 0 then ""
+  else
+    let res_buffer = Buffer.create (len * 2) in
+    let rec process_char_at_index i =
+      if i >= len then ()
+      else
+        let current_char = String.get s i in
+        if is_uppercase current_char then (
+          (if i > 0 then
+             let prev_char = String.get s (i - 1) in
+             if is_lowercase prev_char then Buffer.add_char res_buffer '_'
+             else if is_uppercase prev_char then
+               if i + 1 < len && is_lowercase (String.get s (i + 1)) then
+                 Buffer.add_char res_buffer '_');
+          Buffer.add_char res_buffer (Char.lowercase_ascii current_char))
+        else Buffer.add_char res_buffer current_char;
+        process_char_at_index (i + 1)
+    in
+    process_char_at_index 0;
+    Buffer.contents res_buffer
 
 let service_name_of_package service_packages service =
   String.concat "." (service_packages @ [ service ])
