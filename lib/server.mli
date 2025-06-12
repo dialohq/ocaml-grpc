@@ -33,3 +33,10 @@ module BidirectionalStreaming : sig
 end
 
 val connection_handler : route_getter -> _ Eio.Net.connection_handler
+
+val run_server :
+  net:[> ([> `Generic ] as 'a) Eio.Net.ty ] Eio.Resource.t ->
+  on_error:(exn -> unit) ->
+  int ->
+  'a Eio.Net.stream_socket_ty Eio.Net.connection_handler ->
+  'b

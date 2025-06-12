@@ -348,3 +348,11 @@ let connection_handler : route_getter -> _ Eio.Net.connection_handler =
   in
 
   Server.connection_handler ~error_handler:ignore request_handler
+
+let run_server ~net ~on_error port connection_handler =
+  let addr = `Tcp (Eio.Net.Ipaddr.V4.any, port) in
+  Eio.Switch.run @@ fun sw ->
+  let server_socket =
+    Eio.Net.listen net ~sw ~reuse_addr:true ~backlog:10 addr
+  in
+  Eio.Net.run_server ~on_error server_socket connection_handler

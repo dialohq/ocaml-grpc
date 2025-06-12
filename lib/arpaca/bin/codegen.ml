@@ -368,17 +368,18 @@ let gen_service_server_struct ~proto_gen_module (service : Ot.service) top_scope
         p sc "connection_handler get_route")
   in
 
+  let gen_run_server (sc : F.scope) =
+    p sc "let serve ~net ~on_error port (module Impl : Implementation) = ";
+    sub sc (fun sc ->
+        p sc
+          "Grpc.Server.run_server ~net ~on_error port (connection_handler \
+           (module Impl))")
+  in
+
   let sc = top_scope in
 
   gen_imperative_impl_sig sc;
   F.empty_line sc;
-  gen_connection_handler sc
-(* F.linep sc *)
-(*   "let create_server (type net_request) (module Impl : Implementation with \ *)
-  (*    type net_request = net_request) ~service ~meth =" *)
-(* F.sub_scope sc (fun sc -> *)
-(*     F.linep sc "match (service, meth) with"; *)
-(*     List.iter (gen_rpc_handler sc) service.service_body; *)
-(*     F.linep sc *)
-(*       {|| _ -> *)
-  (*   raise (Grpc_server_eio.Server_error (Grpc_utils.Status.make Unimplemented, []))|}) *)
+  gen_connection_handler sc;
+  F.empty_line sc;
+  gen_run_server sc
