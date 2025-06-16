@@ -29,16 +29,15 @@
         system,
         ...
       }: let
-        pkgs =
-          ((import inputs.nixpkgs {
-              inherit system;
-              config.allowUnfree = true;
-              overlays = [ocaml-overlay.outputs.overlays];
-            })
+        pkgs = ((import inputs.nixpkgs {
+            inherit system;
+            config.allowUnfree = true;
+            overlays = [ocaml-overlay.outputs.overlays];
+          })
             .extend (import ./overlay.nix))
           .extend (self: super: {
-            ocamlPackages = super.ocaml-ng.ocamlPackages_5_1;
-          });
+          ocamlPackages = super.ocaml-ng.ocamlPackages_5_1;
+        });
         camlPkgs = pkgs.ocaml-ng.ocamlPackages_5_1;
       in {
         devShells.default = pkgs.mkShell {
@@ -84,7 +83,7 @@
             duneVersion = "3";
             nativeBuildInputs = with camlPkgs; [mdx];
             propagatedBuildInputs = with camlPkgs; [ppxlib];
-            buildInputs = with camlPkgs; [uri haha hpackv ppx_deriving];
+            buildInputs = with camlPkgs; [uri haha ppx_deriving];
             src = nix-filter.lib.filter {
               root = ./.;
               include = ["dune-project" "lib/grpc"];

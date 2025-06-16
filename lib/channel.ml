@@ -3,13 +3,13 @@ module H2 = Haha
 module Client = Haha.Client
 
 let find_grpc_status headers =
-  H2.Header.find_opt "grpc-status" headers
+  H2.Headers.find_opt "grpc-status" headers
   |> Option.map @@ fun status ->
      let code = Status.code_of_int @@ int_of_string status in
      {
        Status.code;
        info =
-         H2.Header.find_opt "grpc-message" headers
+         H2.Headers.find_opt "grpc-message" headers
          |> Option.map (fun s -> Status.Message s);
      }
 
@@ -178,13 +178,13 @@ let make_request :
         }
     | None, None ->
         {
-          payload = `End (None, []);
+          payload = `End (None, H2.Headers.empty);
           on_flush = ignore;
           context = { context with grpc_context };
         }
     | Some _, cs_opt ->
         {
-          payload = `End (cs_opt, []);
+          payload = `End (cs_opt, H2.Headers.empty);
           on_flush = ignore;
           context = { context with grpc_context };
         }
@@ -267,7 +267,7 @@ let make_request :
     }
   in
 
-  let headers = H2.Header.of_list headers in
+  let headers = H2.Headers.of_list headers in
   H2.Request.create_with_streaming ~context:initial_stream_state
     ?scheme:(Uri.scheme uri) ?authority:(Uri.host uri) ~headers
     ~error_handler:stream_error_handler ~on_close ~response_handler ~body_writer

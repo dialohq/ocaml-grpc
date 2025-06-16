@@ -17,8 +17,8 @@ in {
           hahaPkgsSrc = fetchFromGitHub {
             owner = "dialohq";
             repo = "haha";
-            rev = "23f1cfb29f0e6bbfc7d525c3596d004decc7cc86";
-            sha256 = "sha256-TAuwTGsxxgpcFdIf0+n3dqwXxgDD1Y9dKYeqnadXYzk=";
+            rev = "31c46b918ea00d7a5737d8437203bb6c72d1f0ad";
+            sha256 = "sha256-0RHPs8F/ZtayJFqz0vMSUvGNMupza3KOSqE0FhtMLww=";
           };
           eioPkgsSrc = fetchFromGitHub {
             owner = "dialohq";
@@ -42,8 +42,9 @@ in {
           eio_main = super.eio_main.overrideAttrs (_: {
             src = eioPkgsSrc;
           });
-          hpackv = mkHahaPkg "hpackv" (with oself; [angstrom faraday]);
-          haha = mkHahaPkg "haha" (with oself; [eio_main angstrom faraday hpackv]);
+          # hpackv = mkHahaPkg "hpackv" (with oself; [angstrom faraday]);
+          h2kit = mkHahaPkg "h2kit" (with oself; [ppx_deriving hpack cstruct]);
+          haha = mkHahaPkg "haha" (with oself; [eio_main angstrom faraday h2kit]);
           pbrt = super.pbrt.overrideAttrs (_: {src = ocamlProtocSrc;});
           pbrt_services = super.buildDunePackage {
             pname = "pbrt_services";

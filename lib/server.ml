@@ -8,26 +8,28 @@ exception GrpcError of (GStatus.code * string)
 type route_getter = service:string -> meth:string -> Reqd.handler_result option
 
 let stream_error_handler : _ -> Error.t -> _ = fun c _code -> c
-let grpc_headers = Header.of_list [ ("content-type", "application/grpc+proto") ]
+
+let grpc_headers =
+  Headers.of_list [ ("content-type", "application/grpc+proto") ]
 
 let ok_trailers =
-  Header.of_list [ ("grpc-status", "0"); ("grpc-message", "OK") ]
+  Headers.of_list [ ("grpc-status", "0"); ("grpc-message", "OK") ]
 
 let not_found_trailers =
-  Header.of_list
+  Headers.of_list
     [ ("grpc-status", "12"); ("grpc-message", "unimplemented service/method") ]
 
 let internal_err_trailers exn =
-  Header.of_list
+  Headers.of_list
     [
       ("grpc-status", "13");
       ( "grpc-message",
         Format.asprintf "internal server exception: %a" Eio.Exn.pp exn );
     ]
 
-let custom_status_trailers : GStatus.code -> string -> Header.t list =
+let custom_status_trailers : GStatus.code -> string -> Headers.t =
  fun code msg ->
-  Header.of_list
+  Headers.of_list
     [
       ("grpc-status", GStatus.int_of_code code |> string_of_int);
       ("grpc-message", msg);
@@ -55,7 +57,7 @@ let encode_data ?header_buffer ?body_buffer encode_f encoder =
 
 let make_response_writer : 'c Body.writer -> 'c Response.response_writer =
  fun body_writer () ->
-  `Final (Response.create_with_streaming ~body_writer `OK grpc_headers)
+  `Final (Response.create_with_streaming ~headers:grpc_headers ~body_writer `OK)
 
 module Unary = struct
   type read_state = Reading | Done of Decoder.t
@@ -103,7 +105,7 @@ module ServerStreaming = struct
   type 'a read_state =
     | Reading of (Decoder.t -> 'a stream_writer)
     | Done of 'a stream_writer
-    | Error of Header.t list
+    | Error of Headers.t
 
   type 'a context = {
     read_state : 'a read_state;
@@ -166,7 +168,7 @@ module ServerStreaming = struct
 end
 
 module ClientStreaming = struct
-  type 'a read_state = Reading | Done | Error of Header.t list
+  type 'a read_state = Reading | Done | Error of Headers.t
 
   type 'a context = {
     read_state : 'a read_state;
@@ -247,7 +249,7 @@ module BidirectionalStreaming = struct
     parse_state : Body_parse.state;
     reader : 'a stream_reader;
     writer : 'a stream_writer;
-    errored : Header.t list option;
+    errored : Headers.t option;
     on_close : 'a -> unit;
   }
 
@@ -332,7 +334,8 @@ end
 let respond_not_found =
   Reqd.handle ~context:() ~body_reader:Body.ignore_reader
     ~error_handler:(fun c _ -> c)
-    ~response_writer:(fun () -> `Final (Response.create `OK not_found_trailers))
+    ~response_writer:(fun () ->
+      `Final (Response.create ~headers:not_found_trailers `OK))
     ()
 
 let connection_handler : route_getter -> _ Eio.Net.connection_handler =
