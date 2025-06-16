@@ -2,6 +2,18 @@ open Eio
 module H2 = Haha
 module Client = Haha.Client
 
+module List = struct
+  include List
+
+  let drop n l =
+    let rec aux i = function
+      | _x :: l when i < n -> aux (i + 1) l
+      | rest -> rest
+    in
+    if n < 0 then invalid_arg "List.drop";
+    aux 0 l
+end
+
 let find_grpc_status headers =
   H2.Headers.find_opt "grpc-status" headers
   |> Option.map @@ fun status ->
@@ -123,7 +135,8 @@ let stream_error_handler : _ stream_context -> H2.Error.t -> _ stream_context =
 
 let make_connections_event : int -> connection -> event =
  fun idx conn () ->
-  let iteration = conn.next_iter conn.pending_inputs in
+  let inputs = conn.pending_inputs in
+  let iteration = conn.next_iter inputs in
 
   fun state ->
     let new_pool =
@@ -138,7 +151,8 @@ let make_connections_event : int -> connection -> event =
                   {
                     conn with
                     next_iter;
-                    pending_inputs = [];
+                    pending_inputs =
+                      List.(drop (length inputs) conn.pending_inputs);
                     open_streams = iteration.active_streams;
                   }
                 in
