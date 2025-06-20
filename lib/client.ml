@@ -226,8 +226,7 @@ module Unary = struct
         Error
           {
             code = Internal;
-            info =
-              Some (Message "couldn't parse the gRPC message from the server");
+            info = Message "couldn't parse the gRPC message from the server";
           }
     | { status; _ } -> Error status
 end

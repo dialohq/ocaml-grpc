@@ -60,4 +60,4 @@ let code_of_int = function
 type info = Message of string | Exn of (exn[@printer Eio.Exn.pp])
 [@@deriving show]
 
-type t = { code : code; info : info option } [@@deriving show]
+type t = { code : code; info : info } [@@deriving show]

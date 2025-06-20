@@ -21,8 +21,9 @@ let find_grpc_status headers =
      {
        Status.code;
        info =
-         H2.Headers.find_opt "grpc-message" headers
-         |> Option.map (fun s -> Status.Message s);
+         (match H2.Headers.find_opt "grpc-message" headers with
+         | None -> Message ""
+         | Some s -> Message s);
      }
 
 let status_of_h2_error : H2.Error_code.t -> Status.code = function
@@ -37,8 +38,8 @@ let status_of_h2_error : H2.Error_code.t -> Status.code = function
 let connection_error_to_status : H2.Error.connection_error -> Status.t =
   function
   | ProtocolViolation (code, msg) | PeerError (code, msg) ->
-      { Status.code = status_of_h2_error code; info = Some (Message msg) }
-  | Exn exn -> { Status.code = Internal; info = Some (Exn exn) }
+      { Status.code = status_of_h2_error code; info = Message msg }
+  | Exn exn -> { Status.code = Internal; info = Exn exn }
 
 type 'context data_receiver = 'context -> Cstruct.t option -> 'context
 type 'context data_writer = 'context -> Cstruct.t list option * 'context
@@ -52,6 +53,7 @@ type 'c stream_context = {
 [@@deriving show]
 
 type connection = {
+  id : int;
   next_iter : Client.iter_input list -> Client.iteration;
   open_streams : int;
   shutdown : bool;
@@ -60,7 +62,11 @@ type connection = {
 }
 [@@deriving show]
 
-type state = { connection_pool : connection list; shutdown : bool }
+type state = {
+  connection_pool : connection list;
+  shutdown : bool;
+  next_id : int;
+}
 [@@deriving show]
 
 type transition = state -> state option
@@ -110,14 +116,13 @@ let stream_error_handler : _ stream_context -> H2.Error.t -> _ stream_context =
             {
               Status.code = status_of_h2_error code;
               info =
-                Some
-                  (Message
-                     (Format.asprintf "HTTP/2 stream error, code %a"
-                        H2.Error_code.pp_hum code));
+                Message
+                  (Format.asprintf "HTTP/2 stream error, code %a"
+                     H2.Error_code.pp_hum code);
             };
       }
   | ConnectionError (Exn exn) ->
-      { context with result = Some { code = Internal; info = Some (Exn exn) } }
+      { context with result = Some { code = Internal; info = Exn exn } }
   | ConnectionError (ProtocolViolation (code, msg) | PeerError (code, msg)) ->
       {
         context with
@@ -126,27 +131,26 @@ let stream_error_handler : _ stream_context -> H2.Error.t -> _ stream_context =
             {
               code = status_of_h2_error code;
               info =
-                Some
-                  (Message
-                     (Format.asprintf "HTTP/2 connection error, code %a: %s"
-                        H2.Error_code.pp_hum code msg));
+                Message
+                  (Format.asprintf "HTTP/2 connection error, code %a: %s"
+                     H2.Error_code.pp_hum code msg);
             };
       }
 
-let make_connections_event : int -> connection -> event =
- fun idx conn () ->
-  let inputs = conn.pending_inputs in
-  let iteration = conn.next_iter inputs in
+let make_connections_event : connection -> event =
+ fun { id = id'; pending_inputs = inputs; next_iter; _ } () ->
+  let iteration = next_iter inputs in
 
   fun state ->
     let new_pool =
       match iteration.state with
-      | End -> List.filteri (fun i _ -> i <> idx) state.connection_pool
-      | Error _ -> List.filteri (fun i _ -> i <> idx) state.connection_pool
+      | End -> List.filter (fun { id; _ } -> id <> id') state.connection_pool
+      | Error _ ->
+          List.filter (fun { id; _ } -> id <> id') state.connection_pool
       | InProgress next_iter ->
-          List.mapi
-            (fun i conn ->
-              if i = idx then
+          List.map
+            (fun conn ->
+              if conn.id = id' then
                 let new_conn =
                   {
                     conn with
@@ -238,12 +242,11 @@ let make_request :
                 {
                   Status.code = Internal;
                   info =
-                    Some
-                      (Message
-                         (Format.sprintf
-                            "gRPC protocol error: HTTP/2 server responsed with \
-                             %i status code, 200 expected"
-                            (Haha.Status.to_code h2_status)));
+                    Message
+                      (Format.sprintf
+                         "gRPC protocol error: HTTP/2 server responsed with %i \
+                          status code, 200 expected"
+                         (Haha.Status.to_code h2_status));
                 };
           }
         in
@@ -260,10 +263,9 @@ let make_request :
           {
             code = Unknown;
             info =
-              Some
-                (Message
-                   "gRPC protocol error: No gRPC status found in the HTTP/2 \
-                    response trailers");
+              Message
+                "gRPC protocol error: No gRPC status found in the HTTP/2 \
+                 response trailers";
           };
       }
     in
@@ -289,9 +291,10 @@ let make_request :
 
 let start_connection :
     connect_socket:(unit -> (_ Net.stream_socket, exn) result) ->
+    int ->
     (connection, [ `H2Error of H2.Error.connection_error | `Exn of exn ]) result
     =
- fun ~connect_socket ->
+ fun ~connect_socket id ->
   match connect_socket () with
   | Error exn -> Error (`Exn exn)
   | Ok socket -> (
@@ -301,6 +304,7 @@ let start_connection :
       | { state = End; _ } as iter ->
           Ok
             {
+              id;
               next_iter = (fun _ -> iter);
               open_streams = 0;
               pending_inputs = [];
@@ -310,6 +314,7 @@ let start_connection :
       | { state = InProgress next_iter; _ } ->
           Ok
             {
+              id;
               next_iter;
               open_streams = 0;
               shutdown = false;
@@ -318,7 +323,7 @@ let start_connection :
 
 let make_new_stream_event :
     new_connection:
-      (unit ->
+      (int ->
       ( connection,
         [ `H2Error of H2.Error.connection_error | `Exn of exn ] )
       result) ->
@@ -343,25 +348,29 @@ let make_new_stream_event :
                 state.connection_pool;
           }
     | None -> (
-        match new_connection () with
+        match new_connection state.next_id with
         | Ok connection ->
             let new_conn = start_request connection request in
 
             Some
-              { state with connection_pool = new_conn :: state.connection_pool }
+              {
+                state with
+                connection_pool = new_conn :: state.connection_pool;
+                next_id = state.next_id + 1;
+              }
         | Error (`H2Error conn_err) ->
             on_init_error (connection_error_to_status conn_err);
-            Some state
+            Some { state with next_id = state.next_id + 1 }
         | Error (`Exn exn) ->
-            on_init_error { code = Unavailable; info = Some (Exn exn) };
-            Some state)
+            on_init_error { code = Unavailable; info = Exn exn };
+            Some { state with next_id = state.next_id + 1 })
 
 let make_shutdown_event : shutdown_promise:unit Promise.t -> event =
  fun ~shutdown_promise () ->
   Promise.await shutdown_promise;
   fun state ->
     let connection_pool = List.map shutdown_connection state.connection_pool in
-    Some { shutdown = true; connection_pool }
+    Some { state with shutdown = true; connection_pool }
 
 let create : ?max_streams:int -> sw:Switch.t -> net:_ Net.t -> string -> t =
  fun ?(max_streams = 100) ~sw ~net uri ->
@@ -398,14 +407,14 @@ let create : ?max_streams:int -> sw:Switch.t -> net:_ Net.t -> string -> t =
 
   Fiber.fork ~sw (fun () ->
       let rec runloop state =
-        let new_connection () = start_connection ~connect_socket in
+        let new_connection = start_connection ~connect_socket in
 
         let new_stream_event : event =
           make_new_stream_event ~new_connection ~max_streams ~request_stream
         in
         let shutdown_event : event = make_shutdown_event ~shutdown_promise in
         let connections_events : event list =
-          List.mapi make_connections_event state.connection_pool
+          List.map make_connections_event state.connection_pool
         in
 
         let transition : transition =
@@ -421,7 +430,7 @@ let create : ?max_streams:int -> sw:Switch.t -> net:_ Net.t -> string -> t =
         Option.iter runloop (transition state)
       in
 
-      runloop { connection_pool = []; shutdown = false });
+      runloop { connection_pool = []; shutdown = false; next_id = 0 });
 
   { request_stream; shutdown_resolver; uri }
 
