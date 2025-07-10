@@ -29,7 +29,7 @@ let grpc_send_streaming request encoder_stream status_promise =
     (fun input ->
       let payload = Grpc.Message.make input in
       H2.Body.Writer.write_string body payload;
-      H2.Body.Writer.flush body (fun () -> ()))
+      H2.Body.Writer.flush body (fun _ -> ()))
     encoder_stream;
   let status = Eio.Promise.await status_promise in
   H2.Reqd.schedule_trailers request

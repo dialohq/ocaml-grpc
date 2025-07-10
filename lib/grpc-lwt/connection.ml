@@ -35,7 +35,7 @@ let grpc_send_streaming request encoder_stream status_mvar =
       (fun input ->
         let payload = Grpc.Message.make input in
         H2.Body.Writer.write_string body payload;
-        H2.Body.Writer.flush body (fun () -> ()))
+        H2.Body.Writer.flush body (fun _ -> ()))
       encoder_stream
   in
   let+ status = Lwt_mvar.take status_mvar in
