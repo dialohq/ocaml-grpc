@@ -271,8 +271,9 @@ let make_request :
     in
 
     match result with
-    | Some status -> Promise.resolve resolver { status; grpc_context }
-    | None -> Promise.resolve resolver unknown_result
+    | Some status ->
+        Promise.try_resolve resolver { status; grpc_context } |> ignore
+    | None -> Promise.try_resolve resolver unknown_result |> ignore
   in
 
   let initial_stream_state =
