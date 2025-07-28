@@ -84,6 +84,10 @@ module Rpc = struct
   let unary ~f enc write_body read_body =
     let payload = Grpc.Message.make enc in
     H2.Body.Writer.write_string write_body payload;
+    let wait_until_flushed, flushed = Lwt.wait () in
+    let callback _ = Lwt.wakeup flushed () in
+    H2.Body.Writer.flush write_body callback;
+    let* () = wait_until_flushed in
     H2.Body.Writer.close write_body;
     let* read_body = read_body in
     let request_buffer = Grpc.Buffer.v () in
