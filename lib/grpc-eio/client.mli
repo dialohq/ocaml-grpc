@@ -25,11 +25,13 @@ module Rpc : sig
 end
 
 type response_handler = H2.Client_connection.response_handler
+type error_handler = H2.Client_connection.error_handler
 
 type do_request =
   ?flush_headers_immediately:bool ->
   ?trailers_handler:(H2.Headers.t -> unit) ->
   H2.Request.t ->
+  error_handler:error_handler ->
   response_handler:response_handler ->
   H2.Body.Writer.t
 (** [do_request] is the type of a function that performs the request *)

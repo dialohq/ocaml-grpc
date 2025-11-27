@@ -1,9 +1,11 @@
 type response_handler = H2.Client_connection.response_handler
+type error_handler = H2.Client_connection.error_handler
 
 type do_request =
   ?flush_headers_immediately:bool ->
   ?trailers_handler:(H2.Headers.t -> unit) ->
   H2.Request.t ->
+  error_handler:error_handler ->
   response_handler:response_handler ->
   H2.Body.Writer.t
 
@@ -34,14 +36,51 @@ let make_trailers_handler () =
 let get_response_and_bodies request =
   let response, response_notify = Eio.Promise.create () in
   let read_body, read_body_notify = Eio.Promise.create () in
+  let error_promise, error_notify = Eio.Promise.create () in
+
   let response_handler response body =
     Eio.Promise.resolve response_notify response;
     Eio.Promise.resolve read_body_notify body
   in
-  let write_body = request ~response_handler in
-  let response = Eio.Promise.await response in
-  let read_body = Eio.Promise.await read_body in
-  (response, read_body, write_body)
+
+  let error_handler err =
+    (* When H2 error occurs, resolve the error promise *)
+    if not (Eio.Promise.is_resolved error_promise) then
+      Eio.Promise.resolve error_notify (Some err)
+  in
+
+  let write_body = request ~error_handler ~response_handler in
+
+  (* Race between getting response and error *)
+  match Eio.Fiber.first
+    (fun () ->
+      let resp = Eio.Promise.await response in
+      let body = Eio.Promise.await read_body in
+      `Response (resp, body))
+    (fun () ->
+      let err = Eio.Promise.await error_promise in
+      match err with
+      | Some e -> `Error e
+      | None ->
+          (* This shouldn't happen *)
+          failwith "Internal error: error promise resolved without value")
+  with
+  | `Response (response, read_body) -> (response, read_body, write_body)
+  | `Error err ->
+      (* Convert H2 error to exception *)
+      let msg = match err with
+        | `Protocol_error (code, msg) ->
+            Printf.sprintf "H2 protocol error (%s): %s"
+              (H2.Error_code.to_string code) msg
+        | `Invalid_response_body_length resp ->
+            Printf.sprintf "Invalid response body length for status %s"
+              (H2.Status.to_string resp.H2.Response.status)
+        | `Malformed_response msg ->
+            Printf.sprintf "Malformed response: %s" msg
+        | `Exn exn ->
+            Printf.sprintf "H2 exception: %s" (Printexc.to_string exn)
+      in
+      failwith msg
 
 let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
     ?(headers = default_headers) () =
@@ -49,7 +88,9 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
   let status, trailers_handler = make_trailers_handler () in
   let response, read_body, write_body =
     get_response_and_bodies
-      (do_request ~flush_headers_immediately:true request ~trailers_handler)
+      (fun ~error_handler ~response_handler ->
+        do_request ~flush_headers_immediately:true request ~trailers_handler
+          ~error_handler ~response_handler)
   in
   match response.status with
   | `OK ->
