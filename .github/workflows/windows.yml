@@ -14,24 +14,21 @@ jobs:
         os:
           - windows-latest
         ocaml-compiler:
-          - "ocaml.5.0.0,ocaml-option-mingw"
-          - "ocaml.5.1.1,ocaml-option-mingw"
-          - "ocaml.5.2.0,ocaml-option-mingw"
+          - 5.1
+          - 5.2
+          - 5.3
 
     runs-on: ${{ matrix.os }}
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
 
       - name: Set-up OCaml
-        uses: ocaml/setup-ocaml@v2
+        uses: ocaml/setup-ocaml@v3
         with:
           ocaml-compiler: ${{ matrix.ocaml-compiler }}
-          opam-repositories: |
-            dra27: https://github.com/dra27/opam-repository.git#windows-5.0
-            default: https://github.com/ocaml-opam/opam-repository-mingw.git#sunset
-            standard: https://github.com/ocaml/opam-repository.git
+          # Only install lwt and EIO, async doesn't work on Windows reliably.
           opam-local-packages: |
             grpc.opam
             grpc-lwt.opam
