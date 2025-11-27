@@ -40,7 +40,7 @@ let main env =
 
     let result =
       Grpc_eio.Client.call ~service:"mypackage.Greeter" ~rpc:"SayHello"
-        ~do_request:(H2_eio.Client.request connection ~error_handler:ignore)
+        ~do_request:(H2_eio.Client.request connection)
         ~handler:(Grpc_eio.Client.Rpc.unary encoded_request ~f)
         ()
     in
