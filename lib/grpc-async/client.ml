@@ -91,12 +91,14 @@ module Rpc = struct
     H2.Body.Writer.close write_body;
     let%bind read_body = read_body in
     let request_buffer = Grpc.Buffer.v () in
-    let on_eof () = () in
+    let request_buffer_eof_ivar = Ivar.create () in
+    let on_eof () = Ivar.fill_exn request_buffer_eof_ivar () in
     let rec on_read buffer ~off ~len =
       Grpc.Buffer.copy_from_bigstringaf ~src_off:off ~src:buffer
         ~dst:request_buffer ~length:len;
       H2.Body.Reader.schedule_read read_body ~on_read ~on_eof
     in
     H2.Body.Reader.schedule_read read_body ~on_read ~on_eof;
+    let%bind () = Ivar.read request_buffer_eof_ivar in
     handler (Grpc.Message.extract request_buffer)
 end
