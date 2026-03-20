@@ -1,6 +1,7 @@
 ## Unreleased
 - Fix bug in Grpc-lwt-client to fetch status code from response header ([#58](https://github.com/dialohq/ocaml-grpc/pull/58)) ([acerone85](https://github.com/acerone85)) review by ([@quernd](https://github.com/quernd))
 - Update Async dependency to v0.17.0 ([#62](https://github.com/dialohq/ocaml-grpc/pull/62) ([@tmcgilchrist](https://github.com/tmcgilchrist))
+- grpc-eio: pipeline request DATA concurrently with response HEADERS, enabling interoperability with grpcio, grpc-core, and grpc-go ([#70](https://github.com/dialohq/ocaml-grpc/pull/70)) ([@rhysolsen](https://github.com/rhysolsen))
 
 ## 0.2.0 2023-10-23
 

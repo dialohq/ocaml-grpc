@@ -1,5 +1,18 @@
 module Rpc : sig
-  type 'a handler = H2.Body.Writer.t -> H2.Body.Reader.t -> 'a
+  type 'a handler = H2.Body.Writer.t -> H2.Body.Reader.t Eio.Promise.t -> 'a
+  (** [handler] is a function that implements an RPC by sending and receiving
+      gRPC messages over a single HTTP/2 stream.
+
+      [write_body] is available immediately; the handler should begin sending
+      the request body without waiting for [read_body_p] to resolve.
+      [read_body_p] resolves to [H2.Body.Reader.t] once the server sends its
+      response HEADERS frame.
+
+      The gRPC over HTTP/2 protocol and RFC 9113 §5.1 place no ordering
+      constraint between client DATA frames and server HEADERS; a conforming
+      server may withhold response HEADERS until after END_STREAM.  Pipelining
+      [write_body] calls before awaiting [read_body_p] is therefore required
+      for correct interoperability. *)
 
   val bidirectional_streaming :
     f:(string Seq.writer -> string Seq.t -> 'a) -> 'a handler

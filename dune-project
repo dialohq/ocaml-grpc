@@ -90,7 +90,12 @@
    (= :version))
   (h2
    (>= 0.9.0))
-  stringext))
+  stringext
+  (h2-eio :with-test)
+  (eio_main
+   (and
+    :with-test
+    (>= 0.12)))))
 
 (package
  (name grpc-examples)

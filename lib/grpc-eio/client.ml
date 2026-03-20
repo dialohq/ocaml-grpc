@@ -31,30 +31,28 @@ let make_trailers_handler () =
   in
   (status, trailers_handler)
 
-let get_response_and_bodies request =
-  let response, response_notify = Eio.Promise.create () in
-  let read_body, read_body_notify = Eio.Promise.create () in
-  let response_handler response body =
-    Eio.Promise.resolve response_notify response;
-    Eio.Promise.resolve read_body_notify body
-  in
-  let write_body = request ~response_handler in
-  let response = Eio.Promise.await response in
-  let read_body = Eio.Promise.await read_body in
-  (response, read_body, write_body)
-
 let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
     ?(headers = default_headers) () =
   let request = make_request ~service ~rpc ~scheme ~headers in
   let status, trailers_handler = make_trailers_handler () in
-  let response, read_body, write_body =
-    get_response_and_bodies
-      (do_request ~flush_headers_immediately:true request ~trailers_handler)
+  let response_p, response_notify = Eio.Promise.create () in
+  let read_body_p, read_body_notify = Eio.Promise.create () in
+  let response_handler response body =
+    Eio.Promise.resolve response_notify response;
+    Eio.Promise.resolve read_body_notify body
   in
+  let write_body =
+    do_request ~flush_headers_immediately:true request ~trailers_handler
+      ~response_handler
+  in
+  (* The handler receives write_body immediately so it can pipeline request DATA
+     before response HEADERS arrive.  response_p and read_body_p are resolved
+     by response_handler once the server emits its HEADERS frame. *)
+  let result = handler write_body read_body_p in
+  let response = Eio.Promise.await response_p in
   match response.status with
   | `OK ->
       trailers_handler response.headers;
-      let result = handler write_body read_body in
       let status =
         match Eio.Promise.is_resolved status with
         (* In case no grpc-status appears in headers or trailers. *)
@@ -67,18 +65,29 @@ let call ~service ~rpc ?(scheme = "https") ~handler ~(do_request : do_request)
   | error_status -> Error error_status
 
 module Rpc = struct
-  type 'a handler = H2.Body.Writer.t -> H2.Body.Reader.t -> 'a
+  type 'a handler = H2.Body.Writer.t -> H2.Body.Reader.t Eio.Promise.t -> 'a
 
-  let bidirectional_streaming ~f write_body read_body =
+  let bidirectional_streaming ~f write_body read_body_p =
     let response_reader, response_writer = Seq.create_reader_writer () in
     let request_reader, request_writer = Seq.create_reader_writer () in
-    Connection.grpc_recv_streaming read_body response_writer;
     let res, res_notify = Eio.Promise.create () in
+    (* Two concurrent fibers, one per direction:
+       - Send side: drives f and grpc_send_streaming_client; no dependency
+         on response HEADERS.
+       - Recv side: awaits read_body_p (resolves when HEADERS arrive), then
+         registers h2 read callbacks that feed incoming data into
+         response_writer.  Callback registration is non-blocking; h2 drives
+         data delivery via its internal event loop. *)
     Eio.Fiber.both
       (fun () ->
-        Eio.Promise.resolve res_notify (f request_writer response_reader))
+        Eio.Fiber.both
+          (fun () ->
+            Eio.Promise.resolve res_notify (f request_writer response_reader))
+          (fun () ->
+            Connection.grpc_send_streaming_client write_body request_reader))
       (fun () ->
-        Connection.grpc_send_streaming_client write_body request_reader);
+        let read_body = Eio.Promise.await read_body_p in
+        Connection.grpc_recv_streaming read_body response_writer);
     Eio.Promise.await res
 
   let client_streaming ~f =
