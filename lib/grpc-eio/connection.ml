@@ -25,12 +25,22 @@ let grpc_send_streaming request encoder_stream status_promise =
            (H2.Headers.of_list [ ("content-type", "application/grpc+proto") ])
          `OK)
   in
-  Seq.iter
-    (fun input ->
-      let payload = Grpc.Message.make input in
-      H2.Body.Writer.write_string body payload;
-      H2.Body.Writer.flush body (fun _ -> ()))
-    encoder_stream;
+  let rec write_all encoder_stream =
+    match encoder_stream () with
+    | Seq.Nil -> ()
+    | Seq.Cons (input, encoder_stream) ->
+        let payload = Grpc.Message.make input in
+        H2.Body.Writer.write_string body payload;
+        let flushed, notify_flushed = Eio.Promise.create () in
+        H2.Body.Writer.flush body (Eio.Promise.resolve notify_flushed);
+        (* [`Closed] means the writer is gone (peer/connection torn down)
+           before this message went out: stop producing more of the
+           stream rather than writing into the void. *)
+        match Eio.Promise.await flushed with
+        | `Written -> write_all encoder_stream
+        | `Closed -> ()
+  in
+  write_all encoder_stream;
   let status = Eio.Promise.await status_promise in
   H2.Reqd.schedule_trailers request
     (H2.Headers.of_list
