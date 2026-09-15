@@ -27,7 +27,9 @@
 (documentation "https://dialohq.github.io/ocaml-grpc")
 
 (package
- (name grpc))
+ (name grpc)
+ (depends
+  (eio_main :with-test)))
 
 (package
  (name arpaca)

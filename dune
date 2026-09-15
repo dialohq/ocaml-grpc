@@ -1,1 +1,1 @@
-(dirs bench examples lib)
+(dirs bench examples lib test)

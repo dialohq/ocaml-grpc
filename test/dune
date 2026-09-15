@@ -1,0 +1,4 @@
+(test
+ (name channel_socket_test)
+ (package grpc)
+ (libraries grpc eio_main unix))

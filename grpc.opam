@@ -16,6 +16,7 @@ doc: "https://dialohq.github.io/ocaml-grpc"
 bug-reports: "https://github.com/dialohq/ocaml-grpc/issues"
 depends: [
   "dune" {>= "3.7"}
+  "eio_main" {with-test}
   "odoc" {with-doc}
 ]
 build: [

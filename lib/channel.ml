@@ -59,6 +59,7 @@ type connection = {
   shutdown : bool;
   pending_inputs : Client.iter_input list;
       [@printer fun fmt l -> fprintf fmt "<%i inputs>" (List.length l)]
+  close_socket : unit -> unit; [@opaque]
 }
 [@@deriving show]
 
@@ -138,14 +139,14 @@ let stream_error_handler : _ stream_context -> H2.Error.t -> _ stream_context =
       }
 
 let make_connections_event : connection -> event =
- fun { id = id'; pending_inputs = inputs; next_iter; _ } () ->
+ fun { id = id'; pending_inputs = inputs; next_iter; close_socket; _ } () ->
   let iteration = next_iter inputs in
 
   fun state ->
     let new_pool =
       match iteration.state with
-      | End -> List.filter (fun { id; _ } -> id <> id') state.connection_pool
-      | Error _ ->
+      | End | Error _ ->
+          close_socket ();
           List.filter (fun { id; _ } -> id <> id') state.connection_pool
       | InProgress next_iter ->
           List.map
@@ -299,6 +300,7 @@ let start_connection :
   match connect_socket () with
   | Error exn -> Error (`Exn exn)
   | Ok socket -> (
+      let close_socket () = Net.close socket in
       let initial_iteration = Client.connect socket in
 
       match initial_iteration with
@@ -310,8 +312,11 @@ let start_connection :
               open_streams = 0;
               pending_inputs = [];
               shutdown = false;
+              close_socket;
             }
-      | { state = Error err; _ } -> Error (`H2Error err)
+      | { state = Error err; _ } ->
+          close_socket ();
+          Error (`H2Error err)
       | { state = InProgress next_iter; _ } ->
           Ok
             {
@@ -320,6 +325,7 @@ let start_connection :
               open_streams = 0;
               shutdown = false;
               pending_inputs = [];
+              close_socket;
             })
 
 let make_new_stream_event :
